@@ -1,0 +1,181 @@
+# MemoFlow database schema — derived from docs/database-schema.md (source of truth).
+# Render: d2 database-schema.d2 database-schema.svg
+# Solid edges = real FKs (PostgreSQL). Dashed edges = cross-DB uuid references,
+# validated by the application use-case layer — there is NO foreign key across DBs.
+
+direction: right
+
+pg: PostgreSQL (primary — TypeORM, migrations only) {
+  users: {
+    shape: sql_table
+    id: uuid {constraint: primary_key}
+    email: varchar {constraint: unique}
+    password_hash: varchar
+    display_name: varchar
+    role: varchar
+    xp: int
+    level: int
+    last_active_at: timestamptz
+  }
+
+  documents: {
+    shape: sql_table
+    id: uuid {constraint: primary_key}
+    user_id: uuid {constraint: foreign_key}
+    title: varchar
+    doc_type: varchar
+    status: varchar
+    style_config: jsonb
+  }
+
+  sections: {
+    shape: sql_table
+    id: uuid {constraint: primary_key}
+    document_id: uuid {constraint: foreign_key}
+    title: varchar
+    content: text
+    order: int
+    status: varchar
+    word_count: int
+  }
+
+  ai_suggestions: {
+    shape: sql_table
+    id: uuid {constraint: primary_key}
+    section_id: uuid {constraint: foreign_key}
+    user_id: uuid {constraint: foreign_key}
+    feature_type: varchar
+    original_text: text
+    suggested_text: text
+    status: varchar
+    prompt_version: varchar
+  }
+
+  prompts: {
+    shape: sql_table
+    id: uuid {constraint: primary_key}
+    feature_type: varchar
+    version: varchar
+    template: text
+    is_active: boolean
+  }
+
+  connector_tokens: {
+    shape: sql_table
+    id: uuid {constraint: primary_key}
+    user_id: uuid {constraint: foreign_key}
+    provider: varchar
+    access_token: "text (AES-256-GCM)"
+    refresh_token: "text (AES-256-GCM)"
+    expires_at: timestamptz
+  }
+
+  milestones: {
+    shape: sql_table
+    id: uuid {constraint: primary_key}
+    user_id: uuid {constraint: foreign_key}
+    document_id: uuid {constraint: foreign_key}
+    milestone_type: varchar
+    xp_awarded: int
+  }
+
+  daily_missions: {
+    shape: sql_table
+    id: uuid {constraint: primary_key}
+    code: varchar
+    description: varchar
+    xp_reward: int
+    criteria: jsonb
+    active_date: date
+  }
+
+  mission_progress: {
+    shape: sql_table
+    id: uuid {constraint: primary_key}
+    user_id: uuid {constraint: foreign_key}
+    mission_id: uuid {constraint: foreign_key}
+    progress: int
+    completed: boolean
+  }
+
+  templates: {
+    shape: sql_table
+    id: uuid {constraint: primary_key}
+    title: varchar
+    doc_type: varchar
+    scope: varchar
+    created_by: "uuid (nullable)" {constraint: foreign_key}
+    style_config: jsonb
+    is_published: boolean
+  }
+
+  template_sections: {
+    shape: sql_table
+    id: uuid {constraint: primary_key}
+    template_id: uuid {constraint: foreign_key}
+    order: int
+    word_count_min: int
+    word_count_max: int
+    is_required: boolean
+  }
+
+  document_templates: {
+    shape: sql_table
+    id: uuid {constraint: primary_key}
+    document_id: uuid {constraint: foreign_key}
+    template_id: uuid {constraint: foreign_key}
+    applied_at: timestamptz
+    customised: boolean
+  }
+
+  documents.user_id -> users.id
+  sections.document_id -> documents.id
+  ai_suggestions.section_id -> sections.id
+  ai_suggestions.user_id -> users.id
+  connector_tokens.user_id -> users.id
+  milestones.user_id -> users.id
+  milestones.document_id -> documents.id
+  mission_progress.user_id -> users.id
+  mission_progress.mission_id -> daily_missions.id
+  templates.created_by -> users.id
+  template_sections.template_id -> templates.id
+  document_templates.document_id -> documents.id
+  document_templates.template_id -> templates.id
+}
+
+mongo: MongoDB (specialist — Mongoose) {
+  document_versions: {
+    shape: sql_table
+    _id: ObjectId {constraint: primary_key}
+    document_id: "uuid (string)"
+    user_id: "uuid (string)"
+    version: int
+    "label": "string?"
+    sections_snapshot: "array (embedded)"
+    saved_at: date
+  }
+
+  planning_jobs: {
+    shape: sql_table
+    _id: ObjectId {constraint: primary_key}
+    user_id: "uuid (string)"
+    document_id: "uuid (string)"
+    section_id: "uuid (string)?"
+    status: string
+    connectors: "string[]"
+    prompt_version: string
+    context_used: object
+    result: object
+    error_code: "string?"
+    error_message: "string?"
+    created_at: date
+    started_at: date
+    finished_at: date
+  }
+}
+
+# Cross-DB references: plain uuids, validated by use-cases — no FK enforcement.
+mongo.document_versions.document_id -> pg.documents.id: app-validated {style.stroke-dash: 4}
+mongo.document_versions.user_id -> pg.users.id: app-validated {style.stroke-dash: 4}
+mongo.planning_jobs.user_id -> pg.users.id: app-validated {style.stroke-dash: 4}
+mongo.planning_jobs.document_id -> pg.documents.id: app-validated {style.stroke-dash: 4}

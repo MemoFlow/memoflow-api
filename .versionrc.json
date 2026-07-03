@@ -1,0 +1,17 @@
+{
+  "header": "# Changelog\n\nAll notable changes to MemoFlow API are documented here. Versions follow\n[Semantic Versioning](https://semver.org) and are derived automatically from\n[Conventional Commits](https://www.conventionalcommits.org) by `commit-and-tag-version`.\n",
+  "tagPrefix": "v",
+  "types": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "perf", "section": "Performance" },
+    { "type": "refactor", "section": "Refactoring" },
+    { "type": "revert", "section": "Reverts" },
+    { "type": "docs", "hidden": true },
+    { "type": "style", "hidden": true },
+    { "type": "test", "hidden": true },
+    { "type": "build", "hidden": true },
+    { "type": "ci", "hidden": true },
+    { "type": "chore", "hidden": true }
+  ]
+}

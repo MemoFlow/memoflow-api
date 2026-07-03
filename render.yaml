@@ -1,0 +1,66 @@
+# Render blueprint for the "development" tier only (Item 0). Staging and
+# production hosts are undecided — do not extend this file to those tiers
+# without a corresponding CLAUDE.md update.
+#
+# This blueprint documents the shape of the dev web service and its managed
+# Postgres for reference / first-time provisioning. The GitHub Actions
+# deploy workflow (.github/workflows/deploy-dev.yml) drives actual deploys
+# via a Render Deploy Hook so migrations run before rollout and a smoke
+# check gates success — it does not rely on Render's git auto-deploy.
+#
+# MongoDB is NOT provisioned here: Render has no managed MongoDB offering.
+# The dev Mongo instance is external (MongoDB Atlas, free M0 tier) and its
+# connection string is set manually as the MONGODB_URI secret below.
+databases:
+  - name: memoflow-dev-postgres
+    databaseName: memoflow_dev
+    region: oregon
+    plan: free
+
+services:
+  - type: web
+    name: memoflow-dev-api
+    env: node
+    region: oregon
+    plan: free
+    autoDeploy: false # deploys are triggered by the GitHub Actions workflow via deploy hook
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/main
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: development
+      - key: PORT
+        value: 3000
+
+      # MongoDB is external (Atlas M0) — set manually in the Render
+      # dashboard, not derived from a Render-managed database.
+      - key: MONGODB_URI
+        sync: false
+
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        sync: false
+
+      # Postgres connection fields sourced from the managed database above.
+      - key: POSTGRES_HOST
+        fromDatabase:
+          name: memoflow-dev-postgres
+          property: host
+      - key: POSTGRES_PORT
+        fromDatabase:
+          name: memoflow-dev-postgres
+          property: port
+      - key: POSTGRES_USER
+        fromDatabase:
+          name: memoflow-dev-postgres
+          property: user
+      - key: POSTGRES_PASSWORD
+        fromDatabase:
+          name: memoflow-dev-postgres
+          property: password
+      - key: POSTGRES_DB
+        fromDatabase:
+          name: memoflow-dev-postgres
+          property: database
