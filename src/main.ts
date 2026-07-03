@@ -23,6 +23,7 @@ async function bootstrap() {
     .setTitle('MemoFlow API')
     .setDescription('REST API for MemoFlow — users, documents, AI, connectors')
     .setVersion('0.0.1')
+    .addBearerAuth()
     .build();
   SwaggerModule.setup(
     'docs',
