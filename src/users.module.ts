@@ -21,10 +21,15 @@ import { UsersController } from './presentation/users/users.controller';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService): JwtModuleOptions => {
-        // JWT_EXPIRES_IN is a free-form duration string (e.g. "15m"); the
-        // `ms` StringValue template-literal type can't be derived from a
-        // generic string at compile time, so it's cast at this one boundary.
-        const expiresIn: any = config.get<string>('JWT_EXPIRES_IN') ?? '15m';
+        // signOptions.expiresIn resolves to `ms` StringValue | number, a
+        // template-literal type a generic config string can't satisfy at
+        // compile time. Cast to the exact expected type (not `any`) at this
+        // one boundary so the rest of the object stays type-checked.
+        type ExpiresIn = NonNullable<
+          JwtModuleOptions['signOptions']
+        >['expiresIn'];
+        const expiresIn = (config.get<string>('JWT_EXPIRES_IN') ??
+          '15m') as ExpiresIn;
         return {
           secret: config.getOrThrow<string>('JWT_SECRET'),
           signOptions: { expiresIn },
