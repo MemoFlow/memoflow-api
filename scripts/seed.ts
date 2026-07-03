@@ -8,6 +8,15 @@ import 'dotenv/config';
 import mongoose from 'mongoose';
 import dataSource from '../src/infrastructure/persistence/typeorm.data-source';
 
+// Dev seed data must never reach the staging or production databases.
+const nodeEnv = process.env.NODE_ENV ?? 'development';
+if (nodeEnv === 'staging' || nodeEnv === 'production') {
+  console.error(
+    `[seed] refusing to run with NODE_ENV=${nodeEnv} — this seed is for development/test only`,
+  );
+  process.exit(1);
+}
+
 async function main(): Promise<void> {
   await dataSource.initialize();
   console.log('[seed] connected to PostgreSQL');

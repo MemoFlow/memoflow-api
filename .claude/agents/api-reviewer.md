@@ -30,6 +30,12 @@ Check, in priority order:
 6. **Indexes** — queries filtering on fields the schema doc marks as indexed, where
    the entity/schema doesn't declare the index.
 7. **Tests** — new use-cases without unit tests; new endpoints without e2e coverage.
+8. **Branch discipline (gitflow)** — check the current branch (`git status`): work
+   authored directly on `main`, `staging`, or `development` is a blocker; the diff
+   must come from a `feature/*`, `bugfix/*`, or `hotfix/*` branch. Flag anything
+   environment-specific hardcoded for one tier (e.g. a localhost URL or dev-only
+   credential baked into src/) — configuration belongs in env vars validated by
+   `src/config/env.validation.ts`.
 
 Report format: one finding per line — `severity (blocker/warn) — file:line — what and
 why, citing the rule`. End with a verdict: **APPROVE** (no blockers) or **REQUEST

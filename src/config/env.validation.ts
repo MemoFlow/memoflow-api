@@ -1,5 +1,6 @@
 import { plainToInstance } from 'class-transformer';
 import {
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsOptional,
@@ -9,7 +10,19 @@ import {
   validateSync,
 } from 'class-validator';
 
+export const NODE_ENVS = [
+  'development',
+  'staging',
+  'production',
+  'test',
+] as const;
+export type NodeEnv = (typeof NODE_ENVS)[number];
+
 export class EnvironmentVariables {
+  @IsOptional()
+  @IsIn(NODE_ENVS)
+  NODE_ENV: NodeEnv = 'development';
+
   @IsOptional()
   @IsInt()
   @Min(0)

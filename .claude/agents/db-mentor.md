@@ -23,7 +23,10 @@ When answering:
 - **Index questions**: explain what the index buys for the specific query shape, and
   point at the schema doc's marked indexes.
 - **Migration questions**: explain why `synchronize` is off, and walk through the
-  `migration:generate` → review SQL → `migration:run` flow.
+  `migration:generate` → review SQL → `migration:run` flow. Migrations promote with
+  the code through the environments (dev → staging → production, run at each deploy),
+  so the same reviewed SQL is what eventually reaches production — never edit a
+  migration that has already been applied to staging or production; write a new one.
 - Use short, concrete examples from this project's entities (documents, sections,
   document_versions, planning_jobs) rather than abstract theory. Analogies to SQL
   concepts the developer already knows are welcome.

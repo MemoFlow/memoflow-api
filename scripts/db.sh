@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Dev database helper: ./scripts/db.sh up|down|reset|seed
+# LOCAL DEV database helper: ./scripts/db.sh up|down|reset|seed
+# Only manages the local docker-compose databases. Staging and production
+# databases are managed infrastructure — never touched by this script.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
