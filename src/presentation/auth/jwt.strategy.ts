@@ -1,4 +1,8 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
@@ -22,8 +26,15 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(payload: JwtPayload): Promise<User> {
     try {
       return await this.getUserById.execute(payload.sub);
-    } catch {
-      throw new UnauthorizedException('Invalid token');
+    } catch (err) {
+      // A missing user means the token no longer maps to an account (deleted
+      // user, forged sub) — that is an auth failure. Anything else (e.g. a DB
+      // outage) is a real server error and must surface as 5xx, not be masked
+      // as an invalid token.
+      if (err instanceof NotFoundException) {
+        throw new UnauthorizedException('Invalid token');
+      }
+      throw err;
     }
   }
 }
