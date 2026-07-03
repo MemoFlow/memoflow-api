@@ -64,7 +64,9 @@ feature or endpoint:
    `/api-endpoint <module> <verb> <path>` (single endpoint). It writes `src/`,
    `test/`, and migrations, and must return with lint/build/tests green.
 3. **Review + docs (parallel step)** — once the tree is stable, launch together:
-   - `api-reviewer` on the diff — always.
+   - `code-reviewer` on the diff — **always, before every commit** (Copilot-style
+     correctness/error-handling/concurrency/type-safety/spec-sync pass).
+   - `api-reviewer` on the diff — always (clean-architecture + dual-DB rules).
    - `tooling-reviewer` — only if `.claude/`, `scripts/`, or CLAUDE.md changed.
    - `docs-maintainer` — if commands, endpoints, env vars, data design,
      environments, or roadmap status changed. Diagrams are D2 sources in
@@ -121,6 +123,7 @@ feature or endpoint:
 
 - **Orchestrator (this session): `opus`** — pinned in `.claude/settings.json`. Makes architecture decisions and runs the scaffolding skills.
 - **`implementer` agent: `sonnet`** — executes a spec the opus orchestrator already resolved; the design thinking happened upstream.
+- **`code-reviewer` agent: `sonnet`** — Copilot-style correctness/type-safety/spec-sync review; runs on every commit, so review-strength but cost-conscious.
 - **`api-reviewer` agent: `sonnet`** — strong enough for architectural review, cheap enough to run on every commit.
 - **`tooling-reviewer` agent: `sonnet`** — reviews `.claude/` agents/skills, `scripts/`, and CLAUDE.md changes; same review-strength reasoning as `api-reviewer`.
 - **`devops` agent: `sonnet`** — writes GitHub Actions workflows (`.github/workflows/`) and deployment automation; code-authoring agent, so review-tier strength.
