@@ -4,7 +4,7 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { startMongoMemory, MongoTestEnv } from './utils/mongo-memory';
 import {
-  isDockerAvailable,
+  describeWithDocker,
   startPgContainer,
   PgTestEnv,
 } from './utils/pg-testcontainer';
@@ -12,10 +12,7 @@ import {
 // Booting AppModule requires a live PostgreSQL (TypeORM connects at init),
 // which Testcontainers can only provide when a Docker daemon is present.
 // MongoDB comes from mongodb-memory-server and needs nothing external.
-const dockerAvailable = isDockerAvailable();
-const describeWithDocker = dockerAvailable ? describe : describe.skip;
-
-describeWithDocker('AppController (e2e)', () => {
+describeWithDocker()('AppController (e2e)', () => {
   let app: INestApplication<App>;
   let pg: PgTestEnv;
   let mongo: MongoTestEnv;
@@ -59,9 +56,3 @@ describeWithDocker('AppController (e2e)', () => {
     expect(body.details.mongodb.status).toBe('up');
   });
 });
-
-if (!dockerAvailable) {
-  it('e2e suite skipped: no Docker daemon available for Testcontainers', () => {
-    expect(true).toBe(true);
-  });
-}

@@ -1,0 +1,122 @@
+name: Deploy (development)
+
+on:
+  push:
+    branches:
+      - development
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-development
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "24"
+
+jobs:
+  deploy:
+    name: Deploy to Render (development)
+    runs-on: ubuntu-latest
+    environment: development
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      # Item 0 deploy order: migrate -> deploy -> smoke. Migrations run
+      # from this runner against the Render-managed dev Postgres, before
+      # the new build is rolled out, so the running app version never
+      # sees a schema it doesn't expect.
+      - name: Run database migrations
+        env:
+          NODE_ENV: development
+          POSTGRES_HOST: ${{ secrets.POSTGRES_HOST }}
+          POSTGRES_PORT: ${{ secrets.POSTGRES_PORT }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          JWT_EXPIRES_IN: ${{ secrets.JWT_EXPIRES_IN }}
+        run: npm run migration:run
+
+      # Deploy via a Render Deploy Hook rather than Render's git
+      # auto-deploy, so this workflow controls ordering (migrate first,
+      # smoke-check after) instead of Render racing the build against the
+      # migration step above.
+      - name: Trigger Render deploy
+        id: render_deploy
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          set -euo pipefail
+          response="$(curl -fsS -X POST "$RENDER_DEPLOY_HOOK_URL")"
+          deploy_id="$(printf '%s' "$response" | jq -r '.deploy.id // .id // empty')"
+          if [ -n "$deploy_id" ]; then
+            echo "Render deploy triggered (deploy id captured)."
+            echo "deploy_id=$deploy_id" >> "$GITHUB_OUTPUT"
+          else
+            echo "Render deploy triggered (hook returned no deploy id)."
+          fi
+
+      # If the hook gave us a deploy id and Render API credentials are
+      # configured, poll the Render API until the deploy is live. These
+      # are optional secrets: without them we fall back to a bounded
+      # sleep before smoke-checking, since scripts/smoke.sh already
+      # retries on its own.
+      - name: Poll Render deploy status
+        if: steps.render_deploy.outputs.deploy_id != ''
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          DEPLOY_ID: ${{ steps.render_deploy.outputs.deploy_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${RENDER_API_KEY:-}" ] || [ -z "${RENDER_SERVICE_ID:-}" ]; then
+            echo "RENDER_API_KEY/RENDER_SERVICE_ID not configured; falling back to a bounded wait before smoke-check."
+            sleep 60
+            exit 0
+          fi
+          for _ in $(seq 1 30); do
+            status="$(curl -fsS -H "Authorization: Bearer $RENDER_API_KEY" \
+              "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys/$DEPLOY_ID" \
+              | jq -r '.status // empty')"
+            echo "Render deploy status: ${status:-<none>}"
+            case "$status" in
+              live)
+                exit 0
+                ;;
+              build_failed|update_failed|canceled|deactivated)
+                echo "::error::Render deploy failed with status $status"
+                exit 1
+                ;;
+            esac
+            sleep 10
+          done
+          echo "::error::Timed out waiting for Render deploy to become live"
+          exit 1
+
+      # Bounded grace period when we couldn't poll deploy status at all
+      # (no deploy id from the hook) — the smoke step below has its own
+      # bounded retries on top of this.
+      - name: Wait for rollout (no deploy id returned by hook)
+        if: steps.render_deploy.outputs.deploy_id == ''
+        run: sleep 60
+
+      - name: Smoke-check deployment
+        env:
+          SMOKE_BASE_URL: ${{ secrets.SMOKE_BASE_URL }}
+        run: npm run smoke
