@@ -20,7 +20,11 @@ describeWithDocker()('AppController (e2e)', () => {
   beforeAll(async () => {
     pg = await startPgContainer();
     mongo = await startMongoMemory();
-    Object.assign(process.env, pg.env, { MONGODB_URI: mongo.uri });
+    Object.assign(process.env, pg.env, {
+      MONGODB_URI: mongo.uri,
+      JWT_SECRET: 'test-only-secret',
+      JWT_EXPIRES_IN: '15m',
+    });
 
     // Import late so ConfigModule validation sees the test env vars.
     const { AppModule } = await import('./../src/app.module');
