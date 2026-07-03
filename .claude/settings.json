@@ -1,0 +1,11 @@
+{
+  "model": "opus",
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npm test*)",
+      "Bash(docker compose *)",
+      "Bash(./scripts/*)"
+    ]
+  }
+}
