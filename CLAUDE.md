@@ -48,14 +48,44 @@ and `src/config/` (env validation).
 - Indexes follow the schema doc — if you query by a field marked indexed there, the entity must declare the index.
 - Errors use the uniform shape from `HttpExceptionFilter`: `{ statusCode, message, error, path, timestamp }`.
 - `password_hash` (and any token/secret column) is never serialized into API responses.
-- Any Mongoose user schema files found under `src/infrastructure/persistence/` are **transitional** — users belong in PostgreSQL (roadmap item 1 replaces them).
 
-## Workflow
+## Workflow (agent orchestration)
 
-1. `/new-module <name> --db pg|mongo` — scaffold a feature slice across all four layers.
-2. `/api-endpoint <module> <verb> <path>` — add individual endpoints to an existing module.
-3. Run the `api-reviewer` agent on the diff **before every commit**.
-4. Commit via `/commit` (global hook enforces this).
+The orchestrator (this session) coordinates the pipeline below and delegates to the
+specialist agents instead of doing their work inline. Standard pipeline for a
+feature or endpoint:
+
+1. **Design** (orchestrator) — resolve the slice against `docs/database-schema.md`;
+   for placement/index questions consult `db-mentor` (read-only, cheap, can run
+   anytime in parallel with anything).
+2. **Implement** (`implementer`) — hand it the resolved spec via
+   `/new-module <name> --db pg|mongo` (whole slice) or
+   `/api-endpoint <module> <verb> <path>` (single endpoint). It writes `src/`,
+   `test/`, and migrations, and must return with lint/build/tests green.
+3. **Review + docs (parallel step)** — once the tree is stable, launch together:
+   - `api-reviewer` on the diff — always.
+   - `tooling-reviewer` — only if `.claude/`, `scripts/`, or CLAUDE.md changed.
+   - `docs-maintainer` — if commands, endpoints, env vars, data design,
+     environments, or roadmap status changed. Diagrams are D2 sources in
+     `docs/diagrams/` rendered to SVG (`d2 <name>.d2 <name>.svg`, both committed).
+4. **Commit** via `/commit` — only after reviewers return APPROVE; re-run step 3 on
+   fix-ups. (The global hook enforces the `/commit` routing; the reviewers-APPROVE
+   gate is orchestrator discipline, not hook-enforced.)
+5. **CI/CD** (`devops`) — pipeline or deployment changes, as their own step.
+
+### Parallelism rules
+
+- **Read-only agents** (`api-reviewer`, `tooling-reviewer`, `db-mentor`) may always
+  run in parallel — with each other and with any writer.
+- **Writing agents** (`implementer`, `docs-maintainer`, `devops`) have disjoint
+  territories (`src`+`test` / `README`+`docs`+CLAUDE.md's factual sections /
+  `.github`) and may run in parallel with each other **only within their own
+  territory**; never launch two writers whose scopes overlap, and never two
+  `implementer` runs at once.
+- The territories are a convention the orchestrator upholds, not a technical
+  guarantee — writers' Write/Edit tools are not path-restricted; `tooling-reviewer`
+  checks for strays.
+- Anything not covered: default to sequential.
 
 ### Branching & commits (gitflow — mandatory)
 
@@ -75,7 +105,11 @@ and `src/config/` (env validation).
 ### Model tiering (deliberate — keep explicit, never leave to default)
 
 - **Orchestrator (this session): `opus`** — pinned in `.claude/settings.json`. Makes architecture decisions and runs the scaffolding skills.
+- **`implementer` agent: `sonnet`** — executes a spec the opus orchestrator already resolved; the design thinking happened upstream.
 - **`api-reviewer` agent: `sonnet`** — strong enough for architectural review, cheap enough to run on every commit.
+- **`tooling-reviewer` agent: `sonnet`** — reviews `.claude/` agents/skills, `scripts/`, and CLAUDE.md changes; same review-strength reasoning as `api-reviewer`.
+- **`devops` agent: `sonnet`** — writes GitHub Actions workflows (`.github/workflows/`) and deployment automation; code-authoring agent, so review-tier strength.
+- **`docs-maintainer` agent: `sonnet`** — keeps README/docs/D2 diagrams in sync with the code; cross-file consistency work.
 - **`db-mentor` agent: `haiku`** — explanatory Q&A only, no code changes.
 
 ## MongoDB primer (for developers new to Mongo)
@@ -93,7 +127,7 @@ Why our two collections fit Mongo:
 
 When in doubt about placement or schema design, ask the `db-mentor` agent.
 
-## Roadmap (each item starts with `/new-module`)
+## Roadmap (details + status: `docs/ROADMAP.md` — that file is the status source of truth)
 
 1. Users + JWT auth (PG) — replaces any transitional Mongoose user files
 2. Documents + sections (PG)
