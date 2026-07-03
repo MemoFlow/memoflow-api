@@ -1,98 +1,117 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# MemoFlow API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+REST API for MemoFlow — users, documents, AI-assisted writing features, and external
+connectors. Built with [NestJS 11](https://nestjs.com) on a **dual-database** design:
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+- **PostgreSQL** (primary) — everything relational, via TypeORM with migrations only.
+- **MongoDB** (specialist) — exactly two collections (`document_versions`,
+  `planning_jobs`), via Mongoose.
 
-## Description
+The full data design lives in [`docs/database-schema.md`](docs/database-schema.md)
+(source of truth) and is visualized in
+[`docs/diagrams/database-schema.svg`](docs/diagrams/database-schema.svg):
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+![Database schema](docs/diagrams/database-schema.svg)
 
-## Project setup
+## Quickstart
+
+Prerequisites: Node 24+, Docker (with compose).
 
 ```bash
-$ npm install
+cp .env.example .env   # localhost defaults, works out of the box
+npm install
+npm run db:up          # postgres:16 + mongo:7 via docker compose
+npm run start:dev
 ```
 
-## Compile and run the project
+- Swagger UI: http://localhost:3000/docs
+- Health (checks both databases): http://localhost:3000/health
 
-```bash
-# development
-$ npm run start
+## Commands
 
-# watch mode
-$ npm run start:dev
+| command | what it does |
+| --- | --- |
+| `npm run start:dev` | dev server with watch (needs DBs up + `.env`) |
+| `npm test` / `npm run test:e2e` | unit / e2e tests (e2e: Testcontainers PostgreSQL + in-memory Mongo — needs Docker) |
+| `npm run lint` / `npm run build` | lint (with autofix) / compile |
+| `npm run db:up` / `db:down` / `db:reset` | local dev databases (`reset` wipes volumes) |
+| `npm run db:seed` | idempotent dev seed (refuses to run against staging/production) — creates two dev users, `admin@memoflow.dev` / `writer@memoflow.dev` (password `dev-password-123`) |
+| `npm run smoke` | boots the app and polls `/health`; set `SMOKE_BASE_URL` to smoke a deployed environment instead |
+| `npm run migration:generate -- src/infrastructure/persistence/migrations/<Name>` | generate migration from entity diff |
+| `npm run migration:run` / `migration:revert` / `migration:show` | apply / revert / list migrations |
 
-# production mode
-$ npm run start:prod
-```
+## Authentication & endpoints
 
-## Run tests
+Users live in PostgreSQL. Passwords are hashed with bcrypt; auth uses JWTs issued
+via `@nestjs/jwt` and validated by Passport-JWT.
 
-```bash
-# unit tests
-$ npm run test
+| method | path | auth | notes |
+| --- | --- | --- | --- |
+| `POST` | `/auth/register` | — | creates a user, returns the user (no password hash) |
+| `POST` | `/auth/login` | — | returns `{ accessToken }`; updates `last_active_at` |
+| `GET` | `/users/me` | JWT | the authenticated user |
+| `GET` | `/users/:id` | JWT | fetch a user by id |
 
-# e2e tests
-$ npm run test:e2e
+Protected routes require `Authorization: Bearer <accessToken>`. Full request/response
+shapes are in Swagger (`/docs`).
 
-# test coverage
-$ npm run test:cov
-```
+## Environment variables
 
-## Deployment
+Beyond the database connection vars, auth requires:
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+| var | required | default | notes |
+| --- | --- | --- | --- |
+| `JWT_SECRET` | yes | — | signing key for access tokens; must be a long random value outside dev |
+| `JWT_EXPIRES_IN` | no | `15m` | access token lifetime |
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+See [`.env.example`](.env.example) for the full list (`NODE_ENV`, `PORT`,
+`MONGODB_URI`, `POSTGRES_*`).
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
+## Architecture
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Clean architecture: each feature is a vertical slice across four layers —
+`src/domain` (entities + repository interfaces), `src/application` (use-cases),
+`src/infrastructure/persistence` (TypeORM/Mongoose implementations — the only layer
+that touches a database library), and `src/presentation` (controllers + validated
+DTOs). Shared plumbing (exception filter, logging, health) lives in `src/shared`;
+env validation in `src/config`.
 
-## Resources
+## Branching & environments (gitflow)
 
-Check out a few resources that may come in handy when working with NestJS:
+| branch | environment | role |
+| --- | --- | --- |
+| `main` | production | releases only, tagged |
+| `staging` | staging | pre-production validation (release-branch role) |
+| `development` | dev | integration — all feature PRs target this |
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+Work happens on `feature/<slug>` / `bugfix/<slug>` branches off `development`
+(`hotfix/<slug>` off `main`); promotion is one-way via PR:
+`development` → `staging` → `main`. Database migrations are applied per environment
+at deploy time — `synchronize` is always off.
 
-## Support
+## CI/CD
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+GitHub Actions (`.github/workflows/`):
 
-## Stay in touch
+- `ci.yml` — on every PR to `development`/`staging`/`main`: lint, build, unit tests,
+  e2e tests (Testcontainers PostgreSQL + in-memory Mongo; hard-fails if the e2e
+  Docker suite would skip).
+- `deploy-dev.yml` — on push to `development`: run migrations, trigger a Render
+  deploy hook, then smoke-check via `scripts/smoke.sh`. Gated by the GitHub
+  Environment `development`.
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+The `development` tier deploys to **Render** (see [`render.yaml`](render.yaml) for the
+web service + managed Postgres blueprint). Render has no managed MongoDB, so dev
+MongoDB is an external **MongoDB Atlas M0 (free tier)** instance, with its connection
+string set manually as the `MONGODB_URI` secret. Staging and production deploy
+targets are not yet decided.
 
-## License
+## Documentation
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- [`docs/database-schema.md`](docs/database-schema.md) — authoritative data design
+  (tables, collections, indexes, which database each entity lives in).
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — feature roadmap with per-item specs and
+  current status.
+- [`docs/diagrams/`](docs/diagrams/) — diagrams authored in
+  [D2](https://d2lang.com) (`.d2` sources) with rendered SVGs committed alongside.
+  Regenerate with `d2 <name>.d2 <name>.svg`.
