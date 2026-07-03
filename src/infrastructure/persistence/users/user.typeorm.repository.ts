@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { User } from '../../../domain/users/user.entity';
 import {
   CreateUserData,
@@ -31,8 +31,22 @@ export class UserTypeOrmRepository implements UserRepository {
       passwordHash: data.passwordHash,
       displayName: data.displayName,
     });
-    const saved = await this.repository.save(entity);
-    return this.toDomain(saved);
+    try {
+      const saved = await this.repository.save(entity);
+      return this.toDomain(saved);
+    } catch (err) {
+      // The use-case pre-checks the email, but two concurrent registrations
+      // can both pass that check and race to INSERT. The DB unique constraint
+      // is the real guard; map its violation (Postgres 23505) to a 409 so the
+      // loser gets the documented ConflictException instead of a 500.
+      if (
+        err instanceof QueryFailedError &&
+        (err.driverError as { code?: string }).code === '23505'
+      ) {
+        throw new ConflictException('Email is already registered');
+      }
+      throw err;
+    }
   }
 
   async updateLastActiveAt(id: string): Promise<void> {
