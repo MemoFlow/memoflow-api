@@ -72,8 +72,14 @@ feature or endpoint:
      environments, or roadmap status changed. Diagrams are D2 sources in
      `docs/diagrams/` rendered to SVG (`d2 <name>.d2 <name>.svg`, both committed).
 4. **Commit** via `/commit` — only after reviewers return APPROVE; re-run step 3 on
-   fix-ups. (The global hook enforces the `/commit` routing; the reviewers-APPROVE
-   gate is orchestrator discipline, not hook-enforced.)
+   fix-ups. (The global hook enforces the `/commit` routing.) The **`code-reviewer`
+   APPROVE gate is hook-enforced**: the `PreToolUse` hook
+   `.claude/hooks/pre-commit-review-gate.py` blocks the `/commit` apply step until
+   the current `git diff HEAD` has been approved. After `code-reviewer` returns
+   APPROVE, record it so the gate opens:
+   `git diff HEAD | sha256sum | cut -d' ' -f1 > "$(git rev-parse --git-dir)/code-review-ok"`.
+   Any further edit changes the diff hash and re-arms the gate. Deliberate bypass:
+   prefix the commit with `SKIP_CODE_REVIEW=1`.
 5. **CI/CD** (`devops`) — pipeline or deployment changes, as their own step.
 
 ### Parallelism rules
