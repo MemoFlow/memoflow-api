@@ -1,0 +1,38 @@
+name: Branch naming
+
+# Enforces Conventional-Commit-style branch names on every PR.
+# Allowed: <type>/<slug> where type is a Conventional Commit type (feat, fix, docs,
+# refactor, perf, test, build, ci, chore, style, revert) or `hotfix`. The legacy
+# gitflow prefixes `feature`/`bugfix` are still accepted for in-flight branches.
+# Long-lived branches (development, staging, main) are exempt so promotion PRs pass.
+
+on:
+  pull_request:
+    branches: [development, staging, main]
+
+permissions:
+  contents: read
+
+jobs:
+  branch-name:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate head branch name
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          allowed='^(feat|feature|fix|bugfix|hotfix|docs|refactor|perf|test|build|ci|chore|style|revert)/[a-z0-9._-]+$'
+          longlived='^(development|staging|main)$'
+          if [[ "$HEAD_REF" =~ $longlived ]]; then
+            echo "Long-lived branch '$HEAD_REF' (promotion PR) — OK."
+            exit 0
+          fi
+          if [[ "$HEAD_REF" =~ $allowed ]]; then
+            echo "Branch '$HEAD_REF' follows the naming convention — OK."
+            exit 0
+          fi
+          echo "::error::Branch '$HEAD_REF' is not a conventional branch name."
+          echo "Use '<type>/<slug>' where <type> is one of:"
+          echo "  feat fix hotfix docs refactor perf test build ci chore style revert"
+          echo "Example: feat/user-auth, fix/token-expiry, ci/branch-naming"
+          exit 1
