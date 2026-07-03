@@ -17,7 +17,7 @@ and `/commit`, like any other change (see CLAUDE.md gitflow rules).
 | PR → `development` (and PRs between long-lived branches) | CI: lint, build, unit tests, e2e |
 | push to `development` | deploy to **dev** |
 | push to `staging` | deploy to **staging** |
-| push to `main` | deploy to **production** (tag the release) |
+| push to `main` | deploy to **production**, then run the release job (see **Release & versioning**) |
 | `hotfix/*` PRs → `main` | full CI, no shortcuts |
 
 ## CI rules
@@ -49,6 +49,38 @@ and `/commit`, like any other change (see CLAUDE.md gitflow rules).
   never work around that guard in a workflow).
 - Secrets live only in GitHub Environments; nothing secret is ever committed,
   echoed to logs, or passed as a workflow input default.
+
+## Release & versioning (conventional versioning)
+
+The project version is **SemVer derived from Conventional Commits** — never bumped by
+hand. Tooling is `commit-and-tag-version` (`npm run release`), configured in
+`.versionrc.json`. Bump rules from commits since the last `v*` tag: `fix:` → patch,
+`feat:` → minor, `!`/`BREAKING CHANGE:` → major. While the version is `0.x`, breaking
+changes bump the minor, not the major; the jump to `1.0.0` is a deliberate human call
+made with `npm run release:first` / an explicit `--release-as`, not automated.
+
+- **The release runs only in the `main`-push (production) workflow** — never on
+  `development` or `staging` pushes. Order: CI green → migrate → deploy production →
+  smoke → **release job**. Running the release before a green deploy would tag a build
+  that never shipped.
+- The release job runs `npm run release`, which updates `package.json`, writes/prepends
+  `CHANGELOG.md`, creates the `chore(release): x.y.z` commit, and tags `vX.Y.Z`. It then
+  pushes the commit **and** the tag back to `main` with `--follow-tags`. `npm run release`
+  is the `scripts/release.sh` wrapper; it runs the mutating release because CI sets
+  `CI=true` — the same wrapper **refuses** a mutating release on a local shell.
+- This release commit is the **one sanctioned automated commit to `main`** (the gitflow
+  "never commit directly to main" rule is about human work; cite CLAUDE.md's versioning
+  bullet). Put `[skip ci]` in the release commit subject so pushing it does not retrigger
+  the production deploy in a loop, and use `concurrency` so a release cannot overlap a deploy.
+- The bump must not diverge across branches: open an automated backport PR
+  `main` → `development` for the release commit (carry it to `staging` on the next
+  promotion). Versions flow **down** just as code flows **up**.
+- A mutating release outside CI is blocked by `scripts/release.sh` (refuses unless
+  `CI=true` or an explicit `RELEASE_ALLOW_LOCAL=1` override); local authoring/preview
+  uses `npm run release:dry`, which is always allowed. The `1.0.0` cut is the deliberate
+  case for the override: `RELEASE_ALLOW_LOCAL=1 npm run release:first`.
+- The push needs a token with `contents: write`; the workflow's top-level `permissions:`
+  stays `contents: read` and the release job alone elevates to `contents: write`.
 
 ## Workflow hygiene
 

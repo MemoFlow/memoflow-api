@@ -19,6 +19,7 @@ creating or changing any entity; update it in the same PR as schema changes.
 | `npm run smoke` | boots the app and polls `/health` |
 | `npm run migration:generate -- src/infrastructure/persistence/migrations/<Name>` | generate migration from entity diff |
 | `npm run migration:run` / `migration:revert` / `migration:show` | apply / revert / list migrations |
+| `npm run release` / `release:dry` / `release:first` | bump version + `CHANGELOG.md` + tag from Conventional Commits — mutating release CI-only, guarded by `scripts/release.sh`; `dry` previews (always allowed), `first` cuts the initial release |
 
 Copy `.env.example` to `.env` before first run. Swagger UI: `http://localhost:3000/docs`.
 
@@ -95,12 +96,26 @@ feature or endpoint:
   `staging` plays the role of gitflow's release branch — validated in the staging
   environment before promotion; fixes found there land as `bugfix/<slug>` off
   `development` and re-promote.
-- Never commit directly to `main`, `staging`, or `development` — all work lands via PR.
+- Never commit directly to `main`, `staging`, or `development` — all human work lands
+  via PR. The sole exception is the automated `chore(release)` commit (see the
+  versioning bullet below).
 - New work branches off `development` as `feature/<slug>`; bug fixes as `bugfix/<slug>`.
 - `hotfix/<slug>` branches off `main`, merges back to `main`, `staging`, and `development`.
 - Migrations are applied per environment (`npm run migration:run` at deploy) in the
   same order they were promoted — never `synchronize`.
 - Commit messages remain Conventional Commits, authored via `/commit`.
+- **Versioning is conventional (SemVer from commits).** The version is never bumped by
+  hand: `commit-and-tag-version` (`npm run release`, config `.versionrc.json`) derives
+  the next version from the Conventional Commits since the last `v*` tag — `fix:` →
+  patch, `feat:` → minor, `!`/`BREAKING CHANGE:` → major (while `0.x`, breaking bumps
+  the minor; `1.0.0` is a deliberate `release:first` call). `npm run release` goes
+  through `scripts/release.sh`, which **refuses** a mutating release outside CI (override
+  `RELEASE_ALLOW_LOCAL=1` for the deliberate `1.0.0` cut). The release job runs **only
+  on push to `main`** (production), commits `chore(release): x.y.z` + `CHANGELOG.md`,
+  and tags `vX.Y.Z`. That automated `chore(release)` commit is the **only** commit
+  allowed directly on `main`; it is backported to `development` so versions never
+  diverge. `CHANGELOG.md` is generated, never hand-edited. The `devops` agent owns the
+  release job.
 
 ### Model tiering (deliberate — keep explicit, never leave to default)
 

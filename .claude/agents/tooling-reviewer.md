@@ -40,6 +40,14 @@ Check, in priority order:
    `scripts/`; the model-tiering section lists every agent with the model actually
    pinned in its frontmatter; every agent or skill CLAUDE.md references exists (and
    vice versa: new agents/skills are documented there in the same commit).
+6. **Conventional versioning** — the project version is SemVer derived from
+   Conventional Commits via `commit-and-tag-version`; flag any hand-bump of
+   `package.json`'s `version` or hand-edit of `CHANGELOG.md` in a normal feature PR
+   (only the automated `chore(release)` commit may touch them). `.versionrc.json` must
+   stay valid and its `type` entries must be real Conventional Commit types; the
+   `release*` scripts in package.json must exist and route through `scripts/release.sh`
+   (the CI-only guard — verify it actually refuses a mutating release outside CI, per
+   rule 4, rather than merely claiming to). Cite CLAUDE.md's versioning bullet.
 
 Report format: one finding per line — `severity (blocker/warn) — file:line — what and
 why, citing the rule`. End with a verdict: **APPROVE** (no blockers) or **REQUEST

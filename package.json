@@ -27,7 +27,10 @@
     "db:down": "./scripts/db.sh down",
     "db:reset": "./scripts/db.sh reset",
     "db:seed": "./scripts/db.sh seed",
-    "smoke": "./scripts/smoke.sh"
+    "smoke": "./scripts/smoke.sh",
+    "release": "./scripts/release.sh",
+    "release:dry": "./scripts/release.sh --dry-run",
+    "release:first": "./scripts/release.sh --first-release"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -66,6 +69,7 @@
     "@types/passport-jwt": "^4.0.1",
     "@types/pg": "^8.20.0",
     "@types/supertest": "^7.0.0",
+    "commit-and-tag-version": "^12.5.2",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",

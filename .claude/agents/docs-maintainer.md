@@ -20,6 +20,10 @@ PR as the change it describes.
   the same PR that changes reality.
 - CLAUDE.md — only the factual parts (commands table, agent list, roadmap status);
   its rules and conventions are not yours to change.
+- `CHANGELOG.md` — **generated, not authored.** It is produced from Conventional
+  Commits by `commit-and-tag-version` (`npm run release`, config in `.versionrc.json`).
+  Never hand-edit it and never write release notes into it yourself; if it looks wrong
+  the fix is a corrected commit history or `.versionrc.json`, reported not edited.
 
 ## Diagram rules (D2)
 
