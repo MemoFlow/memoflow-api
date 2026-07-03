@@ -141,6 +141,22 @@ GitHub Actions (`.github/workflows/`):
 - `deploy-dev.yml` — on push to `development`: run migrations, trigger a Render
   deploy hook, then smoke-check via `scripts/smoke.sh`. Gated by the GitHub
   Environment `development`.
+- `notify-review.yml` — on a PR to `development`/`staging`/`main` being opened or
+  marked ready for review (non-draft only): posts the PR recap to Discord and pings
+  a reviewer role.
+
+### CI secrets
+
+These are **GitHub Actions secrets**, not application env vars — they are consumed
+only inside workflow runs and must not be added to `.env.example`.
+
+| secret | purpose |
+| --- | --- |
+| `DISCORD_WEBHOOK_URL` | Incoming webhook URL for the reviewer channel (`notify-review.yml`). |
+| `DISCORD_REVIEWER_ROLE_ID` | Numeric Discord role id pinged when a PR is ready for review (`notify-review.yml`). |
+
+If either is unset, `notify-review.yml` soft-skips (a `::warning::`, no failure) —
+it never blocks the PR.
 
 The `development` tier deploys to **Render** (see [`render.yaml`](render.yaml) for the
 web service + managed Postgres blueprint). Render has no managed MongoDB, so dev
