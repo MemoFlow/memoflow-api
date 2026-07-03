@@ -1,17 +1,10 @@
-import {
-  Column,
-  CreateDateColumn,
-  Entity,
-  Index,
-  PrimaryGeneratedColumn,
-} from 'typeorm';
+import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity('users')
 export class UserOrmEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Index({ unique: true })
   @Column({ type: 'varchar', unique: true })
   email: string;
 
@@ -31,6 +24,12 @@ export class UserOrmEntity {
   @Column({ type: 'int', default: 1 })
   level: number;
 
-  @CreateDateColumn({ type: 'timestamptz', name: 'last_active_at' })
+  // Mutable "last seen" timestamp, updated on login — not an immutable
+  // creation time, so a plain column (not @CreateDateColumn) is correct.
+  @Column({
+    type: 'timestamptz',
+    name: 'last_active_at',
+    default: () => 'now()',
+  })
   lastActiveAt: Date;
 }
