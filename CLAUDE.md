@@ -57,6 +57,21 @@ and `src/config/` (env validation).
 3. Run the `api-reviewer` agent on the diff **before every commit**.
 4. Commit via `/commit` (global hook enforces this).
 
+### Branching & commits (gitflow — mandatory)
+
+- Three long-lived branches, each deployed to its environment:
+  `development` → dev, `staging` → staging, `main` → production.
+- Promotion is one-way via PR: `development` → `staging` → `main` (tagged on `main`).
+  `staging` plays the role of gitflow's release branch — validated in the staging
+  environment before promotion; fixes found there land as `bugfix/<slug>` off
+  `development` and re-promote.
+- Never commit directly to `main`, `staging`, or `development` — all work lands via PR.
+- New work branches off `development` as `feature/<slug>`; bug fixes as `bugfix/<slug>`.
+- `hotfix/<slug>` branches off `main`, merges back to `main`, `staging`, and `development`.
+- Migrations are applied per environment (`npm run migration:run` at deploy) in the
+  same order they were promoted — never `synchronize`.
+- Commit messages remain Conventional Commits, authored via `/commit`.
+
 ### Model tiering (deliberate — keep explicit, never leave to default)
 
 - **Orchestrator (this session): `opus`** — pinned in `.claude/settings.json`. Makes architecture decisions and runs the scaffolding skills.
