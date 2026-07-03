@@ -53,6 +53,14 @@ export class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   POSTGRES_DB: string;
+
+  @IsString()
+  @IsNotEmpty()
+  JWT_SECRET: string;
+
+  @IsOptional()
+  @IsString()
+  JWT_EXPIRES_IN: string = '15m';
 }
 
 export function validate(

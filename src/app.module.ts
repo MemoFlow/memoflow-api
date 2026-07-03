@@ -6,6 +6,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { validate } from './config/env.validation';
 import { HealthModule } from './shared/health/health.module';
+import { UsersModule } from './users.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { HealthModule } from './shared/health/health.module';
       }),
     }),
     HealthModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

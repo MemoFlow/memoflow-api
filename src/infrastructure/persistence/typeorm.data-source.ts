@@ -12,6 +12,8 @@ export default new DataSource({
   username: process.env.POSTGRES_USER,
   password: process.env.POSTGRES_PASSWORD,
   database: process.env.POSTGRES_DB,
-  entities: ['src/**/*.entity.ts'],
+  // Only TypeORM entities (`*.orm-entity.ts`) — domain entities (`*.entity.ts`)
+  // are plain classes with no typeorm decorators and must stay out of this glob.
+  entities: ['src/**/*.orm-entity.ts'],
   migrations: ['src/infrastructure/persistence/migrations/*.ts'],
 });
