@@ -41,7 +41,10 @@ export class SubmitPlanningJobUseCase {
     });
 
     try {
-      await this.promptQueue.enqueue({ jobId: created.id });
+      await this.promptQueue.enqueue({
+        jobId: created.id,
+        userId: created.userId,
+      });
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : 'Failed to enqueue job';

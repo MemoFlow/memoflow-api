@@ -59,18 +59,34 @@ via `@nestjs/jwt` and validated by Passport-JWT.
 Protected routes require `Authorization: Bearer <accessToken>`. Full request/response
 shapes are in Swagger (`/docs`).
 
-### Planning jobs (async, REST-only for now)
+### Planning jobs (async, real-time over WebSocket)
 
 `POST /planning-jobs` never runs planning synchronously in the request: it writes a
 `pending` job to MongoDB (`planning_jobs`) and enqueues it on the Redis/BullMQ
 `planning` queue, returning immediately. An in-process worker (`@Processor`) then
 picks the job up and processes it through the context-gatherer + LLM-planner ports —
 **both are stubs today** (they echo the prompt back as the result), since real
-connector/LLM logic lands with roadmap items 5 and 7. The client polls
-`GET /planning-jobs/:id` to see the job move from `pending` → `running` →
-`completed`/`failed` and to read the (stub) result. There is no WebSocket push yet —
-that lands in a later Context-module branch. Full request/response shapes are in
-Swagger (`/docs`).
+connector/LLM logic lands with roadmap items 5 and 7.
+
+The frontend gets the result pushed in real time over WebSocket (`@nestjs/websockets`
++ socket.io) instead of only polling:
+
+- Connect with the same JWT used for REST, passed in the socket.io handshake as
+  `auth.token` (not an `Authorization` header — browsers can't set WS headers). A
+  missing or invalid token disconnects the socket immediately.
+- Each socket is joined server-side to a room derived from the verified token
+  (`user:<id>`) — a client only ever receives events for its own planning jobs.
+- Three events relay a job's lifecycle, one terminal event per outcome:
+  `planning.status` (`running`), `planning.completed` (with `result`),
+  `planning.failed` (with `errorCode`/`errorMessage`).
+- After connecting (or reconnecting), emit `subscribe { jobId }` to get that job's
+  *current* state immediately — covers a client that connects after the job already
+  finished, or reconnects mid-job.
+
+Delivery is **best-effort, at-most-once** — MongoDB `planning_jobs` remains the
+durable source of truth. `GET /planning-jobs/:id` stays available as the REST
+fallback for clients without a live WebSocket connection. Full request/response and
+event shapes are in Swagger (`/docs`).
 
 ## Environment variables
 
@@ -83,7 +99,7 @@ Beyond the database connection vars, auth requires:
 | `REDIS_HOST` | yes | — | Redis host for the BullMQ planning queue |
 | `REDIS_PORT` | yes | — | Redis port (`0`–`65535`) |
 | `REDIS_PASSWORD` | no | — | Redis auth password, if required |
-| `WS_CORS_ORIGIN` | no | `*` | frontend origin allowed to open the (future) planning WebSocket; `*` is dev-only — set explicitly in staging/production |
+| `WS_CORS_ORIGIN` | no | `*` | frontend origin allowed to open the planning WebSocket; `*` is dev-only — must be set explicitly in staging/production, never `*` |
 
 See [`.env.example`](.env.example) for the full list (`NODE_ENV`, `PORT`,
 `MONGODB_URI`, `POSTGRES_*`).

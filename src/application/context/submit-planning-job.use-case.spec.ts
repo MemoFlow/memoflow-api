@@ -67,14 +67,14 @@ class InMemoryPlanningJobRepository implements PlanningJobRepository {
 }
 
 class StubPromptQueue implements PromptQueue {
-  public enqueued: { jobId: string }[] = [];
+  public enqueued: { jobId: string; userId: string }[] = [];
   private readonly shouldThrow: boolean;
 
   constructor(shouldThrow = false) {
     this.shouldThrow = shouldThrow;
   }
 
-  enqueue(job: { jobId: string }): Promise<void> {
+  enqueue(job: { jobId: string; userId: string }): Promise<void> {
     if (this.shouldThrow) {
       return Promise.reject(new Error('redis unavailable'));
     }
@@ -96,7 +96,7 @@ describe('SubmitPlanningJobUseCase', () => {
     });
 
     expect(result.status).toBe(JobStatus.Pending);
-    expect(queue.enqueued).toEqual([{ jobId: result.id }]);
+    expect(queue.enqueued).toEqual([{ jobId: result.id, userId: 'user-1' }]);
   });
 
   it('marks the job failed and throws 503 when enqueue fails', async () => {

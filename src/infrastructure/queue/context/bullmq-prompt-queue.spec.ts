@@ -5,11 +5,14 @@ describe('BullMqPromptQueue', () => {
     const queue = { add: jest.fn().mockResolvedValue(undefined) };
     const promptQueue = new BullMqPromptQueue(queue as any);
 
-    await promptQueue.enqueue({ jobId: '507f1f77bcf86cd799439011' });
+    await promptQueue.enqueue({
+      jobId: '507f1f77bcf86cd799439011',
+      userId: 'user-1',
+    });
 
     expect(queue.add).toHaveBeenCalledWith(
       'planning',
-      { jobId: '507f1f77bcf86cd799439011' },
+      { jobId: '507f1f77bcf86cd799439011', userId: 'user-1' },
       {
         jobId: '507f1f77bcf86cd799439011',
         attempts: 3,

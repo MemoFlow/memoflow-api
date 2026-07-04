@@ -22,8 +22,8 @@ export class PlanningProcessor extends WorkerHost {
     super();
   }
 
-  async process(job: Job<{ jobId: string }>): Promise<void> {
-    const { jobId } = job.data;
+  async process(job: Job<{ jobId: string; userId: string }>): Promise<void> {
+    const { jobId, userId } = job.data;
 
     try {
       const { processed, job: finalJob } =
@@ -41,18 +41,21 @@ export class PlanningProcessor extends WorkerHost {
 
       this.eventEmitter.emit('planning.status', {
         jobId,
+        userId,
         status: JobStatus.Running,
       });
 
       if (finalJob.status === JobStatus.Completed) {
         this.eventEmitter.emit('planning.completed', {
           jobId,
+          userId,
           status: finalJob.status,
           result: finalJob.result,
         });
       } else if (finalJob.status === JobStatus.Failed) {
         this.eventEmitter.emit('planning.failed', {
           jobId,
+          userId,
           status: finalJob.status,
           errorCode: finalJob.errorCode,
           errorMessage: finalJob.errorMessage,
@@ -66,6 +69,7 @@ export class PlanningProcessor extends WorkerHost {
       );
       this.eventEmitter.emit('planning.failed', {
         jobId,
+        userId,
         status: JobStatus.Failed,
         errorCode: 'PROCESSING_FAILED',
         errorMessage,
