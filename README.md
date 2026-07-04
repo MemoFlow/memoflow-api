@@ -6,6 +6,8 @@ connectors. Built with [NestJS 11](https://nestjs.com) on a **dual-database** de
 - **PostgreSQL** (primary) — everything relational, via TypeORM with migrations only.
 - **MongoDB** (specialist) — exactly two collections (`document_versions`,
   `planning_jobs`), via Mongoose.
+- **Redis** — BullMQ-backed async job queue (AOF persistence), used by the Context
+  module's planning-job pipeline.
 
 The full data design lives in [`docs/database-schema.md`](docs/database-schema.md)
 (source of truth) and is visualized in
@@ -20,12 +22,12 @@ Prerequisites: Node 24+, Docker (with compose).
 ```bash
 cp .env.example .env   # localhost defaults, works out of the box
 npm install
-npm run db:up          # postgres:16 + mongo:7 via docker compose
+npm run db:up          # postgres:16 + mongo:7 + redis:7 via docker compose
 npm run start:dev
 ```
 
 - Swagger UI: http://localhost:3000/docs
-- Health (checks both databases): http://localhost:3000/health
+- Health (checks Postgres, MongoDB, and Redis): http://localhost:3000/health
 
 ## Commands
 
@@ -63,6 +65,10 @@ Beyond the database connection vars, auth requires:
 | --- | --- | --- | --- |
 | `JWT_SECRET` | yes | — | signing key for access tokens; must be a long random value outside dev |
 | `JWT_EXPIRES_IN` | no | `15m` | access token lifetime |
+| `REDIS_HOST` | yes | — | Redis host for the BullMQ planning queue |
+| `REDIS_PORT` | yes | — | Redis port (`0`–`65535`) |
+| `REDIS_PASSWORD` | no | — | Redis auth password, if required |
+| `WS_CORS_ORIGIN` | no | `*` | frontend origin allowed to open the (future) planning WebSocket; `*` is dev-only — set explicitly in staging/production |
 
 See [`.env.example`](.env.example) for the full list (`NODE_ENV`, `PORT`,
 `MONGODB_URI`, `POSTGRES_*`).
@@ -166,6 +172,9 @@ targets are not yet decided.
 
 ## Documentation
 
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — system architecture: service topology,
+  module boundaries, and shared infrastructure (including the Context module's
+  bounded async backbone and future extraction triggers).
 - [`docs/database-schema.md`](docs/database-schema.md) — authoritative data design
   (tables, collections, indexes, which database each entity lives in).
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — feature roadmap with per-item specs and

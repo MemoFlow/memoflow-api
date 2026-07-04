@@ -77,13 +77,42 @@ Legend: ✅ done · ◐ in progress · ☐ not started
   before writing; `api-reviewer` checks this. Save/list/restore endpoints.
 - Depends on item 2.
 
+## Context module async backbone (bounded) — ◐ Branch 1 of 3 done
+
+Foundation infra that roadmap item 5 (AI layer) depends on: a BullMQ (Redis) planning
+queue + WebSocket push + a `planning_jobs` skeleton, wired together by an
+EventEmitter2 completion signal. Runs **in-process** — one worker, one deployment,
+per `ARCHITECTURE.md` ("Service boundaries"). **gRPC and a separate worker
+deployment are explicitly deferred** to a future Context-module extraction, only if
+a concrete trigger from that section appears; not built now.
+
+Landing as three sequential branches off `development`, each reviewed/merged before
+the next starts:
+
+- ✅ **Branch 1 — `feature/context-queue-infra`** (foundation, no user-facing surface
+  yet): Redis added to `docker-compose.yml` (AOF persistence), `REDIS_HOST` /
+  `REDIS_PORT` / `REDIS_PASSWORD` / `WS_CORS_ORIGIN` env vars, BullMQ producer +
+  queue module, `planning_jobs` Mongo skeleton (schema + domain entity + repo —
+  subset of the documented fields, see `docs/database-schema.md`), Redis health
+  indicator (`/health` now reports postgres + mongodb + redis), `EventEmitter2` +
+  `enableShutdownHooks()`.
+- ☐ **Branch 2 — `feature/context-worker`**: `POST /planning-jobs` (202 + jobId) /
+  `GET /planning-jobs/:id` fallback, in-process `@Processor` worker running the
+  (stubbed) planning use-case, `EventEmitter2` completion events.
+- ☐ **Branch 3 — `feature/context-websocket`**: `planning.gateway.ts` — JWT-verified
+  WS handshake, server-derived per-user rooms, `subscribe {jobId}` catch-up, relays
+  `planning.status` / `planning.completed` / `planning.failed`.
+
+No REST endpoint or WebSocket exists yet — both land in Branches 2 and 3.
+
 ## 5. AI layer — ☐
 
 - PG: `prompts` (`feature_type`, `is_active` indexed), `ai_suggestions`
   (FKs → sections/users). Mongo: `planning_jobs` (status-indexed job lifecycle:
   pending/running/completed/failed, flexible `context_used`/`result` payloads).
 - Async job flow: enqueue → worker updates status → results fetched. Provider
-  integration details resolved at design time. Depends on items 2 and 4.
+  integration details resolved at design time. **Depends on items 2 and 4, and on
+  the Context module async backbone above** (queue/worker/WS foundation).
 
 ## 6. Gamification (PG) — ☐
 

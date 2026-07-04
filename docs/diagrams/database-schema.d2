@@ -159,12 +159,13 @@ mongo: MongoDB (specialist — Mongoose) {
     shape: sql_table
     _id: ObjectId {constraint: primary_key}
     user_id: "uuid (string)"
-    document_id: "uuid (string)"
-    section_id: "uuid (string)?"
+    document_id: "uuid (string)? (null until item 2)"
+    section_id: "uuid (string)? (null until item 2)"
     status: string
-    connectors: "string[]"
-    prompt_version: string
-    context_used: object
+    prompt: string
+    connectors: "string[] (unused until item 7)"
+    prompt_version: "string (item 5)"
+    context_used: "object (item 5)"
     result: object
     error_code: "string?"
     error_message: "string?"
@@ -178,4 +179,4 @@ mongo: MongoDB (specialist — Mongoose) {
 mongo.document_versions.document_id -> pg.documents.id: app-validated {style.stroke-dash: 4}
 mongo.document_versions.user_id -> pg.users.id: app-validated {style.stroke-dash: 4}
 mongo.planning_jobs.user_id -> pg.users.id: app-validated {style.stroke-dash: 4}
-mongo.planning_jobs.document_id -> pg.documents.id: app-validated {style.stroke-dash: 4}
+mongo.planning_jobs.document_id -> pg.documents.id: "app-validated (null until item 2)" {style.stroke-dash: 4}

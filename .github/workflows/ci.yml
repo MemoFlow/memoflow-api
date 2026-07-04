@@ -81,6 +81,23 @@ jobs:
     name: E2E tests
     needs: unit-test
     runs-on: ubuntu-latest
+    # PostgreSQL and MongoDB are provisioned by the test suite itself
+    # (Testcontainers PG + in-memory Mongo — see test/utils/), so they are
+    # deliberately NOT declared here. Redis has no such in-test bootstrap
+    # (BullMQ needs a real server, unlike mongodb-memory-server), so it's
+    # provided the standard GitHub Actions way: a services: container. This
+    # job has no `container:`, so it runs directly on the runner and the
+    # service is reachable at localhost, not the service name.
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -100,5 +117,13 @@ jobs:
       # (test/utils/pg-testcontainer.ts hard-fails when CI is set and Docker
       # is absent) — GitHub Actions sets CI=true automatically, so no extra
       # env or log-scraping is needed here.
+      #
+      # REDIS_HOST/REDIS_PORT satisfy env.validation.ts at AppModule boot
+      # (required, no default); REDIS_PASSWORD is left unset since the
+      # redis:7 service container above runs without auth. WS_CORS_ORIGIN
+      # is optional with a default and needs no override here.
       - name: Run e2e suite
+        env:
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
         run: npm run test:e2e
