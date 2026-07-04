@@ -21,6 +21,7 @@ export class ConnectorConnectionOrmEntity {
   @Column({ type: 'varchar' })
   provider: string;
 
+  @Index()
   @Column({ type: 'varchar', name: 'composio_account_id', nullable: true })
   composioAccountId: string | null;
 
