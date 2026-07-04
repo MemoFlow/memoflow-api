@@ -92,7 +92,7 @@ the OAuth flow this table supports.
 | id | uuid | PK |
 | user_id | uuid | FK → users, **indexed** |
 | provider | varchar | **indexed** (e.g. trello, notion, github) |
-| composio_account_id | varchar | Composio connected-account reference; nullable until initiated |
+| composio_account_id | varchar | Composio connected-account reference; nullable until initiated; **indexed** (webhook lookup) |
 | status | varchar | **indexed** (initiated / active / revoked / failed) |
 | connected_at | timestamptz | nullable — set when the connection goes active |
 | created_at | timestamptz | |

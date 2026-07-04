@@ -144,9 +144,16 @@ orchestrator. This API never sees or stores provider tokens — Composio is the 
 `connector_tokens` (encrypted `access_token`/`refresh_token`) is retired; the schema
 doc's `connector_connections` table (`composio_account_id` + `status`, no token
 columns) is the new source of truth. Flow: **initiate** (this API asks Composio for a
-connect URL) → **status** learned via Composio webhook + poll-on-read reconcile →
-**MCP selection push** to the external context engine so it can call the right
-provider MCP for a planning run. Feeds item 5's context engine. Depends on item 1.
+connect URL) → **status** learned via Composio webhook (primary) + poll-on-read
+reconcile (fallback, self-heals a missed webhook on `GET /connectors` /
+`GET /connectors/:id` while a connection is `initiated`; terminal states
+`revoked`/`failed` never revive from a stale webhook) → **revoke** (owner-initiated,
+tears down the Composio connection) → **MCP selection push** to the external context
+engine so it can call the right provider MCP for a planning run. Feeds item 5's
+context engine. Depends on item 1.
+
+**Branch status:** Branch 1 + Branch 2 implemented; Branch 3 (context-engine push)
+pending.
 
 - **Branch 1 (implemented)** — `connector_connections` PG table + migration;
   `POST /connectors/:provider/connect`, `GET /connectors`, `GET /connectors/:id`
@@ -154,9 +161,15 @@ provider MCP for a planning run. Feeds item 5's context engine. Depends on item 
   (required), `COMPOSIO_BASE_URL` (optional), `COMPOSIO_AUTH_CONFIG_IDS` (required,
   comma-separated `provider:authConfigId` map) in `env.validation.ts` +
   `.env.example`.
-- **Branch 2 (pending)** — Composio webhook intake (`POST /connectors/webhook`,
-  public, HMAC-signed via a planned `COMPOSIO_WEBHOOK_SECRET`) + poll-fallback
-  reconcile on read; connection revoke.
+- **Branch 2 (implemented)** — `POST /connectors/webhook` (public, Composio-signed:
+  verifies `webhook-id`/`webhook-timestamp`/`webhook-signature` via HMAC with
+  `COMPOSIO_WEBHOOK_SECRET`) updates connection status as the primary signal;
+  reconcile-on-read polls Composio and self-heals an `initiated` connection's status
+  on `GET /connectors` / `GET /connectors/:id` if a webhook was missed; `DELETE
+  /connectors/:id` (JWT-guarded, owner-scoped) revokes the Composio connection and
+  sets status `revoked`, returns 204. `composio_account_id` is now **indexed**
+  (migration `AddConnectorComposioAccountIndex`) since the webhook looks connections
+  up by it.
 - **Branch 3 (pending)** — MCP reference resolution + push to a planned external
   context-engine service (`CONTEXT_ENGINE_URL` / `CONTEXT_ENGINE_API_KEY`), replacing
   the stubbed context-gatherer with a real adapter.

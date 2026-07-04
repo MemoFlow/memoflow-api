@@ -56,8 +56,10 @@ via `@nestjs/jwt` and validated by Passport-JWT.
 | `POST` | `/planning-jobs` | JWT | submits a planning prompt; returns **202** + `{ job_id, status: "pending" }` |
 | `GET` | `/planning-jobs/:id` | JWT | fetch a planning job by id, owner-scoped |
 | `POST` | `/connectors/:provider/connect` | JWT | starts a Composio OAuth connection for a provider; returns `{ redirect_url, connection_id, status }` |
-| `GET` | `/connectors` | JWT | lists the caller's connector connections |
-| `GET` | `/connectors/:id` | JWT | fetch a connector connection by id, owner-scoped |
+| `GET` | `/connectors` | JWT | lists the caller's connector connections; reconciles any `initiated` connection against Composio first |
+| `GET` | `/connectors/:id` | JWT | fetch a connector connection by id, owner-scoped; reconciles if `initiated` |
+| `POST` | `/connectors/webhook` | — | Composio-signed webhook (public); updates a connection's status |
+| `DELETE` | `/connectors/:id` | JWT | owner-scoped; revokes the Composio connection, sets status `revoked`; returns **204** |
 
 Protected routes require `Authorization: Bearer <accessToken>`. Full request/response
 shapes are in Swagger (`/docs`).
@@ -69,8 +71,14 @@ is a hosted vault + MCP host: `POST /connectors/:provider/connect` asks Composio
 connect URL and stores a `connector_connections` row (`composio_account_id`, `status`)
 — never an access/refresh token. Response DTOs expose only
 `id, provider, status, connected_at, created_at`. Providers are an allowlist (trello,
-notion, github). Status transitions to `active` via a Composio webhook (planned) with
-poll-on-read reconcile as fallback; connectors then feed connector context into
+notion, github). Status transitions to `active` (or `failed`) via a **Composio
+webhook** (`POST /connectors/webhook`, public, verified via HMAC over
+`webhook-id`/`webhook-timestamp`/`webhook-signature` with `COMPOSIO_WEBHOOK_SECRET`)
+as the primary signal, with **reconcile-on-read** as fallback: any `GET /connectors`
+or `GET /connectors/:id` on an `initiated` connection re-checks Composio and
+self-heals a missed webhook. Terminal states (`revoked`/`failed`) never revive from a
+stale webhook. `DELETE /connectors/:id` (JWT, owner-scoped) revokes the connection at
+Composio and marks it `revoked`. Connectors then feed connector context into
 planning jobs (roadmap items 5 and 7). See
 [`docs/ROADMAP.md`](docs/ROADMAP.md#7-connectors-oauth-via-composio----in-progress) for
 current implementation status.
@@ -120,6 +128,7 @@ Beyond the database connection vars, auth requires:
 | `COMPOSIO_API_KEY` | yes | — | authenticates this API to Composio (the OAuth vault + MCP host for connectors) |
 | `COMPOSIO_BASE_URL` | no | — | override the Composio API base URL (defaults to Composio's hosted endpoint) |
 | `COMPOSIO_AUTH_CONFIG_IDS` | yes | — | comma-separated `provider:authConfigId` map, e.g. `trello:ac_...,notion:ac_...` |
+| `COMPOSIO_WEBHOOK_SECRET` | yes | — | HMAC secret used to verify `POST /connectors/webhook` signatures from Composio |
 
 See [`.env.example`](.env.example) for the full list (`NODE_ENV`, `PORT`,
 `MONGODB_URI`, `POSTGRES_*`).
