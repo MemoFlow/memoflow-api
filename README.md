@@ -53,9 +53,24 @@ via `@nestjs/jwt` and validated by Passport-JWT.
 | `POST` | `/auth/login` | — | returns `{ accessToken }`; updates `last_active_at` |
 | `GET` | `/users/me` | JWT | the authenticated user |
 | `GET` | `/users/:id` | JWT | fetch a user by id |
+| `POST` | `/planning-jobs` | JWT | submits a planning prompt; returns **202** + `{ job_id, status: "pending" }` |
+| `GET` | `/planning-jobs/:id` | JWT | fetch a planning job by id, owner-scoped |
 
 Protected routes require `Authorization: Bearer <accessToken>`. Full request/response
 shapes are in Swagger (`/docs`).
+
+### Planning jobs (async, REST-only for now)
+
+`POST /planning-jobs` never runs planning synchronously in the request: it writes a
+`pending` job to MongoDB (`planning_jobs`) and enqueues it on the Redis/BullMQ
+`planning` queue, returning immediately. An in-process worker (`@Processor`) then
+picks the job up and processes it through the context-gatherer + LLM-planner ports —
+**both are stubs today** (they echo the prompt back as the result), since real
+connector/LLM logic lands with roadmap items 5 and 7. The client polls
+`GET /planning-jobs/:id` to see the job move from `pending` → `running` →
+`completed`/`failed` and to read the (stub) result. There is no WebSocket push yet —
+that lands in a later Context-module branch. Full request/response shapes are in
+Swagger (`/docs`).
 
 ## Environment variables
 

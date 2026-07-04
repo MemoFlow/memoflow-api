@@ -1,3 +1,4 @@
+import { Error as MongooseError } from 'mongoose';
 import { JobStatus } from '../../../domain/context/planning-job';
 import { PlanningJobMongooseRepository } from './planning-job.mongoose.repository';
 
@@ -22,6 +23,10 @@ function fakeDoc(overrides: Record<string, unknown> = {}) {
     finished_at: null,
     ...overrides,
   };
+}
+
+function castError() {
+  return new MongooseError.CastError('ObjectId', 'not-an-object-id', '_id');
 }
 
 describe('PlanningJobMongooseRepository', () => {
@@ -74,6 +79,26 @@ describe('PlanningJobMongooseRepository', () => {
 
       expect(result).toBeNull();
     });
+
+    it('returns null (not a thrown error) when the id is not a valid ObjectId', async () => {
+      const exec = jest.fn().mockRejectedValue(castError());
+      const model = { findById: jest.fn().mockReturnValue({ exec }) };
+      const repository = new PlanningJobMongooseRepository(model as any);
+
+      const result = await repository.findById('not-an-object-id');
+
+      expect(result).toBeNull();
+    });
+
+    it('rethrows a non-CastError failure', async () => {
+      const exec = jest.fn().mockRejectedValue(new Error('connection lost'));
+      const model = { findById: jest.fn().mockReturnValue({ exec }) };
+      const repository = new PlanningJobMongooseRepository(model as any);
+
+      await expect(
+        repository.findById('507f1f77bcf86cd799439011'),
+      ).rejects.toThrow('connection lost');
+    });
   });
 
   describe('updateStatus', () => {
@@ -120,6 +145,68 @@ describe('PlanningJobMongooseRepository', () => {
         errorCode: 'ENQUEUE_FAILED',
         errorMessage: 'redis unavailable',
       });
+
+      expect(result).toBeNull();
+    });
+
+    it('returns null (not a thrown error) when the id is not a valid ObjectId', async () => {
+      const exec = jest.fn().mockRejectedValue(castError());
+      const model = {
+        findByIdAndUpdate: jest.fn().mockReturnValue({ exec }),
+      };
+      const repository = new PlanningJobMongooseRepository(model as any);
+
+      const result = await repository.updateStatus('not-an-object-id', {
+        status: JobStatus.Failed,
+      });
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('claimForProcessing', () => {
+    it('atomically claims a pending job, moving it to running', async () => {
+      const claimed = fakeDoc({ status: JobStatus.Running });
+      const exec = jest.fn().mockResolvedValue(claimed);
+      const model = {
+        findOneAndUpdate: jest.fn().mockReturnValue({ exec }),
+      };
+      const repository = new PlanningJobMongooseRepository(model as any);
+
+      const result = await repository.claimForProcessing(
+        '507f1f77bcf86cd799439011',
+      );
+
+      expect(model.findOneAndUpdate).toHaveBeenCalledWith(
+        { _id: '507f1f77bcf86cd799439011', status: JobStatus.Pending },
+        { status: JobStatus.Running, started_at: expect.any(Date) },
+        { new: true },
+      );
+      expect(result?.status).toBe(JobStatus.Running);
+    });
+
+    it('returns null when the job is not pending (already claimed/terminal)', async () => {
+      const exec = jest.fn().mockResolvedValue(null);
+      const model = {
+        findOneAndUpdate: jest.fn().mockReturnValue({ exec }),
+      };
+      const repository = new PlanningJobMongooseRepository(model as any);
+
+      const result = await repository.claimForProcessing(
+        '507f1f77bcf86cd799439011',
+      );
+
+      expect(result).toBeNull();
+    });
+
+    it('returns null (not a thrown error) when the id is not a valid ObjectId', async () => {
+      const exec = jest.fn().mockRejectedValue(castError());
+      const model = {
+        findOneAndUpdate: jest.fn().mockReturnValue({ exec }),
+      };
+      const repository = new PlanningJobMongooseRepository(model as any);
+
+      const result = await repository.claimForProcessing('not-an-object-id');
 
       expect(result).toBeNull();
     });

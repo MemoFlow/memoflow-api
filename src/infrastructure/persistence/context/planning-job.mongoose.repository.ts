@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import { PlanningJob } from '../../../domain/context/planning-job';
+import { Error as MongooseError, Model } from 'mongoose';
+import { JobStatus, PlanningJob } from '../../../domain/context/planning-job';
 import {
   CreatePlanningJobData,
   PlanningJobRepository,
@@ -31,7 +31,7 @@ export class PlanningJobMongooseRepository implements PlanningJobRepository {
   }
 
   async findById(id: string): Promise<PlanningJob | null> {
-    const found = await this.model.findById(id).exec();
+    const found = await this.runIdQuery(() => this.model.findById(id).exec());
     return found ? this.toDomain(found) : null;
   }
 
@@ -39,6 +39,51 @@ export class PlanningJobMongooseRepository implements PlanningJobRepository {
     id: string,
     patch: UpdatePlanningJobStatusData,
   ): Promise<PlanningJob | null> {
+    const update = this.toUpdateDoc(patch);
+    const updated = await this.runIdQuery(() =>
+      this.model.findByIdAndUpdate(id, update, { new: true }).exec(),
+    );
+    return updated ? this.toDomain(updated) : null;
+  }
+
+  async claimForProcessing(id: string): Promise<PlanningJob | null> {
+    // Atomic claim: only succeeds if the job is still `pending`, so a
+    // BullMQ stalled-job retry and a concurrent worker can't both flip the
+    // same job to `running` and reprocess it.
+    const claimed = await this.runIdQuery(() =>
+      this.model
+        .findOneAndUpdate(
+          { _id: id, status: JobStatus.Pending },
+          { status: JobStatus.Running, started_at: new Date() },
+          { new: true },
+        )
+        .exec(),
+    );
+    return claimed ? this.toDomain(claimed) : null;
+  }
+
+  /**
+   * Runs a query keyed on `_id` and translates a Mongoose `CastError` (a
+   * non-ObjectId id string, e.g. from `GET /planning-jobs/abc`) into "not
+   * found" instead of letting it propagate as an unhandled 500 — the
+   * application layer's null-check already yields the correct 404.
+   */
+  private async runIdQuery(
+    query: () => Promise<PlanningJobDocument | null>,
+  ): Promise<PlanningJobDocument | null> {
+    try {
+      return await query();
+    } catch (err) {
+      if (err instanceof MongooseError.CastError) {
+        return null;
+      }
+      throw err;
+    }
+  }
+
+  private toUpdateDoc(
+    patch: UpdatePlanningJobStatusData,
+  ): Record<string, unknown> {
     const update: Record<string, unknown> = { status: patch.status };
     if (patch.result !== undefined) update.result = patch.result;
     if (patch.errorCode !== undefined) update.error_code = patch.errorCode;
@@ -46,11 +91,7 @@ export class PlanningJobMongooseRepository implements PlanningJobRepository {
       update.error_message = patch.errorMessage;
     if (patch.startedAt !== undefined) update.started_at = patch.startedAt;
     if (patch.finishedAt !== undefined) update.finished_at = patch.finishedAt;
-
-    const updated = await this.model
-      .findByIdAndUpdate(id, update, { new: true })
-      .exec();
-    return updated ? this.toDomain(updated) : null;
+    return update;
   }
 
   private toDomain(doc: PlanningJobDocument): PlanningJob {
