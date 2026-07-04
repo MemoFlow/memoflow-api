@@ -1,0 +1,99 @@
+name: Notify reviewers (Discord)
+
+# Pings a Discord reviewer role with the PR's markdown recap when a PR becomes
+# ready for review. Requires two GitHub Actions secrets (CI-only, NOT app runtime
+# env — do not add these to .env.example):
+#   DISCORD_WEBHOOK_URL       - incoming webhook URL for the target channel
+#   DISCORD_REVIEWER_ROLE_ID  - numeric Discord role id to mention
+# If either secret is unset the job soft-skips (warning, no failure) so a PR is
+# never blocked because Discord isn't wired up yet.
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+    branches: [development, staging, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notify-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  notify:
+    name: Ping Discord reviewers
+    runs-on: ubuntu-latest
+    # `opened` fires for drafts too; `ready_for_review` never does. This guard
+    # suppresses the ping until the PR is actually ready for a reviewer.
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Post PR recap to Discord
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          DISCORD_REVIEWER_ROLE_ID: ${{ secrets.DISCORD_REVIEWER_ROLE_ID }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+
+          # Soft skip when Discord isn't configured — never block the PR.
+          if [ -z "${DISCORD_WEBHOOK_URL:-}" ] || [ -z "${DISCORD_REVIEWER_ROLE_ID:-}" ]; then
+            echo "::warning::DISCORD_WEBHOOK_URL or DISCORD_REVIEWER_ROLE_ID not set — skipping Discord notification."
+            exit 0
+          fi
+
+          # Map the PR base branch to the environment it deploys to.
+          case "$BASE_REF" in
+            main)        env_label="PRODUCTION" ;;
+            staging)     env_label="STAGING" ;;
+            development) env_label="DEVELOPMENT" ;;
+            *)           env_label="$BASE_REF" ;;
+          esac
+
+          # PR body verbatim = the same markdown recap the reviewer reads on the PR.
+          body="${PR_BODY:-}"
+          if [ -z "$body" ]; then
+            body="_(no description provided)_"
+          fi
+          # Discord embed description hard cap is 4096 chars; leave margin.
+          max=4000
+          if [ "${#body}" -gt "$max" ]; then
+            body="${body:0:$max}"$'\n\n…\n\n_(truncated — full recap on the PR)_'
+          fi
+
+          # Build JSON with jq --arg so quotes/newlines/$ in the PR body can't
+          # break the JSON, the shell, or inject extra mentions.
+          payload="$(jq -n \
+            --arg role "$DISCORD_REVIEWER_ROLE_ID" \
+            --arg title "🔍 Review requested → ${env_label} (${BASE_REF})" \
+            --arg url "$PR_URL" \
+            --arg prtitle "$PR_TITLE" \
+            --arg author "$PR_AUTHOR" \
+            --arg body "$body" \
+            '{
+              content: "<@&\($role)> **\($prtitle)** by \($author)\n\($url)",
+              allowed_mentions: { roles: [$role] },
+              embeds: [ {
+                title: $title,
+                url: $url,
+                description: $body
+              } ]
+            }')"
+
+          # Capture the HTTP status instead of letting curl's exit code kill the
+          # step: a transient Discord outage or timeout should warn, not fail a
+          # PR check (same "never block the PR" intent as the missing-secret skip).
+          http_code="$(printf '%s' "$payload" | curl -sS -o /dev/null -w '%{http_code}' \
+            --connect-timeout 10 --max-time 15 -X POST \
+            -H "Content-Type: application/json" \
+            --data @- \
+            "$DISCORD_WEBHOOK_URL")" || http_code="000"
+
+          case "$http_code" in
+            2*) echo "Discord notification sent for PR: $PR_URL" ;;
+            *)  echo "::warning::Discord webhook returned HTTP ${http_code} — notification not delivered (not blocking the PR)." ;;
+          esac

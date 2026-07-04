@@ -1,0 +1,19 @@
+{
+  "planPath": "docs/superpowers/plans/2026-07-04-discord-review-notify.md",
+  "tasks": [
+    {
+      "id": 1,
+      "subject": "Task 1: Create the notify-review workflow",
+      "status": "completed",
+      "description": "**Goal:** Add `.github/workflows/notify-review.yml` that posts the PR recap to Discord and pings the reviewer role, guarded and soft-skipping when unconfigured.\n\n**Files:**\n- Create: `.github/workflows/notify-review.yml`\n\n**Acceptance Criteria:**\n- Triggers on pull_request types [opened, ready_for_review] for bases development, staging, main.\n- Job guarded by `if: github.event.pull_request.draft == false`.\n- permissions: contents: read only.\n- Missing DISCORD_WEBHOOK_URL or DISCORD_REVIEWER_ROLE_ID -> ::warning:: + exit 0.\n- Role mention in content; allowed_mentions.roles scopes ping; PR body verbatim in embeds[0].description; env label in embeds[0].title.\n- PR body via jq --arg; empty -> _(no description provided)_; >4000 chars truncated.\n- actionlint clean.\n\n**Verify:** `actionlint .github/workflows/notify-review.yml` -> exit 0.\n\n```json:metadata\n{\"files\": [\".github/workflows/notify-review.yml\"], \"verifyCommand\": \"actionlint .github/workflows/notify-review.yml\", \"acceptanceCriteria\": [\"triggers opened+ready_for_review on dev/staging/main\", \"draft==false guard\", \"contents:read only\", \"missing secret soft-skips exit 0\", \"role mention in content with allowed_mentions.roles\", \"PR body verbatim in embed description via jq --arg\", \"env label in embed title\", \"actionlint clean\"], \"modelTier\": \"standard\", \"agent\": \"devops\"}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: Document the Discord CI secrets",
+      "status": "completed",
+      "blockedBy": [1],
+      "description": "**Goal:** Record the two new GitHub Actions secrets in README.md; state explicitly they are CI-only (not .env).\n\n**Files:**\n- Modify: `README.md`\n\n**Acceptance Criteria:**\n- README.md lists DISCORD_WEBHOOK_URL and DISCORD_REVIEWER_ROLE_ID with purpose each.\n- Notes they are GitHub Actions secrets, not app env vars, and unset -> soft-skip.\n- .env.example NOT modified.\n\n**Verify:** `grep -n DISCORD_ README.md` shows both; `grep -c DISCORD_ .env.example` -> 0.\n\n```json:metadata\n{\"files\": [\"README.md\"], \"verifyCommand\": \"grep -n DISCORD_ README.md && test $(grep -c DISCORD_ .env.example) -eq 0\", \"acceptanceCriteria\": [\"README lists both DISCORD_ secrets with purpose\", \"notes CI-only not app env + soft-skip\", \".env.example unmodified\"], \"modelTier\": \"standard\", \"agent\": \"docs-maintainer\"}\n```"
+    }
+  ],
+  "lastUpdated": "2026-07-04T00:00:00Z"
+}
