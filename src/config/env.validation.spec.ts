@@ -1,5 +1,10 @@
 import 'reflect-metadata';
-import { parsePostgresSsl, parseRedisTls, validate } from './env.validation';
+import {
+  parseComposioAuthConfigIds,
+  parsePostgresSsl,
+  parseRedisTls,
+  validate,
+} from './env.validation';
 
 function baseConfig(overrides: Record<string, unknown> = {}) {
   return {
@@ -12,6 +17,8 @@ function baseConfig(overrides: Record<string, unknown> = {}) {
     JWT_SECRET: 'test-secret',
     REDIS_HOST: 'localhost',
     REDIS_PORT: '6379',
+    COMPOSIO_API_KEY: 'composio-test-key',
+    COMPOSIO_AUTH_CONFIG_IDS: 'trello:ac_123,notion:ac_456,github:ac_789',
     ...overrides,
   };
 }
@@ -130,5 +137,76 @@ describe('parseRedisTls', () => {
 
   it('parses undefined as false', () => {
     expect(parseRedisTls(undefined)).toBe(false);
+  });
+});
+
+describe('env.validation COMPOSIO_*', () => {
+  it('requires COMPOSIO_API_KEY', () => {
+    const config = baseConfig();
+    delete (config as Record<string, unknown>).COMPOSIO_API_KEY;
+    expect(() => validate(config)).toThrow(/COMPOSIO_API_KEY/);
+  });
+
+  it('requires COMPOSIO_AUTH_CONFIG_IDS', () => {
+    const config = baseConfig();
+    delete (config as Record<string, unknown>).COMPOSIO_AUTH_CONFIG_IDS;
+    expect(() => validate(config)).toThrow(/COMPOSIO_AUTH_CONFIG_IDS/);
+  });
+
+  it('COMPOSIO_BASE_URL is optional', () => {
+    const result = validate(baseConfig());
+    expect(result.COMPOSIO_BASE_URL).toBeUndefined();
+  });
+
+  it('accepts an explicit COMPOSIO_BASE_URL', () => {
+    const result = validate(
+      baseConfig({ COMPOSIO_BASE_URL: 'https://backend.composio.dev' }),
+    );
+    expect(result.COMPOSIO_BASE_URL).toBe('https://backend.composio.dev');
+  });
+});
+
+describe('parseComposioAuthConfigIds', () => {
+  it('parses a comma-separated provider:authConfigId map', () => {
+    expect(
+      parseComposioAuthConfigIds('trello:ac_123,notion:ac_456,github:ac_789'),
+    ).toEqual({ trello: 'ac_123', notion: 'ac_456', github: 'ac_789' });
+  });
+
+  it('trims whitespace around entries and pairs', () => {
+    expect(
+      parseComposioAuthConfigIds(' trello : ac_123 , notion:ac_456 '),
+    ).toEqual({ trello: 'ac_123', notion: 'ac_456' });
+  });
+
+  it('returns an empty object for undefined/empty input', () => {
+    expect(parseComposioAuthConfigIds(undefined)).toEqual({});
+    expect(parseComposioAuthConfigIds('')).toEqual({});
+  });
+
+  it('throws a clear error on a malformed entry', () => {
+    expect(() => parseComposioAuthConfigIds('trello:ac_123,notion')).toThrow(
+      /Invalid COMPOSIO_AUTH_CONFIG_IDS entry "notion"/,
+    );
+  });
+
+  it('rejects an entry with a stray colon instead of truncating', () => {
+    expect(() => parseComposioAuthConfigIds('trello:ac:123')).toThrow(
+      /Invalid COMPOSIO_AUTH_CONFIG_IDS entry "trello:ac:123"/,
+    );
+  });
+
+  it('rejects a duplicate provider', () => {
+    expect(() =>
+      parseComposioAuthConfigIds('trello:ac_1,trello:ac_2'),
+    ).toThrow(/Duplicate COMPOSIO_AUTH_CONFIG_IDS provider "trello"/);
+  });
+});
+
+describe('env.validation eager COMPOSIO_AUTH_CONFIG_IDS check', () => {
+  it('fails boot on a malformed COMPOSIO_AUTH_CONFIG_IDS', () => {
+    expect(() =>
+      validate(baseConfig({ COMPOSIO_AUTH_CONFIG_IDS: 'trello:ac:123' })),
+    ).toThrow(/Invalid COMPOSIO_AUTH_CONFIG_IDS entry/);
   });
 });
