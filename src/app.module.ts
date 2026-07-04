@@ -6,6 +6,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { validate } from './config/env.validation';
+import { ConnectorsModule } from './connectors.module';
 import { ContextModule } from './context.module';
 import { HealthModule } from './shared/health/health.module';
 import { UsersModule } from './users.module';
@@ -42,6 +43,7 @@ import { UsersModule } from './users.module';
     HealthModule,
     UsersModule,
     ContextModule,
+    ConnectorsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
