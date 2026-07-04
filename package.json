@@ -33,6 +33,7 @@
     "release:first": "./scripts/release.sh --first-release"
   },
   "dependencies": {
+    "@composio/core": "0.13.1",
     "@nestjs/bullmq": "^11.0.4",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.4",
