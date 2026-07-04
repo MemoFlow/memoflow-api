@@ -1,5 +1,6 @@
-import { plainToInstance } from 'class-transformer';
+import { Transform, plainToInstance } from 'class-transformer';
 import {
+  IsBoolean,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -17,6 +18,16 @@ export const NODE_ENVS = [
   'test',
 ] as const;
 export type NodeEnv = (typeof NODE_ENVS)[number];
+
+/**
+ * Case-insensitive "true" check shared between the runtime config
+ * (env.validation.ts, via @Transform) and the standalone TypeORM CLI
+ * data source (typeorm.data-source.ts, reading process.env directly) so
+ * POSTGRES_SSL parses identically in both places.
+ */
+export function parsePostgresSsl(value: unknown): boolean {
+  return String(value).toLowerCase() === 'true';
+}
 
 export class EnvironmentVariables {
   @IsOptional()
@@ -53,6 +64,13 @@ export class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   POSTGRES_DB: string;
+
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ obj }: { obj: Record<string, unknown> }) =>
+    parsePostgresSsl(obj.POSTGRES_SSL),
+  )
+  POSTGRES_SSL: boolean = false;
 
   @IsString()
   @IsNotEmpty()
