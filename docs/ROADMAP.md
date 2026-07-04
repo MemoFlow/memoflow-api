@@ -122,6 +122,14 @@ Item 5 (AI layer) can now build on a complete async backbone (submit → queue �
 worker → push). Item 7's context-gatherer is real when `CONTEXT_ENGINE_URL` is set
 (stub fallback otherwise); the LLM planner stays stubbed until item 5 lands.
 
+**External context-engine transport — contract-defined, API-side implementation
+pending:** the async API↔context-engine transport is now specified in
+`docs/contracts/context-engine.md` as RabbitMQ both ways (`ctx.gather.requests`
+API→n8n, `ctx.gather.results` n8n→API, correlated by `job_id`), replacing the
+gRPC option considered in `ARCHITECTURE.md`. The current `ContextEngineHttpClient`
+(HTTP, see item 7 branch 3) remains the live code path until the RabbitMQ
+implementation task lands.
+
 ## 5. AI layer — ☐
 
 - PG: `prompts` (`feature_type`, `is_active` indexed), `ai_suggestions`

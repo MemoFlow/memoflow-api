@@ -76,7 +76,7 @@ The Context module is bounded now so it can become a standalone service later wi
 - Connector/LLM workload scales asymmetrically enough to warrant scaling it independently of the rest of the product.
 - The connector layer becomes a product in its own right (white-label, third-party exposure).
 
-At that point the extraction is a deployment change, not an architectural one — and the cross-service transport becomes relevant: a **gRPC server-stream** from the extracted Context service back to the Core API, relayed to the browser over the existing WebSocket, so token-by-token LLM output can render incrementally. Until then, gRPC is not needed; inside one process it is just a method call.
+At that point the extraction is a deployment change, not an architectural one — and the cross-service transport becomes relevant: it is defined as **RabbitMQ in both directions** (`ctx.gather.requests` API→Context service, `ctx.gather.results` Context service→API, correlated by `job_id`; see `docs/contracts/context-engine.md`), with the result relayed to the browser over the existing WebSocket so LLM planning output can render as it completes. gRPC was evaluated and dropped for this transport — it would require a public gRPC server on the extracted service (an inbound-streaming risk on PaaS targets like Render) where symmetric RabbitMQ needs no inbound listener on either side. Until extraction happens, none of this is needed; inside one process it is just a method call.
 
 ### Shared infrastructure
 
@@ -115,5 +115,5 @@ client requests a plan → Core API validates JWT and connector permissions → 
 - **Async for slow work.** Connector/LLM planning goes through BullMQ, never a synchronous in-request path, so latency-sensitive product calls stay responsive under LLM latency.
 - **PostgreSQL is the source of truth.** MongoDB holds only freeform specialist blobs; Redis only accelerates. Losing Redis is an inconvenience; losing PostgreSQL is a crisis. Cross-store references use the same UUIDs as PostgreSQL primary keys, so no ID-translation layer is needed.
 - **External dependencies are isolated.** LLM providers, connectors, and monitoring sit behind internal ports/adapters; internal code depends on internal abstractions, not vendor SDKs directly.
-- **Streaming stays a Core-API concern at the edge.** The browser always streams from the Core API over WebSocket. If/when the Context module becomes a separate service, it streams back to the Core API over gRPC, which relays — the frontend never learns there is a second service.
+- **Streaming stays a Core-API concern at the edge.** The browser always streams from the Core API over WebSocket. If/when the Context module becomes a separate service, it returns results to the Core API over the `ctx.gather.results` RabbitMQ queue (contract: `docs/contracts/context-engine.md`), which the Core API relays over WebSocket — the frontend never learns there is a second service.
 - **AI plans, it does not write.** The product deliberately assists structure and clarity; it never generates the user's ideas or drafts their content.
