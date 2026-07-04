@@ -1,24 +1,29 @@
 # Context-Engine Transport Contract
 
 > **Status:** contract defined; API-side implementation pending.
-> **Audience:** the context-engine (n8n) team and the MemoFlow frontend team.
+> **Audience:** the **n8n team** (transport + orchestration) and the MemoFlow **frontend**
+> team. The **context-engine team** (gathering brains) works off the data shapes here but
+> is invoked by n8n, not by MemoFlow — see the split in §5 and
+> [`../integration/context-engine-guide.md`](../integration/context-engine-guide.md).
 > **Machine-readable schemas:** [`context-request.schema.json`](./context-request.schema.json),
 > [`context-result.schema.json`](./context-result.schema.json).
 
-MemoFlow's planning pipeline gathers connector context for a job through an **external
-context engine** (an n8n environment that drives per-connector MCP agents). Because real
-MCP gathering far exceeds a synchronous HTTP timeout, the API↔CE hop is **asynchronous
-over RabbitMQ in both directions**, correlated by `job_id`.
+MemoFlow's planning pipeline gathers connector context for a job through an external chain:
+the **n8n** environment owns the RabbitMQ transport + orchestration, and invokes the
+**context engine** (the gathering brains) per connector to drive the MCP agents. Because
+real MCP gathering far exceeds a synchronous HTTP timeout, the API↔n8n hop is
+**asynchronous over RabbitMQ in both directions**, correlated by `job_id`. (The n8n↔context-
+engine hop is internal to those two teams and out of scope here.)
 
 > Today the API still uses a synchronous HTTP call (`ContextEngineHttpClient`). This
 > contract defines the target transport; it **supersedes** that HTTP path when the
-> implementation task lands. Until then this document is the agreed wire contract the CE
-> team builds against — no API runtime code implements it yet.
+> implementation task lands. Until then this document is the agreed wire contract the n8n
+> and context-engine teams build against — no API runtime code implements it yet.
 
 ## Overview & sequence
 
 ```
- Frontend            MemoFlow API                 RabbitMQ                Context engine (n8n)
+ Frontend            MemoFlow API                 RabbitMQ                n8n (+ context engine)
     |  POST /planning-jobs  |                         |                            |
     |---------------------->| create planning_jobs    |                            |
     |   202 {job_id}        | (status: pending)       |                            |
@@ -47,7 +52,7 @@ gateway it already runs.
 | --- | --- |
 | Exchange | `context` (type: `topic`, durable) |
 | Request routing key | `ctx.gather.request` |
-| Request queue | `ctx.gather.requests` (durable) — **bound and consumed by n8n/CE** |
+| Request queue | `ctx.gather.requests` (durable) — **bound and consumed by n8n** |
 | Result routing key | `ctx.gather.result` |
 | Result queue | `ctx.gather.results` (durable) — **bound and consumed by the API** |
 | Dead-letter | `ctx.gather.requests.dlq`, `ctx.gather.results.dlq` (per-queue DLX for poison/rejected messages) |
@@ -63,7 +68,7 @@ gateway it already runs.
 Consumers **ack** only after durably handling a message; on an unrecoverable error they
 `nack` (no requeue) so it lands in the DLQ rather than hot-looping.
 
-## §2 Request message — API → CE (`ctx.gather.requests`)
+## §2 Request message — API → n8n (`ctx.gather.requests`)
 
 Body validated by [`context-request.schema.json`](./context-request.schema.json):
 
@@ -82,17 +87,18 @@ Body validated by [`context-request.schema.json`](./context-request.schema.json)
 
 - `connectors[]` mirrors the API's `ConnectorMcpReference`
   (`src/domain/connectors/connector-gateway.port.ts`). `mcp_url` is **always `null`** —
-  the CE resolves the live MCP from `provider` + `composio_account_id` using its own
+  the context engine (invoked by n8n) resolves the live MCP from `provider` + `composio_account_id` using its own
   Composio credentials. Only **active** connections are sent.
 - **Idempotency:** `job_id` is the dedupe key. A re-published request for a job already
-  in flight (BullMQ retry, redelivery) MUST NOT trigger a second gather — the CE keys work
+  in flight (BullMQ retry, redelivery) MUST NOT trigger a second gather — n8n dedupes
   by `job_id`.
 
-## §3 Result messages — CE → API (`ctx.gather.results`)
+## §3 Result messages — n8n → API (`ctx.gather.results`)
 
 Each message is one **chunk**, validated by
-[`context-result.schema.json`](./context-result.schema.json). The CE emits `data` chunks
-as context is gathered, then a **terminal `status` chunk** (`phase: completed` or
+[`context-result.schema.json`](./context-result.schema.json). n8n emits `data` chunks
+(carrying the context engine's gathered content) as gathering proceeds, then a **terminal
+`status` chunk** (`phase: completed` or
 `failed`):
 
 ```json
@@ -107,7 +113,7 @@ as context is gathered, then a **terminal `status` chunk** (`phase: completed` o
 
 - **Ordering:** `sequence` is 0-based and monotonic per `job_id`. Chunks are **idempotent
   by `(job_id, sequence)`** — the API ignores a duplicate sequence.
-- **Non-terminal vs terminal `status`:** the CE MAY emit non-terminal `status` chunks
+- **Non-terminal vs terminal `status`:** n8n MAY emit non-terminal `status` chunks
   (`phase: started` / `gathering`) as progress signals interleaved with `data` chunks.
   Termination is gated by **`phase`, not `type`** — a consumer treats a `status` chunk as
   terminal only when `phase` is `completed` or `failed`, never merely because
@@ -136,16 +142,25 @@ pending ── publish request ──▶ gathering ── terminal `completed` �
   no planning runs.
 - **No-result timeout:** if no terminal chunk arrives within a configured window, the API
   fails the job (`error_code: CONTEXT_ENGINE_TIMEOUT`). The request queue's DLQ captures
-  requests the CE never acked.
+  requests n8n never acked.
 
 ## §5 Responsibilities
 
-**Context-engine (n8n) team implements:**
+**n8n team implements (transport + orchestration)** — see
+[`../integration/n8n-guide.md`](../integration/n8n-guide.md):
 - Consume `ctx.gather.requests` (RabbitMQ trigger), keyed/deduped by `job_id`.
-- Gather context via the MCP agents (resolving MCP from `provider` + `composio_account_id`).
+- For each connector, invoke the **context engine** (below), passing `provider` +
+  `composio_account_id` + `prompt`; receive gathered content back.
 - Publish ordered `data` chunks then a terminal `status` chunk to `ctx.gather.results`,
   echoing `job_id`/`user_id`, per [`context-result.schema.json`](./context-result.schema.json).
 - `nack`→DLQ on unrecoverable errors; keep processing idempotent.
+
+**Context-engine team implements (gathering brains)** — see
+[`../integration/context-engine-guide.md`](../integration/context-engine-guide.md):
+- On invocation from n8n, resolve the live MCP from `provider` + `composio_account_id`
+  (using its own Composio credentials — `mcp_url` is `null` in the request), run the MCP
+  agent, and return the gathered `content` per connector (the `data` object shape). Does
+  **not** touch RabbitMQ; the n8n↔CE protocol is internal to those two teams.
 
 **MemoFlow API provides** (future implementation task — not built yet):
 - Publish requests to `ctx.gather.requests` per [`context-request.schema.json`](./context-request.schema.json).
