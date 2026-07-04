@@ -78,9 +78,14 @@ as the primary signal, with **reconcile-on-read** as fallback: any `GET /connect
 or `GET /connectors/:id` on an `initiated` connection re-checks Composio and
 self-heals a missed webhook. Terminal states (`revoked`/`failed`) never revive from a
 stale webhook. `DELETE /connectors/:id` (JWT, owner-scoped) revokes the connection at
-Composio and marks it `revoked`. Connectors then feed connector context into
-planning jobs (roadmap items 5 and 7). See
-[`docs/ROADMAP.md`](docs/ROADMAP.md#7-connectors-oauth-via-composio----in-progress) for
+Composio and marks it `revoked`.
+
+When a planning job runs, the worker resolves the user's **active** connectors and
+POSTs a `{ provider, mcpUrl: null, composioAccountId }` reference per connector
+(built from the local `connector_connections` row, no extra Composio call) to the
+external context engine (`CONTEXT_ENGINE_URL`), which resolves the live MCP server
+itself from provider + `composioAccountId`. See
+[`docs/ROADMAP.md`](docs/ROADMAP.md#7-connectors-oauth-via-composio---done) for
 current implementation status.
 
 ### Planning jobs (async, real-time over WebSocket)
@@ -88,9 +93,13 @@ current implementation status.
 `POST /planning-jobs` never runs planning synchronously in the request: it writes a
 `pending` job to MongoDB (`planning_jobs`) and enqueues it on the Redis/BullMQ
 `planning` queue, returning immediately. An in-process worker (`@Processor`) then
-picks the job up and processes it through the context-gatherer + LLM-planner ports —
-**both are stubs today** (they echo the prompt back as the result), since real
-connector/LLM logic lands with roadmap items 5 and 7.
+picks the job up and processes it through the context-gatherer + LLM-planner ports.
+The context-gatherer is real when `CONTEXT_ENGINE_URL` is set: it resolves the
+user's active connectors and POSTs them (plus the prompt) to the external context
+engine, which fetches and returns the actual context. Leave `CONTEXT_ENGINE_URL`
+unset (default in dev/test/e2e) to keep the built-in stub, which echoes the prompt
+back. The LLM-planner port is still a stub either way — real model integration
+lands with roadmap item 5.
 
 The frontend gets the result pushed in real time over WebSocket (`@nestjs/websockets`
 + socket.io) instead of only polling:
@@ -129,6 +138,9 @@ Beyond the database connection vars, auth requires:
 | `COMPOSIO_BASE_URL` | no | — | override the Composio API base URL (defaults to Composio's hosted endpoint) |
 | `COMPOSIO_AUTH_CONFIG_IDS` | yes | — | comma-separated `provider:authConfigId` map, e.g. `trello:ac_...,notion:ac_...` |
 | `COMPOSIO_WEBHOOK_SECRET` | yes | — | HMAC secret used to verify `POST /connectors/webhook` signatures from Composio |
+| `CONTEXT_ENGINE_URL` | no | — | base URL of the external context engine; unset keeps the planning worker on the built-in stub context-gatherer |
+| `CONTEXT_ENGINE_API_KEY` | no | — | sent as `Authorization: Bearer <key>` on context-engine requests, when set |
+| `CONTEXT_ENGINE_TIMEOUT_MS` | no | `10000` | aborts the context-engine POST after this many ms, failing the planning job fast instead of hanging |
 
 See [`.env.example`](.env.example) for the full list (`NODE_ENV`, `PORT`,
 `MONGODB_URI`, `POSTGRES_*`).

@@ -119,7 +119,8 @@ the next started:
   remains the REST fallback for clients without a live socket.
 
 Item 5 (AI layer) can now build on a complete async backbone (submit → queue →
-worker → push). Real connector/LLM logic stays stubbed until items 5 & 7 land.
+worker → push). Item 7's context-gatherer is real when `CONTEXT_ENGINE_URL` is set
+(stub fallback otherwise); the LLM planner stays stubbed until item 5 lands.
 
 ## 5. AI layer — ☐
 
@@ -136,7 +137,7 @@ worker → push). Real connector/LLM logic stays stubbed until items 5 & 7 land.
   XP/level updates on `users` (leaderboard uses the indexed `xp`).
 - Hooks into document/section events from item 2. Depends on items 1–2.
 
-## 7. Connectors (OAuth via Composio) — ◐ in progress
+## 7. Connectors (OAuth via Composio) — ✅ done
 
 Reframed from per-provider OAuth storing encrypted tokens: OAuth2 now runs through
 **Composio**, a hosted vault + MCP host that lives inside an out-of-scope n8n
@@ -148,12 +149,15 @@ connect URL) → **status** learned via Composio webhook (primary) + poll-on-rea
 reconcile (fallback, self-heals a missed webhook on `GET /connectors` /
 `GET /connectors/:id` while a connection is `initiated`; terminal states
 `revoked`/`failed` never revive from a stale webhook) → **revoke** (owner-initiated,
-tears down the Composio connection) → **MCP selection push** to the external context
-engine so it can call the right provider MCP for a planning run. Feeds item 5's
-context engine. Depends on item 1.
+tears down the Composio connection) → **context-engine push**: when a planning job
+runs, the worker resolves the user's active connectors and POSTs a
+`{ provider, mcpUrl: null, composioAccountId }` reference per connector (built from
+the local `connector_connections` row, no extra Composio call) to an external
+context engine, which resolves the live MCP server itself from
+provider + `composioAccountId`. Feeds item 5's AI layer. Depends on item 1.
 
-**Branch status:** Branch 1 + Branch 2 implemented; Branch 3 (context-engine push)
-pending.
+**Branch status:** Branch 1–3 implemented (foundation, webhook/reconcile/revoke,
+context-engine push).
 
 - **Branch 1 (implemented)** — `connector_connections` PG table + migration;
   `POST /connectors/:provider/connect`, `GET /connectors`, `GET /connectors/:id`
@@ -170,9 +174,20 @@ pending.
   sets status `revoked`, returns 204. `composio_account_id` is now **indexed**
   (migration `AddConnectorComposioAccountIndex`) since the webhook looks connections
   up by it.
-- **Branch 3 (pending)** — MCP reference resolution + push to a planned external
-  context-engine service (`CONTEXT_ENGINE_URL` / `CONTEXT_ENGINE_API_KEY`), replacing
-  the stubbed context-gatherer with a real adapter.
+- **Branch 3 (implemented, `feature/connector-context-engine`)** — planning-job
+  worker resolves the user's active connectors and POSTs
+  `{ userId, connectors: [...], prompt }` to `CONTEXT_ENGINE_URL`; the context
+  engine (n8n/Composio side) resolves the live MCP server from
+  provider + `composioAccountId` — `mcpUrl` stays `null` from this side by design
+  (Composio's MCP URL generation needs a provisioned/deprecated server-session, so
+  resolution is deferred to the context engine). `ContextModule`'s `CONTEXT_GATHERER`
+  provider is now a factory: a real HTTP gatherer (`ContextEngineHttpClient`) when
+  `CONTEXT_ENGINE_URL` is set, else the existing `StubContextGatherer` — so
+  dev/smoke/e2e keep running without a context engine. New optional env vars
+  `CONTEXT_ENGINE_URL`, `CONTEXT_ENGINE_API_KEY` (Bearer auth when set),
+  `CONTEXT_ENGINE_TIMEOUT_MS` (default `10000`ms fetch-abort timeout so a hung
+  context engine fails the job fast, not silently). No PG schema change. The LLM
+  planner stays stubbed — that's item 5's remaining work.
 
 ---
 

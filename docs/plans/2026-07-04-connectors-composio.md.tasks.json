@@ -11,14 +11,14 @@
     {
       "id": 2,
       "subject": "Branch 2: connector-webhook (status webhook primary + poll reconcile + revoke)",
-      "status": "in_progress",
+      "status": "completed",
       "blockedBy": [1],
       "description": "**Goal:** Learn ACTIVE via Composio webhook and self-heal via reconcile-on-read.\n**Scope:** extend ConnectorGateway.verifyWebhook(rawBody, signature); sync-connection-status use-case; reconcile-on-read in get/list; POST /connectors/webhook (public, HMAC via COMPOSIO_WEBHOOK_SECRET, raw body via NestFactory.create({rawBody:true}) + RawBodyRequest); DELETE /connectors/:id revoke (Composio disconnect + Revoked, owner-scoped); config COMPOSIO_WEBHOOK_SECRET (required).\n**Acceptance Criteria:** signed payload -> 200 + status active; bad/absent signature -> 401; reconcile-on-read flips Initiated->Active without a webhook; revoke works owner-scoped; tests cover all; reviewers APPROVE.\n**Verify:** `npm run lint && npm run build && npm test && npm run test:e2e`; POST a signed + an unsigned test payload to /connectors/webhook.\n```json:metadata\n{\"branch\": \"feature/connector-webhook\", \"verifyCommand\": \"npm run lint && npm run build && npm test && npm run test:e2e\", \"modelTier\": \"standard\"}\n```"
     },
     {
       "id": 3,
       "subject": "Branch 3: connector-context-engine (selection push to external context engine)",
-      "status": "pending",
+      "status": "in_progress",
       "blockedBy": [1, 2],
       "description": "**Goal:** Push the user's active connectors + Composio MCP references to the external context engine; replace the stub gatherer with an HTTP adapter (stub fallback preserved).\n**Scope:** extend ConnectorGateway.getMcpReference(userId, provider); domain context-engine.port.ts (CONTEXT_ENGINE.gatherContext({userId,connectors,prompt})); infra context-engine.http-client.ts (resolve active connections + MCP refs, POST {userId, connectors:[{provider,mcpUrl}], prompt} to CONTEXT_ENGINE_URL, auth CONTEXT_ENGINE_API_KEY if set); ConnectorContextGatherer implements ContextGatherer delegating to CONTEXT_ENGINE; rebind CONTEXT_GATHERER (ContextModule imports connectors module, no cycle); factory stub fallback when CONTEXT_ENGINE_URL unset; config CONTEXT_ENGINE_URL + CONTEXT_ENGINE_API_KEY (optional). LlmPlanner stays stubbed.\n**Acceptance Criteria:** with CONTEXT_ENGINE_URL set to a stub receiver, POST /planning-jobs connectors:[\"trello\"] delivers {userId, connectors:[{provider,mcpUrl}], prompt} and job completes; unset URL uses echo stub; only active connectors resolved (unconnected skipped); no import cycle; reviewers APPROVE.\n**Verify:** `npm run lint && npm run build && npm test && npm run test:e2e`; run the planning-job flow against a stub receiver.\n```json:metadata\n{\"branch\": \"feature/connector-context-engine\", \"verifyCommand\": \"npm run lint && npm run build && npm test && npm run test:e2e\", \"modelTier\": \"standard\"}\n```"
     }
