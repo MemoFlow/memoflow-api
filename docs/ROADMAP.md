@@ -136,15 +136,30 @@ worker → push). Real connector/LLM logic stays stubbed until items 5 & 7 land.
   XP/level updates on `users` (leaderboard uses the indexed `xp`).
 - Hooks into document/section events from item 2. Depends on items 1–2.
 
-## 7. Connectors (OAuth) — ☐
+## 7. Connectors (OAuth via Composio) — ◐ in progress
 
-- `connector_tokens` per schema doc: `access_token`/`refresh_token` encrypted at
-  rest with **AES-256-GCM**, key from config (new env var, e.g.
-  `TOKEN_ENCRYPTION_KEY`, 32 bytes — into `env.validation.ts` + `.env.example` in
-  the same PR, provisioned in GitHub Environments once item 0 lands; never
-  hardcoded, never serialized, never logged).
-- OAuth flows per provider (e.g. notion, github — the `planning_jobs.connectors`
-  values). Feeds item 5's context engine. Depends on item 1.
+Reframed from per-provider OAuth storing encrypted tokens: OAuth2 now runs through
+**Composio**, a hosted vault + MCP host that lives inside an out-of-scope n8n
+orchestrator. This API never sees or stores provider tokens — Composio is the vault.
+`connector_tokens` (encrypted `access_token`/`refresh_token`) is retired; the schema
+doc's `connector_connections` table (`composio_account_id` + `status`, no token
+columns) is the new source of truth. Flow: **initiate** (this API asks Composio for a
+connect URL) → **status** learned via Composio webhook + poll-on-read reconcile →
+**MCP selection push** to the external context engine so it can call the right
+provider MCP for a planning run. Feeds item 5's context engine. Depends on item 1.
+
+- **Branch 1 (implemented)** — `connector_connections` PG table + migration;
+  `POST /connectors/:provider/connect`, `GET /connectors`, `GET /connectors/:id`
+  (JWT-guarded); Composio gateway via the `@composio/core` SDK; `COMPOSIO_API_KEY`
+  (required), `COMPOSIO_BASE_URL` (optional), `COMPOSIO_AUTH_CONFIG_IDS` (required,
+  comma-separated `provider:authConfigId` map) in `env.validation.ts` +
+  `.env.example`.
+- **Branch 2 (pending)** — Composio webhook intake (`POST /connectors/webhook`,
+  public, HMAC-signed via a planned `COMPOSIO_WEBHOOK_SECRET`) + poll-fallback
+  reconcile on read; connection revoke.
+- **Branch 3 (pending)** — MCP reference resolution + push to a planned external
+  context-engine service (`CONTEXT_ENGINE_URL` / `CONTEXT_ENGINE_API_KEY`), replacing
+  the stubbed context-gatherer with a real adapter.
 
 ---
 
