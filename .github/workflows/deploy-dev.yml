@@ -48,6 +48,14 @@ jobs:
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          # This runner reaches the Render-managed dev Postgres over its
+          # *external* connection, which requires TLS; parsePostgresSsl()
+          # defaults to false when POSTGRES_SSL is unset, so it must be set
+          # here explicitly. The deployed app itself talks to the same
+          # database over Render's *internal* network (see the
+          # `fromDatabase` host in render.yaml), which does not require SSL
+          # and is configured separately there.
+          POSTGRES_SSL: "true"
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           JWT_EXPIRES_IN: ${{ secrets.JWT_EXPIRES_IN }}
