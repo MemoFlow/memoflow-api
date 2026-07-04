@@ -174,17 +174,27 @@ Immutable snapshots of a document's sections at save time.
 ### `planning_jobs`
 Async AI context-engine jobs (outline/suggestion generation using connector context).
 
+**Implementation status:** the *Context module async backbone* item (BullMQ queue +
+`planning_jobs` persistence, see `docs/ROADMAP.md`) lands a **subset skeleton** of
+this collection first: `user_id`, `status`, `prompt`, `connectors`, `result`,
+`error_code`/`error_message`, and the timestamp fields. `prompt_version` and
+`context_used`, plus a richer `result` shape, arrive with roadmap item 5 (AI layer),
+which also wires real connectors. Until roadmap item 2 (documents + sections) lands,
+there is no PG `documents`/`sections` row to reference, so `document_id` and
+`section_id` are **nullable** — the job is created and processed with both `null`.
+
 | field | type | notes |
 | --- | --- | --- |
 | _id | ObjectId | |
 | user_id | uuid (string) | **indexed** — references PG `users.id` |
-| document_id | uuid (string) | **indexed** — references PG `documents.id` |
-| section_id | uuid (string)? | optional |
+| document_id | uuid (string)? | **nullable until item 2** — indexed; references PG `documents.id` once populated |
+| section_id | uuid (string)? | **nullable until item 2** — references PG `sections.id` once populated |
 | status | string | **indexed** (pending / running / completed / failed) |
-| connectors | string[] | e.g. ["notion", "github"] |
-| prompt_version | string | |
-| context_used | object | `{ notion?, github?, total_tokens }` |
-| result | object | `{ suggestions[], outline?, sources[] }` |
+| prompt | string | user's planning prompt |
+| connectors | string[] | e.g. ["notion", "github"] — unused until item 7 |
+| prompt_version | string | **arrives with item 5** (AI layer) |
+| context_used | object | **arrives with item 5**: `{ notion?, github?, total_tokens }` |
+| result | object | subset skeleton: stub/echo payload; richer `{ suggestions[], outline?, sources[] }` shape arrives with item 5 |
 | error_code / error_message | string? | set when failed |
 | created_at / started_at / finished_at | date | timestamps |
 
