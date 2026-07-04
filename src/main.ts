@@ -7,7 +7,13 @@ import { HttpExceptionFilter } from './shared/filters/http-exception.filter';
 import { LoggingInterceptor } from './shared/interceptors/logging.interceptor';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // `rawBody: true` preserves the raw request buffer alongside the parsed
+  // body (on `req.rawBody`), purely additive — it doesn't change how any
+  // other route or the global ValidationPipe sees `req.body`. Needed so
+  // `POST /connectors/webhook` can verify Composio's HMAC signature against
+  // the exact bytes Composio signed, not a re-serialized JSON.parse/stringify
+  // round trip.
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   // Lets in-process consumers (the BullMQ worker, Redis/Mongo/Postgres
   // connections) drain cleanly on SIGTERM instead of being killed mid-job.

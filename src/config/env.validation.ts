@@ -168,6 +168,14 @@ export class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   COMPOSIO_AUTH_CONFIG_IDS: string;
+
+  // Secret used to verify the HMAC signature on inbound
+  // `POST /connectors/webhook` calls (`ComposioGateway.verifyWebhook`).
+  // From the Composio dashboard's webhook subscription config — never
+  // hardcoded.
+  @IsString()
+  @IsNotEmpty()
+  COMPOSIO_WEBHOOK_SECRET: string;
 }
 
 export function validate(
