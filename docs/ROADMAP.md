@@ -77,17 +77,17 @@ Legend: ✅ done · ◐ in progress · ☐ not started
   before writing; `api-reviewer` checks this. Save/list/restore endpoints.
 - Depends on item 2.
 
-## Context module async backbone (bounded) — ◐ Branches 1–2 of 3 done
+## Context module async backbone (bounded) — ✅ done (all 3 branches)
 
 Foundation infra that roadmap item 5 (AI layer) depends on: a BullMQ (Redis) planning
 queue + WebSocket push + a `planning_jobs` skeleton, wired together by an
 EventEmitter2 completion signal. Runs **in-process** — one worker, one deployment,
 per `ARCHITECTURE.md` ("Service boundaries"). **gRPC and a separate worker
-deployment are explicitly deferred** to a future Context-module extraction, only if
-a concrete trigger from that section appears; not built now.
+deployment remain explicitly deferred** to a future Context-module extraction, only
+if a concrete trigger from that section appears; not built now.
 
-Landing as three sequential branches off `development`, each reviewed/merged before
-the next starts:
+Landed as three sequential branches off `development`, each reviewed/merged before
+the next started:
 
 - ✅ **Branch 1 — `feature/context-queue-infra`** (foundation, no user-facing surface
   yet): Redis added to `docker-compose.yml` (AOF persistence), `REDIS_HOST` /
@@ -106,12 +106,17 @@ the next starts:
   `planning.completed` / `planning.failed`. No WebSocket consumer of those events
   yet — client polls `GET /planning-jobs/:id`. Connector/LLM logic stays stubbed
   (real work = roadmap items 5 & 7).
-- ☐ **Branch 3 — `feature/context-websocket`**: `planning.gateway.ts` — JWT-verified
-  WS handshake, server-derived per-user rooms, `subscribe {jobId}` catch-up, relays
-  `planning.status` / `planning.completed` / `planning.failed`.
+- ✅ **Branch 3 — `feature/context-websocket`**: `planning.gateway.ts` — JWT-verified
+  WS handshake (token via socket.io `auth.token`, verified in `handleConnection`
+  with the same secret/payload shape as REST auth), server-derived per-user rooms
+  (`user:<id>` — never a client-supplied room), `subscribe {jobId}` catch-up
+  (owner-scoped), and `@OnEvent('planning.*')` relays of `planning.status` /
+  `planning.completed` / `planning.failed`. Delivery is best-effort; Mongo
+  `planning_jobs` stays the durable source of truth and `GET /planning-jobs/:id`
+  remains the REST fallback for clients without a live socket.
 
-No WebSocket exists yet — it lands in Branch 3. Until then, REST polling
-(`GET /planning-jobs/:id`) is the only way to observe job progress.
+Item 5 (AI layer) can now build on a complete async backbone (submit → queue →
+worker → push). Real connector/LLM logic stays stubbed until items 5 & 7 land.
 
 ## 5. AI layer — ☐
 
