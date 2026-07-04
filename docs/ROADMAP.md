@@ -77,7 +77,7 @@ Legend: ✅ done · ◐ in progress · ☐ not started
   before writing; `api-reviewer` checks this. Save/list/restore endpoints.
 - Depends on item 2.
 
-## Context module async backbone (bounded) — ◐ Branch 1 of 3 done
+## Context module async backbone (bounded) — ◐ Branches 1–2 of 3 done
 
 Foundation infra that roadmap item 5 (AI layer) depends on: a BullMQ (Redis) planning
 queue + WebSocket push + a `planning_jobs` skeleton, wired together by an
@@ -96,14 +96,22 @@ the next starts:
   subset of the documented fields, see `docs/database-schema.md`), Redis health
   indicator (`/health` now reports postgres + mongodb + redis), `EventEmitter2` +
   `enableShutdownHooks()`.
-- ☐ **Branch 2 — `feature/context-worker`**: `POST /planning-jobs` (202 + jobId) /
-  `GET /planning-jobs/:id` fallback, in-process `@Processor` worker running the
-  (stubbed) planning use-case, `EventEmitter2` completion events.
+- ✅ **Branch 2 — `feature/context-worker`**: `POST /planning-jobs` (JWT-guarded,
+  202 + `{ job_id, status: "pending" }`, 503 if enqueue fails) and
+  `GET /planning-jobs/:id` (JWT-guarded, owner-scoped fallback) in
+  `src/presentation/context/`; `submit-planning-job` / `get-planning-job` /
+  `process-planning-job` use-cases in `src/application/context/`; in-process
+  BullMQ `@Processor` worker runs jobs through the **stubbed** context-gatherer +
+  LLM-planner ports (echo result) and emits `EventEmitter2` `planning.status` /
+  `planning.completed` / `planning.failed`. No WebSocket consumer of those events
+  yet — client polls `GET /planning-jobs/:id`. Connector/LLM logic stays stubbed
+  (real work = roadmap items 5 & 7).
 - ☐ **Branch 3 — `feature/context-websocket`**: `planning.gateway.ts` — JWT-verified
   WS handshake, server-derived per-user rooms, `subscribe {jobId}` catch-up, relays
   `planning.status` / `planning.completed` / `planning.failed`.
 
-No REST endpoint or WebSocket exists yet — both land in Branches 2 and 3.
+No WebSocket exists yet — it lands in Branch 3. Until then, REST polling
+(`GET /planning-jobs/:id`) is the only way to observe job progress.
 
 ## 5. AI layer — ☐
 

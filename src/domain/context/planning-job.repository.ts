@@ -31,4 +31,13 @@ export interface PlanningJobRepository {
     id: string,
     patch: UpdatePlanningJobStatusData,
   ): Promise<PlanningJob | null>;
+  /**
+   * Atomically transitions a job from `pending` to `running`, returning the
+   * updated job only if the claim succeeded. Returns `null` if the job is
+   * missing, already `running` (claimed by another worker), or already
+   * terminal (`completed`/`failed`) — the caller treats all of those as
+   * "nothing to do" rather than distinguishing them, since a stalled-job
+   * retry and a concurrent worker must both be safe no-ops.
+   */
+  claimForProcessing(id: string): Promise<PlanningJob | null>;
 }
