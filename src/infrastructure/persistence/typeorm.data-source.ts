@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { DataSource } from 'typeorm';
+import { parsePostgresSsl } from '../../config/env.validation';
 
 /**
  * Standalone data source for the TypeORM CLI (migration:generate/run/revert/show).
@@ -12,6 +13,11 @@ export default new DataSource({
   username: process.env.POSTGRES_USER,
   password: process.env.POSTGRES_PASSWORD,
   database: process.env.POSTGRES_DB,
+  // rejectUnauthorized:false — dev/staging managed Postgres (e.g. Neon) that
+  // don't provide a CA cert. Revisit if a verifiable CA becomes available.
+  ssl: parsePostgresSsl(process.env.POSTGRES_SSL)
+    ? { rejectUnauthorized: false }
+    : false,
   // Only TypeORM entities (`*.orm-entity.ts`) — domain entities (`*.entity.ts`)
   // are plain classes with no typeorm decorators and must stay out of this glob.
   entities: ['src/**/*.orm-entity.ts'],

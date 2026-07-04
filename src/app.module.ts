@@ -23,6 +23,11 @@ import { UsersModule } from './users.module';
         autoLoadEntities: true,
         // Schema changes go through generated migrations only. Never enable.
         synchronize: false,
+        // rejectUnauthorized:false — dev/staging managed Postgres (e.g. Neon)
+        // that don't provide a CA cert. Revisit if a verifiable CA becomes available.
+        ssl: config.get<boolean>('POSTGRES_SSL')
+          ? { rejectUnauthorized: false }
+          : false,
       }),
     }),
     MongooseModule.forRootAsync({
