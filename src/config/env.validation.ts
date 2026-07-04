@@ -38,6 +38,45 @@ export function parseRedisTls(value: unknown): boolean {
   return String(value).toLowerCase() === 'true';
 }
 
+/**
+ * Parses `COMPOSIO_AUTH_CONFIG_IDS` — a comma-separated `provider:authConfigId`
+ * map, e.g. `trello:ac_123,notion:ac_456,github:ac_789` — into a lookup
+ * record. Shared between the runtime config and `ComposioGateway`, which
+ * resolves a specific provider's auth config id at call time and throws a
+ * clear error if that provider has no configured id.
+ */
+export function parseComposioAuthConfigIds(
+  value: unknown,
+): Record<string, string> {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return {};
+
+  const map: Record<string, string> = {};
+  for (const pair of raw
+    .split(',')
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0)) {
+    const parts = pair.split(':').map((s) => s.trim());
+    // Exactly two non-empty parts: reject both "notion" (missing id) and
+    // "trello:ac:123" (stray colon) so a copy-paste typo fails loudly rather
+    // than silently truncating to a wrong-but-plausible auth config id.
+    if (parts.length !== 2 || !parts[0] || !parts[1]) {
+      throw new Error(
+        `Invalid COMPOSIO_AUTH_CONFIG_IDS entry "${pair}" — expected "provider:authConfigId"`,
+      );
+    }
+    const [provider, authConfigId] = parts;
+    if (Object.prototype.hasOwnProperty.call(map, provider)) {
+      throw new Error(
+        `Duplicate COMPOSIO_AUTH_CONFIG_IDS provider "${provider}"`,
+      );
+    }
+    map[provider] = authConfigId;
+  }
+
+  return map;
+}
+
 export class EnvironmentVariables {
   @IsOptional()
   @IsIn(NODE_ENVS)
@@ -114,6 +153,21 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   WS_CORS_ORIGIN: string = '*';
+
+  @IsString()
+  @IsNotEmpty()
+  COMPOSIO_API_KEY: string;
+
+  @IsOptional()
+  @IsString()
+  COMPOSIO_BASE_URL?: string;
+
+  // Comma-separated `provider:authConfigId` map, e.g.
+  // `trello:ac_123,notion:ac_456,github:ac_789` — parsed by
+  // `parseComposioAuthConfigIds` / `ComposioGateway`.
+  @IsString()
+  @IsNotEmpty()
+  COMPOSIO_AUTH_CONFIG_IDS: string;
 }
 
 export function validate(
@@ -136,5 +190,11 @@ export function validate(
       .join('\n');
     throw new Error(`Invalid environment configuration:\n${details}`);
   }
+
+  // The shape of COMPOSIO_AUTH_CONFIG_IDS is fully known at boot, so validate
+  // it eagerly here — a malformed map fails app startup instead of surfacing
+  // as a 503 on the first `/connectors/:provider/connect` call.
+  parseComposioAuthConfigIds(validated.COMPOSIO_AUTH_CONFIG_IDS);
+
   return validated;
 }
