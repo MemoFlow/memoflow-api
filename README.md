@@ -55,9 +55,25 @@ via `@nestjs/jwt` and validated by Passport-JWT.
 | `GET` | `/users/:id` | JWT | fetch a user by id |
 | `POST` | `/planning-jobs` | JWT | submits a planning prompt; returns **202** + `{ job_id, status: "pending" }` |
 | `GET` | `/planning-jobs/:id` | JWT | fetch a planning job by id, owner-scoped |
+| `POST` | `/connectors/:provider/connect` | JWT | starts a Composio OAuth connection for a provider; returns `{ redirect_url, connection_id, status }` |
+| `GET` | `/connectors` | JWT | lists the caller's connector connections |
+| `GET` | `/connectors/:id` | JWT | fetch a connector connection by id, owner-scoped |
 
 Protected routes require `Authorization: Bearer <accessToken>`. Full request/response
 shapes are in Swagger (`/docs`).
+
+### Connectors (OAuth via Composio)
+
+MemoFlow doesn't run per-provider OAuth or store provider tokens itself. **Composio**
+is a hosted vault + MCP host: `POST /connectors/:provider/connect` asks Composio for a
+connect URL and stores a `connector_connections` row (`composio_account_id`, `status`)
+— never an access/refresh token. Response DTOs expose only
+`id, provider, status, connected_at, created_at`. Providers are an allowlist (trello,
+notion, github). Status transitions to `active` via a Composio webhook (planned) with
+poll-on-read reconcile as fallback; connectors then feed connector context into
+planning jobs (roadmap items 5 and 7). See
+[`docs/ROADMAP.md`](docs/ROADMAP.md#7-connectors-oauth-via-composio----in-progress) for
+current implementation status.
 
 ### Planning jobs (async, real-time over WebSocket)
 
@@ -101,6 +117,9 @@ Beyond the database connection vars, auth requires:
 | `REDIS_PASSWORD` | no | — | Redis auth password, if required |
 | `REDIS_TLS` | no | `false` | set `true` for managed TLS-only Redis (e.g. Upstash); local docker Redis stays `false` — mirrors `POSTGRES_SSL` |
 | `WS_CORS_ORIGIN` | no | `*` | frontend origin allowed to open the planning WebSocket; `*` is dev-only — must be set explicitly in staging/production, never `*` |
+| `COMPOSIO_API_KEY` | yes | — | authenticates this API to Composio (the OAuth vault + MCP host for connectors) |
+| `COMPOSIO_BASE_URL` | no | — | override the Composio API base URL (defaults to Composio's hosted endpoint) |
+| `COMPOSIO_AUTH_CONFIG_IDS` | yes | — | comma-separated `provider:authConfigId` map, e.g. `trello:ac_...,notion:ac_...` |
 
 See [`.env.example`](.env.example) for the full list (`NODE_ENV`, `PORT`,
 `MONGODB_URI`, `POSTGRES_*`).

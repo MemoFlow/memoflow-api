@@ -8,7 +8,7 @@ PR as the code change.
 ## Storage strategy
 
 - **PostgreSQL is the primary database.** Everything relational lives here: users,
-  auth, documents, sections, AI suggestions, prompts, connector tokens, gamification,
+  auth, documents, sections, AI suggestions, prompts, connector connections, gamification,
   and the template system. Accessed via TypeORM with migrations only
   (`synchronize: false`, always).
 - **MongoDB is the specialist store.** Only two collections:
@@ -82,15 +82,23 @@ validate that the referenced PG row exists before writing to Mongo. The
 | template | text | |
 | is_active | boolean | **indexed** |
 
-#### `connector_tokens`
+#### `connector_connections`
+No provider tokens are stored here — **Composio is the token vault**; this API keeps
+only a connection reference. See `docs/plans/2026-07-04-connectors-composio.md` for
+the OAuth flow this table supports.
+
 | column | type | notes |
 | --- | --- | --- |
 | id | uuid | PK |
-| user_id | uuid | FK → users |
-| provider | varchar | **indexed** |
-| access_token | text | **encrypted at rest (AES-256-GCM, key from config)** |
-| refresh_token | text | **encrypted at rest (AES-256-GCM, key from config)** |
-| expires_at | timestamptz | |
+| user_id | uuid | FK → users, **indexed** |
+| provider | varchar | **indexed** (e.g. trello, notion, github) |
+| composio_account_id | varchar | Composio connected-account reference; nullable until initiated |
+| status | varchar | **indexed** (initiated / active / revoked / failed) |
+| connected_at | timestamptz | nullable — set when the connection goes active |
+| created_at | timestamptz | |
+| updated_at | timestamptz | |
+
+Unique composite index on **(user_id, provider)** — one connection per user per provider.
 
 ### Gamification
 

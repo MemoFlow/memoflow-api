@@ -41,7 +41,11 @@ and `src/config/` (env validation).
 - **MongoDB holds exactly two collections:** `document_versions` and `planning_jobs`. Nothing else goes in Mongo without updating the schema doc first.
 - **Cross-DB references are plain uuids** (`document_id`, `user_id` in Mongo docs). There is no FK across databases — the use-case must validate the referenced PG row exists before writing to Mongo.
 - **Every PG entity change ships with a generated migration** in the same commit. `synchronize` stays `false` — no exceptions.
-- **Secrets encrypted at rest:** `connector_tokens.access_token` / `refresh_token` use AES-256-GCM with the key from config (never hardcoded).
+- **No provider tokens at rest here.** Connector OAuth runs through **Composio**, which
+  is the token vault and MCP host; this API stores only a connection reference
+  (`connector_connections.composio_account_id` + `status`) — never an access/refresh
+  token. `COMPOSIO_API_KEY` (and related `COMPOSIO_*` vars) authenticate this API to
+  Composio, not end users to providers.
 
 ## Conventions
 
@@ -159,4 +163,4 @@ When in doubt about placement or schema design, ask the `db-mentor` agent.
 4. Versioning (Mongo — `document_versions`)
 5. AI layer (`prompts` + `ai_suggestions` PG, `planning_jobs` Mongo)
 6. Gamification (PG)
-7. Connectors (OAuth + encrypted `connector_tokens`)
+7. Connectors (OAuth via Composio + `connector_connections` reference table)

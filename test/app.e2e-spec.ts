@@ -24,6 +24,8 @@ describeWithDocker()('AppController (e2e)', () => {
       MONGODB_URI: mongo.uri,
       JWT_SECRET: 'test-only-secret',
       JWT_EXPIRES_IN: '15m',
+      COMPOSIO_API_KEY: 'test-only-composio-key',
+      COMPOSIO_AUTH_CONFIG_IDS: 'trello:ac_test,notion:ac_test,github:ac_test',
     });
 
     // Import late so ConfigModule validation sees the test env vars.

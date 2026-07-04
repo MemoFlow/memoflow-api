@@ -60,14 +60,18 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
     is_active: boolean
   }
 
-  connector_tokens: {
+  # No provider tokens — Composio is the OAuth vault + MCP host; this API keeps only
+  # a connection reference. Unique composite index on (user_id, provider).
+  connector_connections: {
     shape: sql_table
     id: uuid {constraint: primary_key}
     user_id: uuid {constraint: foreign_key}
     provider: varchar
-    access_token: "text (AES-256-GCM)"
-    refresh_token: "text (AES-256-GCM)"
-    expires_at: timestamptz
+    composio_account_id: "varchar (nullable)"
+    status: varchar
+    connected_at: "timestamptz (nullable)"
+    created_at: timestamptz
+    updated_at: timestamptz
   }
 
   milestones: {
@@ -132,7 +136,7 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
   sections.document_id -> documents.id
   ai_suggestions.section_id -> sections.id
   ai_suggestions.user_id -> users.id
-  connector_tokens.user_id -> users.id
+  connector_connections.user_id -> users.id
   milestones.user_id -> users.id
   milestones.document_id -> documents.id
   mission_progress.user_id -> users.id
