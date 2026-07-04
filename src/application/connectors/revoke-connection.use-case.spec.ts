@@ -8,6 +8,7 @@ import { ConnectorGateway } from '../../domain/connectors/connector-gateway.port
 import { ConnectorProvider } from '../../domain/connectors/connector-provider';
 import { ConnectorStatus } from '../../domain/connectors/connector-status';
 import { GetConnectionUseCase } from './get-connection.use-case';
+import { RevokeConnectionUseCase } from './revoke-connection.use-case';
 import { SyncConnectionStatusUseCase } from './sync-connection-status.use-case';
 
 class InMemoryConnectorConnectionRepository implements ConnectorConnectionRepository {
@@ -50,28 +51,23 @@ class InMemoryConnectorConnectionRepository implements ConnectorConnectionReposi
 }
 
 class FakeConnectorGateway implements ConnectorGateway {
-  getConnectionStatusResult: ConnectorStatus = ConnectorStatus.Initiated;
-  getConnectionStatusCalls = 0;
-  getConnectionStatusError: Error | null = null;
+  revokedAccountIds: string[] = [];
 
   initiateConnection(): ReturnType<ConnectorGateway['initiateConnection']> {
     return Promise.reject(new Error('not implemented'));
   }
 
   getConnectionStatus(): Promise<ConnectorStatus> {
-    this.getConnectionStatusCalls += 1;
-    if (this.getConnectionStatusError) {
-      return Promise.reject(this.getConnectionStatusError);
-    }
-    return Promise.resolve(this.getConnectionStatusResult);
+    return Promise.reject(new Error('not implemented'));
   }
 
   verifyWebhook(): ReturnType<ConnectorGateway['verifyWebhook']> {
     return Promise.reject(new Error('not implemented'));
   }
 
-  revoke(): Promise<void> {
-    return Promise.reject(new Error('not implemented'));
+  revoke(composioAccountId: string): Promise<void> {
+    this.revokedAccountIds.push(composioAccountId);
+    return Promise.resolve();
   }
 }
 
@@ -91,87 +87,82 @@ function makeConnection(
   });
 }
 
-function makeUseCase(
-  rows: ConnectorConnection[],
-  gateway: FakeConnectorGateway = new FakeConnectorGateway(),
-): GetConnectionUseCase {
-  const repo = new InMemoryConnectorConnectionRepository(rows);
-  const syncUseCase = new SyncConnectionStatusUseCase(repo, gateway);
-  return new GetConnectionUseCase(repo, syncUseCase);
-}
-
-describe('GetConnectionUseCase', () => {
-  it('returns the connection when the requesting user owns it', async () => {
+describe('RevokeConnectionUseCase', () => {
+  it("revokes the owner's connection: calls the gateway and marks it Revoked", async () => {
     const connection = makeConnection();
-    const useCase = makeUseCase([connection]);
+    const repo = new InMemoryConnectorConnectionRepository([connection]);
+    const gateway = new FakeConnectorGateway();
+    const syncUseCase = new SyncConnectionStatusUseCase(repo, gateway);
+    const getUseCase = new GetConnectionUseCase(repo, syncUseCase);
+    const useCase = new RevokeConnectionUseCase(getUseCase, gateway, repo);
 
     const result = await useCase.execute({
       connectionId: 'conn-1',
       userId: 'user-1',
     });
 
-    expect(result).toBe(connection);
+    expect(gateway.revokedAccountIds).toEqual(['ca_123']);
+    expect(result.status).toBe(ConnectorStatus.Revoked);
   });
 
-  it('throws NotFoundException when the connection does not exist', async () => {
-    const useCase = makeUseCase([]);
+  it("404s (does not call the gateway) for another user's connection", async () => {
+    const connection = makeConnection({ userId: 'user-1' });
+    const repo = new InMemoryConnectorConnectionRepository([connection]);
+    const gateway = new FakeConnectorGateway();
+    const syncUseCase = new SyncConnectionStatusUseCase(repo, gateway);
+    const getUseCase = new GetConnectionUseCase(repo, syncUseCase);
+    const useCase = new RevokeConnectionUseCase(getUseCase, gateway, repo);
+
+    await expect(
+      useCase.execute({ connectionId: 'conn-1', userId: 'user-2' }),
+    ).rejects.toThrow(NotFoundException);
+    expect(gateway.revokedAccountIds).toEqual([]);
+  });
+
+  it('404s for a missing connection', async () => {
+    const repo = new InMemoryConnectorConnectionRepository([]);
+    const gateway = new FakeConnectorGateway();
+    const syncUseCase = new SyncConnectionStatusUseCase(repo, gateway);
+    const getUseCase = new GetConnectionUseCase(repo, syncUseCase);
+    const useCase = new RevokeConnectionUseCase(getUseCase, gateway, repo);
 
     await expect(
       useCase.execute({ connectionId: 'missing', userId: 'user-1' }),
     ).rejects.toThrow(NotFoundException);
   });
 
-  it('throws NotFoundException (not Forbidden) when a different user requests the connection, to avoid leaking existence', async () => {
-    const connection = makeConnection({
-      userId: 'user-1',
-      status: ConnectorStatus.Initiated,
-    });
+  it('is idempotent: revoking an already-Revoked connection does not call the gateway again', async () => {
+    const connection = makeConnection({ status: ConnectorStatus.Revoked });
+    const repo = new InMemoryConnectorConnectionRepository([connection]);
     const gateway = new FakeConnectorGateway();
-    const useCase = makeUseCase([connection], gateway);
-
-    await expect(
-      useCase.execute({ connectionId: 'conn-1', userId: 'user-2' }),
-    ).rejects.toThrow(NotFoundException);
-    // The ownership check happens before any Composio call.
-    expect(gateway.getConnectionStatusCalls).toBe(0);
-  });
-
-  it('reconciles an Initiated connection via the poll fallback before returning it', async () => {
-    const connection = makeConnection({ status: ConnectorStatus.Initiated });
-    const gateway = new FakeConnectorGateway();
-    gateway.getConnectionStatusResult = ConnectorStatus.Active;
-    const useCase = makeUseCase([connection], gateway);
+    const syncUseCase = new SyncConnectionStatusUseCase(repo, gateway);
+    const getUseCase = new GetConnectionUseCase(repo, syncUseCase);
+    const useCase = new RevokeConnectionUseCase(getUseCase, gateway, repo);
 
     const result = await useCase.execute({
       connectionId: 'conn-1',
       userId: 'user-1',
     });
 
-    expect(result.status).toBe(ConnectorStatus.Active);
-    expect(result.connectedAt).toBeInstanceOf(Date);
+    expect(gateway.revokedAccountIds).toEqual([]);
+    expect(result.status).toBe(ConnectorStatus.Revoked);
   });
 
-  it('does not call the gateway for an already-terminal connection', async () => {
-    const connection = makeConnection({ status: ConnectorStatus.Active });
+  it('a retried DELETE (revoke twice) only calls the gateway once', async () => {
+    const connection = makeConnection();
+    const repo = new InMemoryConnectorConnectionRepository([connection]);
     const gateway = new FakeConnectorGateway();
-    const useCase = makeUseCase([connection], gateway);
+    const syncUseCase = new SyncConnectionStatusUseCase(repo, gateway);
+    const getUseCase = new GetConnectionUseCase(repo, syncUseCase);
+    const useCase = new RevokeConnectionUseCase(getUseCase, gateway, repo);
 
     await useCase.execute({ connectionId: 'conn-1', userId: 'user-1' });
-
-    expect(gateway.getConnectionStatusCalls).toBe(0);
-  });
-
-  it('returns the local status (does not 500) when the Composio reconcile lookup errors', async () => {
-    const connection = makeConnection({ status: ConnectorStatus.Initiated });
-    const gateway = new FakeConnectorGateway();
-    gateway.getConnectionStatusError = new Error('Composio is down');
-    const useCase = makeUseCase([connection], gateway);
-
-    const result = await useCase.execute({
+    const second = await useCase.execute({
       connectionId: 'conn-1',
       userId: 'user-1',
     });
 
-    expect(result.status).toBe(ConnectorStatus.Initiated);
+    expect(gateway.revokedAccountIds).toEqual(['ca_123']);
+    expect(second.status).toBe(ConnectorStatus.Revoked);
   });
 });

@@ -13,10 +13,32 @@ import {
 // which Testcontainers can only provide when a Docker daemon is present.
 // The real Composio gateway is swapped for a fake below — this suite never
 // makes a network call to Composio.
+interface FakeConnectorGateway {
+  initiateConnection: () => Promise<{
+    redirectUrl: string;
+    composioAccountId: string;
+    status: string;
+  }>;
+  getConnectionStatus: (composioAccountId: string) => Promise<string>;
+  verifyWebhook: (
+    rawBody: Buffer | string,
+    headers: { id: string; timestamp: string; signature: string },
+  ) => Promise<{ composioAccountId: string; status: string } | null>;
+  revoke: (composioAccountId: string) => Promise<void>;
+  /** Test hook: lets individual tests flip a specific account's reconcile status. */
+  reconcileStatusByAccountId: Map<string, string>;
+  /** Test hook: records revoke() calls for assertions. */
+  revokedAccountIds: string[];
+}
+
 describeWithDocker()('Connectors (e2e)', () => {
   let app: INestApplication<App>;
   let pg: PgTestEnv;
   let mongo: MongoTestEnv;
+  let fakeGateway: FakeConnectorGateway;
+  let setVerifyWebhookImpl: (
+    impl: FakeConnectorGateway['verifyWebhook'],
+  ) => void;
 
   async function registerAndLogin(email: string): Promise<string> {
     const payload = {
@@ -46,6 +68,7 @@ describeWithDocker()('Connectors (e2e)', () => {
       JWT_EXPIRES_IN: '15m',
       COMPOSIO_API_KEY: 'test-only-composio-key',
       COMPOSIO_AUTH_CONFIG_IDS: 'trello:ac_test,notion:ac_test,github:ac_test',
+      COMPOSIO_WEBHOOK_SECRET: 'test-only-composio-webhook-secret',
     });
 
     // Apply migrations against the fresh test container before boot —
@@ -74,7 +97,11 @@ describeWithDocker()('Connectors (e2e)', () => {
       await import('./../src/domain/connectors/connector-status');
 
     let nextAccountId = 1;
-    const fakeGateway = {
+    let verifyWebhookImpl: FakeConnectorGateway['verifyWebhook'] = () =>
+      Promise.reject(new Error('verifyWebhook not configured for this test'));
+    fakeGateway = {
+      reconcileStatusByAccountId: new Map<string, string>(),
+      revokedAccountIds: [],
       initiateConnection: () => {
         const composioAccountId = `ca_fake_${nextAccountId++}`;
         return Promise.resolve({
@@ -83,7 +110,21 @@ describeWithDocker()('Connectors (e2e)', () => {
           status: ConnectorStatus.Initiated,
         });
       },
-      getConnectionStatus: () => Promise.resolve(ConnectorStatus.Initiated),
+      getConnectionStatus: (composioAccountId: string) =>
+        Promise.resolve(
+          fakeGateway.reconcileStatusByAccountId.get(composioAccountId) ??
+            ConnectorStatus.Initiated,
+        ),
+      verifyWebhook: (rawBody, headers) => verifyWebhookImpl(rawBody, headers),
+      revoke: (composioAccountId: string) => {
+        fakeGateway.revokedAccountIds.push(composioAccountId);
+        return Promise.resolve();
+      },
+    };
+    // Exposed so individual `it()` blocks can swap the webhook verification
+    // behavior (valid event vs. thrown signature failure) per test.
+    setVerifyWebhookImpl = (impl) => {
+      verifyWebhookImpl = impl;
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -93,7 +134,9 @@ describeWithDocker()('Connectors (e2e)', () => {
       .useValue(fakeGateway)
       .compile();
 
-    app = moduleFixture.createNestApplication();
+    // rawBody: true so the webhook handler can read `req.rawBody`, mirroring
+    // main.ts's bootstrap.
+    app = moduleFixture.createNestApplication({ rawBody: true });
     app.useGlobalPipes(
       new ValidationPipe({
         whitelist: true,
@@ -250,5 +293,151 @@ describeWithDocker()('Connectors (e2e)', () => {
       (row: { provider: string }) => row.provider === 'notion',
     );
     expect(notionRows).toHaveLength(1);
+  });
+
+  it('POST /connectors/webhook with a valid signature flips the connection to active', async () => {
+    const token = await registerAndLogin('webhook-valid@example.com');
+    const connectRes = await request(app.getHttpServer())
+      .post('/connectors/trello/connect')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(201);
+    const composioAccountId = (connectRes.body.redirect_url as string).split(
+      '/connect/',
+    )[1];
+
+    setVerifyWebhookImpl(() =>
+      Promise.resolve({
+        composioAccountId,
+        status: 'active',
+      }),
+    );
+
+    await request(app.getHttpServer())
+      .post('/connectors/webhook')
+      .set('webhook-id', 'msg_1')
+      .set('webhook-timestamp', '1700000000')
+      .set('webhook-signature', 'v1,fake-signature')
+      .send({ data: { id: composioAccountId, status: 'ACTIVE' } })
+      .expect(200)
+      .expect({ received: true });
+
+    const getRes = await request(app.getHttpServer())
+      .get(`/connectors/${connectRes.body.connection_id as string}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(getRes.body.status).toBe('active');
+    expect(getRes.body.connected_at).not.toBeNull();
+  });
+
+  it('POST /connectors/webhook with an invalid signature returns 401', async () => {
+    setVerifyWebhookImpl(() => Promise.reject(new Error('invalid signature')));
+
+    await request(app.getHttpServer())
+      .post('/connectors/webhook')
+      .set('webhook-id', 'msg_2')
+      .set('webhook-timestamp', '1700000000')
+      .set('webhook-signature', 'v1,bad-signature')
+      .send({ data: { id: 'ca_whatever', status: 'ACTIVE' } })
+      .expect(401);
+  });
+
+  it('POST /connectors/webhook without the signature headers returns 401', async () => {
+    await request(app.getHttpServer())
+      .post('/connectors/webhook')
+      .send({ data: { id: 'ca_whatever', status: 'ACTIVE' } })
+      .expect(401);
+  });
+
+  it('POST /connectors/webhook with a valid signature but a non-connection event acks 200 without touching the DB', async () => {
+    const token = await registerAndLogin('webhook-non-account@example.com');
+    const connectRes = await request(app.getHttpServer())
+      .post('/connectors/trello/connect')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(201);
+    const connectionId = connectRes.body.connection_id as string;
+
+    // A validly-signed webhook that isn't a connected-account event (e.g. a
+    // trigger-message delivery) — the gateway signals this with `null`.
+    setVerifyWebhookImpl(() => Promise.resolve(null));
+
+    await request(app.getHttpServer())
+      .post('/connectors/webhook')
+      .set('webhook-id', 'msg_3')
+      .set('webhook-timestamp', '1700000000')
+      .set('webhook-signature', 'v1,valid-but-irrelevant')
+      .send({ type: 'composio.trigger.message', data: {} })
+      .expect(200)
+      .expect({ received: true });
+
+    const getRes = await request(app.getHttpServer())
+      .get(`/connectors/${connectionId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(getRes.body.status).toBe('initiated');
+  });
+
+  it('GET /connectors/:id reconciles an Initiated connection to Active via the poll fallback', async () => {
+    const token = await registerAndLogin('reconcile@example.com');
+    const connectRes = await request(app.getHttpServer())
+      .post('/connectors/github/connect')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(201);
+    const connectionId = connectRes.body.connection_id as string;
+    const composioAccountId = (connectRes.body.redirect_url as string).split(
+      '/connect/',
+    )[1];
+
+    fakeGateway.reconcileStatusByAccountId.set(composioAccountId, 'active');
+
+    const res = await request(app.getHttpServer())
+      .get(`/connectors/${connectionId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(res.body.status).toBe('active');
+    expect(res.body.connected_at).not.toBeNull();
+  });
+
+  it('DELETE /connectors/:id revokes the connection: calls the gateway and returns 204', async () => {
+    const token = await registerAndLogin('revoke@example.com');
+    const connectRes = await request(app.getHttpServer())
+      .post('/connectors/trello/connect')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(201);
+    const connectionId = connectRes.body.connection_id as string;
+    const composioAccountId = (connectRes.body.redirect_url as string).split(
+      '/connect/',
+    )[1];
+
+    await request(app.getHttpServer())
+      .delete(`/connectors/${connectionId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(204);
+
+    expect(fakeGateway.revokedAccountIds).toContain(composioAccountId);
+
+    const getRes = await request(app.getHttpServer())
+      .get(`/connectors/${connectionId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(getRes.body.status).toBe('revoked');
+  });
+
+  it("DELETE /connectors/:id returns 404 (and does not revoke) for another user's connection", async () => {
+    const ownerToken = await registerAndLogin('revoke-owner@example.com');
+    const connectRes = await request(app.getHttpServer())
+      .post('/connectors/notion/connect')
+      .set('Authorization', `Bearer ${ownerToken}`)
+      .expect(201);
+    const connectionId = connectRes.body.connection_id as string;
+
+    const otherToken = await registerAndLogin('revoke-other@example.com');
+
+    const revokedBefore = fakeGateway.revokedAccountIds.length;
+    await request(app.getHttpServer())
+      .delete(`/connectors/${connectionId}`)
+      .set('Authorization', `Bearer ${otherToken}`)
+      .expect(404);
+    expect(fakeGateway.revokedAccountIds).toHaveLength(revokedBefore);
   });
 });

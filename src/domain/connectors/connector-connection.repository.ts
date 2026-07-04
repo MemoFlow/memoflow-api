@@ -24,6 +24,14 @@ export interface ConnectorConnectionRepository {
     userId: string,
     provider: ConnectorProvider,
   ): Promise<ConnectorConnection | null>;
+  /**
+   * Looks a connection up by its Composio connected-account id — used by
+   * `SyncConnectionStatusUseCase.applyEvent` to resolve a webhook's account
+   * id back to the owning row.
+   */
+  findByComposioAccountId(
+    composioAccountId: string,
+  ): Promise<ConnectorConnection | null>;
   findAllByUser(userId: string): Promise<ConnectorConnection[]>;
   findActiveByUser(userId: string): Promise<ConnectorConnection[]>;
   /**

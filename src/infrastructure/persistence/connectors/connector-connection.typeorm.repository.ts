@@ -33,6 +33,15 @@ export class ConnectorConnectionTypeOrmRepository implements ConnectorConnection
     return entity ? this.toDomain(entity) : null;
   }
 
+  async findByComposioAccountId(
+    composioAccountId: string,
+  ): Promise<ConnectorConnection | null> {
+    const entity = await this.repository.findOne({
+      where: { composioAccountId },
+    });
+    return entity ? this.toDomain(entity) : null;
+  }
+
   async findAllByUser(userId: string): Promise<ConnectorConnection[]> {
     const entities = await this.repository.find({ where: { userId } });
     return entities.map((entity) => this.toDomain(entity));

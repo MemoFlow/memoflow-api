@@ -3,6 +3,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { GetConnectionUseCase } from './application/connectors/get-connection.use-case';
 import { InitiateConnectionUseCase } from './application/connectors/initiate-connection.use-case';
 import { ListConnectionsUseCase } from './application/connectors/list-connections.use-case';
+import { RevokeConnectionUseCase } from './application/connectors/revoke-connection.use-case';
+import { SyncConnectionStatusUseCase } from './application/connectors/sync-connection-status.use-case';
 import { CONNECTOR_CONNECTION_REPOSITORY } from './domain/connectors/connector-connection.repository';
 import { CONNECTOR_GATEWAY } from './domain/connectors/connector-gateway.port';
 import { ComposioGateway } from './infrastructure/connectors/composio.gateway';
@@ -12,9 +14,10 @@ import { ConnectorsController } from './presentation/connectors/connectors.contr
 import { UsersModule } from './users.module';
 
 /**
- * Branch: feature/connector-connections (roadmap item 7, branch 1) —
- * Composio-backed connector connection references (PG). Never stores raw
- * provider tokens; Composio is the token vault.
+ * Branches: feature/connector-connections (roadmap item 7, branch 1) +
+ * feature/connector-webhook (branch 2) — Composio-backed connector
+ * connection references (PG), status via webhook + poll-on-read reconcile,
+ * and revoke. Never stores raw provider tokens; Composio is the token vault.
  */
 @Module({
   imports: [
@@ -33,6 +36,8 @@ import { UsersModule } from './users.module';
     InitiateConnectionUseCase,
     ListConnectionsUseCase,
     GetConnectionUseCase,
+    RevokeConnectionUseCase,
+    SyncConnectionStatusUseCase,
   ],
   exports: [CONNECTOR_CONNECTION_REPOSITORY],
 })

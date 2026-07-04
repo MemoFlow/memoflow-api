@@ -19,6 +19,7 @@ function baseConfig(overrides: Record<string, unknown> = {}) {
     REDIS_PORT: '6379',
     COMPOSIO_API_KEY: 'composio-test-key',
     COMPOSIO_AUTH_CONFIG_IDS: 'trello:ac_123,notion:ac_456,github:ac_789',
+    COMPOSIO_WEBHOOK_SECRET: 'composio-test-webhook-secret',
     ...overrides,
   };
 }
@@ -153,6 +154,12 @@ describe('env.validation COMPOSIO_*', () => {
     expect(() => validate(config)).toThrow(/COMPOSIO_AUTH_CONFIG_IDS/);
   });
 
+  it('requires COMPOSIO_WEBHOOK_SECRET', () => {
+    const config = baseConfig();
+    delete (config as Record<string, unknown>).COMPOSIO_WEBHOOK_SECRET;
+    expect(() => validate(config)).toThrow(/COMPOSIO_WEBHOOK_SECRET/);
+  });
+
   it('COMPOSIO_BASE_URL is optional', () => {
     const result = validate(baseConfig());
     expect(result.COMPOSIO_BASE_URL).toBeUndefined();
@@ -197,9 +204,9 @@ describe('parseComposioAuthConfigIds', () => {
   });
 
   it('rejects a duplicate provider', () => {
-    expect(() =>
-      parseComposioAuthConfigIds('trello:ac_1,trello:ac_2'),
-    ).toThrow(/Duplicate COMPOSIO_AUTH_CONFIG_IDS provider "trello"/);
+    expect(() => parseComposioAuthConfigIds('trello:ac_1,trello:ac_2')).toThrow(
+      /Duplicate COMPOSIO_AUTH_CONFIG_IDS provider "trello"/,
+    );
   });
 });
 

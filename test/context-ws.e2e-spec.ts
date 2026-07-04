@@ -168,6 +168,7 @@ describeWithDocker()('Context / planning-job WebSocket push (e2e)', () => {
       JWT_EXPIRES_IN: '15m',
       COMPOSIO_API_KEY: 'test-only-composio-key',
       COMPOSIO_AUTH_CONFIG_IDS: 'trello:ac_test,notion:ac_test,github:ac_test',
+      COMPOSIO_WEBHOOK_SECRET: 'test-only-composio-webhook-secret',
     });
 
     const dataSourceModule =

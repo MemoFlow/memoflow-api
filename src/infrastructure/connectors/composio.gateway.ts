@@ -6,6 +6,8 @@ import { ConfigService } from '@nestjs/config';
 import type { Composio as ComposioClient } from '@composio/core';
 import {
   ConnectorGateway,
+  ConnectorWebhookEvent,
+  ConnectorWebhookHeaders,
   InitiateConnectionInput,
   InitiateConnectionResult,
 } from '../../domain/connectors/connector-gateway.port';
@@ -60,6 +62,74 @@ export class ComposioGateway implements ConnectorGateway {
     const client = await this.getClient();
     const account = await client.connectedAccounts.get(composioAccountId);
     return this.mapStatus(account.status);
+  }
+
+  /**
+   * `composio.triggers.verifyWebhook()` is the SDK's one HMAC verification
+   * entry point (there is no separate `composio.webhooks` client in
+   * 0.13.1) — it signs `${webhook-id}.${webhook-timestamp}.${payload}` and
+   * throws `ComposioWebhookSignatureVerificationError` on a mismatch. That
+   * call — and only that call — is left uncaught here, so a genuine
+   * signature failure propagates to the caller as-is.
+   *
+   * It normalizes the verified payload into an `IncomingTriggerPayload`
+   * (the *trigger-automation* shape — `triggerSlug`/`payload`), which does
+   * not carry the connected-account fields (`data.id`, `data.status`) this
+   * gateway needs. So once the signature is confirmed authentic, the raw
+   * JSON body is parsed directly for that connected-account event shape —
+   * the same `{ data: { id, status, ... } }` shape as `GET
+   * /connected_accounts/{id}` and the SDK's typed
+   * `ConnectionExpiredEventSchema` — which every
+   * `composio.connected_account.*` webhook shares.
+   *
+   * Anything that goes wrong *after* the signature is confirmed valid
+   * (malformed JSON, an unrecognized payload shape — e.g. a trigger-message
+   * webhook that isn't a connected-account event) returns `null` rather
+   * than throwing: it's a "nothing to do here" case, not an auth failure,
+   * and must not be reported as one.
+   */
+  async verifyWebhook(
+    rawBody: Buffer | string,
+    headers: ConnectorWebhookHeaders,
+  ): Promise<ConnectorWebhookEvent | null> {
+    const client = await this.getClient();
+    const payload = Buffer.isBuffer(rawBody)
+      ? rawBody.toString('utf8')
+      : rawBody;
+
+    // Only this call can throw ComposioWebhookSignatureVerificationError —
+    // left uncaught deliberately.
+    await client.triggers.verifyWebhook({
+      id: headers.id,
+      timestamp: headers.timestamp,
+      signature: headers.signature,
+      payload,
+      secret: this.config.getOrThrow<string>('COMPOSIO_WEBHOOK_SECRET'),
+    });
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(payload);
+    } catch {
+      return null;
+    }
+
+    const data = (parsed as { data?: Record<string, unknown> } | null)?.data;
+    const composioAccountId = data?.id;
+    const status = data?.status;
+    if (typeof composioAccountId !== 'string' || typeof status !== 'string') {
+      return null;
+    }
+
+    return {
+      composioAccountId,
+      status: this.mapStatus(status),
+    };
+  }
+
+  async revoke(composioAccountId: string): Promise<void> {
+    const client = await this.getClient();
+    await client.connectedAccounts.delete(composioAccountId);
   }
 
   private resolveAuthConfigId(provider: string): string {

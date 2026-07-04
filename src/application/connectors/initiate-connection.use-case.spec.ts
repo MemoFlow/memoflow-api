@@ -31,6 +31,15 @@ class InMemoryConnectorConnectionRepository implements ConnectorConnectionReposi
     return Promise.resolve(found ?? null);
   }
 
+  findByComposioAccountId(
+    composioAccountId: string,
+  ): Promise<ConnectorConnection | null> {
+    const found = [...this.rows.values()].find(
+      (row) => row.composioAccountId === composioAccountId,
+    );
+    return Promise.resolve(found ?? null);
+  }
+
   findAllByUser(userId: string): Promise<ConnectorConnection[]> {
     return Promise.resolve(
       [...this.rows.values()].filter((row) => row.userId === userId),
@@ -110,6 +119,14 @@ class FakeConnectorGateway implements ConnectorGateway {
   }
 
   getConnectionStatus(): Promise<ConnectorStatus> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
+  verifyWebhook(): ReturnType<ConnectorGateway['verifyWebhook']> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
+  revoke(): Promise<void> {
     return Promise.reject(new Error('not implemented'));
   }
 }
