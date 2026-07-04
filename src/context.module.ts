@@ -5,9 +5,19 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { GetPlanningJobUseCase } from './application/context/get-planning-job.use-case';
 import { ProcessPlanningJobUseCase } from './application/context/process-planning-job.use-case';
 import { SubmitPlanningJobUseCase } from './application/context/submit-planning-job.use-case';
-import { CONTEXT_GATHERER } from './domain/context/context-gatherer.port';
+import { ConnectorsModule } from './connectors.module';
+import {
+  CONTEXT_ENGINE,
+  ContextEnginePort,
+} from './domain/context/context-engine.port';
+import {
+  CONTEXT_GATHERER,
+  ContextGatherer,
+} from './domain/context/context-gatherer.port';
 import { LLM_PLANNER } from './domain/context/llm-planner.port';
 import { PLANNING_JOB_REPOSITORY } from './domain/context/planning-job.repository';
+import { ConnectorContextGatherer } from './infrastructure/context/connector-context-gatherer';
+import { ContextEngineHttpClient } from './infrastructure/context/context-engine.http-client';
 import { StubContextGatherer } from './infrastructure/context/stub-context-gatherer';
 import { StubLlmPlanner } from './infrastructure/context/stub-llm-planner';
 import { PlanningJobMongooseRepository } from './infrastructure/persistence/context/planning-job.mongoose.repository';
@@ -22,10 +32,24 @@ import { PlanningGateway } from './presentation/context/planning.gateway';
 import { UsersModule } from './users.module';
 
 /**
- * Branch: feature/context-websocket — adds the real-time `PlanningGateway`
- * (WebSocket push of `planning.*` events) on top of Branch 2's REST intake
- * and in-process worker processing. `EventEmitterModule` is already
- * registered globally in `AppModule`; the gateway just subscribes to it.
+ * Picks the real, Composio-backed gatherer (`ConnectorContextGatherer` ->
+ * `ContextEngineHttpClient`) once `CONTEXT_ENGINE_URL` is configured, and
+ * falls back to `StubContextGatherer` otherwise — so `start:dev` / smoke /
+ * e2e keep working with no context engine configured. Exported (rather than
+ * inlined in `providers`) so it has a direct unit test.
+ */
+export function contextGathererFactory(
+  config: ConfigService,
+  engine: ContextEnginePort,
+): ContextGatherer {
+  return config.get<string>('CONTEXT_ENGINE_URL')
+    ? new ConnectorContextGatherer(engine)
+    : new StubContextGatherer();
+}
+
+/**
+ * Branch: feature/connector-context-engine (roadmap item 7, branch 3) — wires
+ * `contextGathererFactory` above as the `CONTEXT_GATHERER` provider.
  */
 @Module({
   imports: [
@@ -34,6 +58,7 @@ import { UsersModule } from './users.module';
     ]),
     QueueModule,
     UsersModule,
+    ConnectorsModule,
     // The gateway verifies WS handshake JWTs itself (mirrors JwtStrategy),
     // so it needs its own JwtService — UsersModule configures JwtModule but
     // doesn't export it, so it's registered here too, from the same secret.
@@ -51,7 +76,12 @@ import { UsersModule } from './users.module';
       provide: PLANNING_JOB_REPOSITORY,
       useClass: PlanningJobMongooseRepository,
     },
-    { provide: CONTEXT_GATHERER, useClass: StubContextGatherer },
+    { provide: CONTEXT_ENGINE, useClass: ContextEngineHttpClient },
+    {
+      provide: CONTEXT_GATHERER,
+      inject: [ConfigService, CONTEXT_ENGINE],
+      useFactory: contextGathererFactory,
+    },
     { provide: LLM_PLANNER, useClass: StubLlmPlanner },
     SubmitPlanningJobUseCase,
     GetPlanningJobUseCase,

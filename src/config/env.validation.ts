@@ -176,6 +176,31 @@ export class EnvironmentVariables {
   @IsString()
   @IsNotEmpty()
   COMPOSIO_WEBHOOK_SECRET: string;
+
+  // Base URL of the external context engine that `ContextEngineHttpClient`
+  // POSTs a user's active connectors (+ Composio MCP references) and prompt
+  // to. Optional: unset in dev/test keeps `ContextModule`'s `CONTEXT_GATHERER`
+  // factory on `StubContextGatherer` so no context engine is required to run
+  // the app.
+  @IsOptional()
+  @IsString()
+  CONTEXT_ENGINE_URL?: string;
+
+  // Sent as `Authorization: Bearer <key>` on context-engine requests when
+  // set. Optional — some deployments may authenticate the context engine by
+  // network boundary alone.
+  @IsOptional()
+  @IsString()
+  CONTEXT_ENGINE_API_KEY?: string;
+
+  // Abort the context-engine POST after this many milliseconds so a hung
+  // context engine can't stall a planning job's worker indefinitely — the
+  // aborted fetch rejects and the job is recorded `failed` via the existing
+  // ProcessPlanningJobUseCase error path.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  CONTEXT_ENGINE_TIMEOUT_MS: number = 10_000;
 }
 
 export function validate(
