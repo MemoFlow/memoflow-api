@@ -38,7 +38,10 @@ Legend: ✅ done · ◐ in progress · ☐ not started
   the GitHub Environment `development`. Deploy target for dev is **Render**
   (`render.yaml` blueprint for the web service + managed Postgres); dev MongoDB is
   external **MongoDB Atlas (free M0 tier)** since Render has no managed MongoDB —
-  its connection string is set manually as the `MONGODB_URI` secret.
+  its connection string is set manually as the `MONGODB_URI` secret. Now that the
+  BullMQ/WebSocket backbone runs in the deployed dev tier, dev Redis is likewise
+  external — **Upstash free tier**, TLS-only (`REDIS_TLS=true`) — with
+  `REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD` set manually as secrets.
 - ☐ Staging and production deploy workflows/targets remain **undecided** — land
   once the user picks hosting for those tiers; don't invent infrastructure.
 
