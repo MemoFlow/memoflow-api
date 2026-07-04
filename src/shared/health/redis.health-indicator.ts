@@ -24,6 +24,9 @@ export class RedisHealthIndicator implements OnModuleDestroy {
       host: config.getOrThrow<string>('REDIS_HOST'),
       port: config.getOrThrow<number>('REDIS_PORT'),
       password: config.get<string>('REDIS_PASSWORD') || undefined,
+      // Strict TLS on purpose (verify Upstash's signed cert) — see the note
+      // in queue.module.ts on why this diverges from POSTGRES_SSL.
+      ...(config.get<boolean>('REDIS_TLS') ? { tls: {} } : {}),
       lazyConnect: true,
       maxRetriesPerRequest: 1,
       // Health-check client, not an operational connection: stop reconnecting

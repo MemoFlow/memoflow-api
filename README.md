@@ -99,6 +99,7 @@ Beyond the database connection vars, auth requires:
 | `REDIS_HOST` | yes | — | Redis host for the BullMQ planning queue |
 | `REDIS_PORT` | yes | — | Redis port (`0`–`65535`) |
 | `REDIS_PASSWORD` | no | — | Redis auth password, if required |
+| `REDIS_TLS` | no | `false` | set `true` for managed TLS-only Redis (e.g. Upstash); local docker Redis stays `false` — mirrors `POSTGRES_SSL` |
 | `WS_CORS_ORIGIN` | no | `*` | frontend origin allowed to open the planning WebSocket; `*` is dev-only — must be set explicitly in staging/production, never `*` |
 
 See [`.env.example`](.env.example) for the full list (`NODE_ENV`, `PORT`,
@@ -198,8 +199,10 @@ it never blocks the PR.
 The `development` tier deploys to **Render** (see [`render.yaml`](render.yaml) for the
 web service + managed Postgres blueprint). Render has no managed MongoDB, so dev
 MongoDB is an external **MongoDB Atlas M0 (free tier)** instance, with its connection
-string set manually as the `MONGODB_URI` secret. Staging and production deploy
-targets are not yet decided.
+string set manually as the `MONGODB_URI` secret. Render also has no managed free
+Redis, so dev Redis is likewise external — **Upstash free tier**, TLS-only
+(`REDIS_TLS=true`) — with `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` set manually
+as secrets. Staging and production deploy targets are not yet decided.
 
 ## Documentation
 

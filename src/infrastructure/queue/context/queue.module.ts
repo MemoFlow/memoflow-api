@@ -14,6 +14,12 @@ import { BullMqPromptQueue } from './bullmq-prompt-queue';
           host: config.getOrThrow<string>('REDIS_HOST'),
           port: config.getOrThrow<number>('REDIS_PORT'),
           password: config.get<string>('REDIS_PASSWORD') || undefined,
+          // Strict `tls: {}` (default rejectUnauthorized: true) on purpose:
+          // Upstash presents a properly-signed cert, so verify it. This
+          // deliberately differs from POSTGRES_SSL, which relaxes
+          // rejectUnauthorized for Neon's unverifiable CA — only the parsing
+          // mirrors POSTGRES_SSL, not the TLS options shape.
+          ...(config.get<boolean>('REDIS_TLS') ? { tls: {} } : {}),
         },
       }),
     }),

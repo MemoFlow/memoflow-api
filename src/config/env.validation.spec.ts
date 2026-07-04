@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { parsePostgresSsl, validate } from './env.validation';
+import { parsePostgresSsl, parseRedisTls, validate } from './env.validation';
 
 function baseConfig(overrides: Record<string, unknown> = {}) {
   return {
@@ -71,6 +71,28 @@ describe('env.validation REDIS_*', () => {
   });
 });
 
+describe('env.validation REDIS_TLS', () => {
+  it('defaults to false when unset', () => {
+    const result = validate(baseConfig());
+    expect(result.REDIS_TLS).toBe(false);
+  });
+
+  it('parses "true" as true', () => {
+    const result = validate(baseConfig({ REDIS_TLS: 'true' }));
+    expect(result.REDIS_TLS).toBe(true);
+  });
+
+  it('parses "false" as false', () => {
+    const result = validate(baseConfig({ REDIS_TLS: 'false' }));
+    expect(result.REDIS_TLS).toBe(false);
+  });
+
+  it('parses "TRUE" (case-insensitive) as true', () => {
+    const result = validate(baseConfig({ REDIS_TLS: 'TRUE' }));
+    expect(result.REDIS_TLS).toBe(true);
+  });
+});
+
 describe('parsePostgresSsl', () => {
   // Shared by env.validation.ts (runtime, via @Transform) and
   // typeorm.data-source.ts (migration CLI, reading process.env directly) —
@@ -90,5 +112,23 @@ describe('parsePostgresSsl', () => {
 
   it('parses undefined as false', () => {
     expect(parsePostgresSsl(undefined)).toBe(false);
+  });
+});
+
+describe('parseRedisTls', () => {
+  it('parses "TRUE" as true', () => {
+    expect(parseRedisTls('TRUE')).toBe(true);
+  });
+
+  it('parses "true" as true', () => {
+    expect(parseRedisTls('true')).toBe(true);
+  });
+
+  it('parses "false" as false', () => {
+    expect(parseRedisTls('false')).toBe(false);
+  });
+
+  it('parses undefined as false', () => {
+    expect(parseRedisTls(undefined)).toBe(false);
   });
 });

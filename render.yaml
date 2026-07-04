@@ -11,6 +11,11 @@
 # MongoDB is NOT provisioned here: Render has no managed MongoDB offering.
 # The dev Mongo instance is external (MongoDB Atlas, free M0 tier) and its
 # connection string is set manually as the MONGODB_URI secret below.
+#
+# Redis is likewise NOT provisioned here: Render has no free managed Redis
+# offering. The dev Redis (BullMQ queue) is external (Upstash, free tier)
+# and TLS-only; its connection fields are set manually as sync:false
+# secrets below.
 databases:
   - name: memoflow-dev-postgres
     databaseName: memoflow_dev
@@ -41,6 +46,23 @@ services:
       - key: JWT_SECRET
         sync: false
       - key: JWT_EXPIRES_IN
+        sync: false
+
+      # Redis is external (Upstash free tier) — set manually in the Render
+      # dashboard, not derived from a Render-managed resource. Upstash is
+      # TLS-only, so REDIS_TLS is a plain (non-secret) literal.
+      - key: REDIS_HOST
+        sync: false
+      - key: REDIS_PORT
+        sync: false
+      - key: REDIS_PASSWORD
+        sync: false
+      - key: REDIS_TLS
+        value: "true"
+
+      # Real frontend origin for the WebSocket gateway's CORS check — set
+      # manually in the Render dashboard.
+      - key: WS_CORS_ORIGIN
         sync: false
 
       # Postgres connection fields sourced from the managed database above.
