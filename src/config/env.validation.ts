@@ -29,6 +29,15 @@ export function parsePostgresSsl(value: unknown): boolean {
   return String(value).toLowerCase() === 'true';
 }
 
+/**
+ * Case-insensitive "true" check for REDIS_TLS, mirroring parsePostgresSsl so
+ * both toggles behave identically for local docker (plaintext) vs managed
+ * TLS-only providers (e.g. Upstash).
+ */
+export function parseRedisTls(value: unknown): boolean {
+  return String(value).toLowerCase() === 'true';
+}
+
 export class EnvironmentVariables {
   @IsOptional()
   @IsIn(NODE_ENVS)
@@ -92,6 +101,13 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   REDIS_PASSWORD?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ obj }: { obj: Record<string, unknown> }) =>
+    parseRedisTls(obj.REDIS_TLS),
+  )
+  REDIS_TLS: boolean = false;
 
   // Dev default '*' is convenient locally but unsafe beyond it — staging and
   // production must set this explicitly to the real frontend origin.
