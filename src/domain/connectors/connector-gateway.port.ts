@@ -4,10 +4,25 @@ import { ConnectorStatus } from './connector-status';
 /**
  * Port abstracting the Composio connect/status/webhook/revoke flow.
  * Implemented by `ComposioGateway` (infrastructure only — the only layer
- * allowed to import `@composio/core`). Scope is Branches 1–2: MCP reference
- * lookup for the context-engine push lands in Branch 3.
+ * allowed to import `@composio/core`).
  */
 export const CONNECTOR_GATEWAY = Symbol('ConnectorGateway');
+
+/**
+ * Normalized reference to a connector's Composio MCP server, deliberately
+ * not leaking any `@composio/core` SDK types into the domain. Built directly
+ * from an active `ConnectorConnection` row (see
+ * `ContextEngineHttpClient.gatherContext`) — no extra Composio round trip.
+ * `mcpUrl` is always `null`: this API doesn't provision a user-scoped MCP URL
+ * in a single clean call for the installed SDK version, so the external
+ * context engine (which also holds Composio credentials) resolves the MCP
+ * server itself from `provider` + `composioAccountId`.
+ */
+export interface ConnectorMcpReference {
+  provider: ConnectorProvider;
+  mcpUrl: string | null;
+  composioAccountId: string;
+}
 
 export interface InitiateConnectionInput {
   userId: string;

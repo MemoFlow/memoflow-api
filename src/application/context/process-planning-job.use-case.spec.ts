@@ -153,6 +153,28 @@ describe('ProcessPlanningJobUseCase', () => {
     expect(job.finishedAt).not.toBeNull();
   });
 
+  it('passes { userId, connectors, prompt } to the gatherer', async () => {
+    const repository = new InMemoryPlanningJobRepository();
+    repository.seed(
+      makeJob({ userId: 'user-42', connectors: ['trello', 'notion'] }),
+    );
+    const gatherer = new StubGatherer();
+    const gatherSpy = jest.spyOn(gatherer, 'gather');
+    const useCase = new ProcessPlanningJobUseCase(
+      repository,
+      gatherer,
+      new StubPlanner(),
+    );
+
+    await useCase.execute({ jobId: 'job-1' });
+
+    expect(gatherSpy).toHaveBeenCalledWith({
+      userId: 'user-42',
+      connectors: ['trello', 'notion'],
+      prompt: 'Plan my chapter',
+    });
+  });
+
   it('marks the job failed (without rethrowing) when the planner/gatherer throws', async () => {
     const repository = new InMemoryPlanningJobRepository();
     repository.seed(makeJob());

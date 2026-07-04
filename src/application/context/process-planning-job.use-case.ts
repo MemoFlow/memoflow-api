@@ -59,10 +59,11 @@ export class ProcessPlanningJobUseCase {
 
     let result: PlanningResult;
     try {
-      const context = await this.contextGatherer.gather(
-        claimed.connectors,
-        claimed.prompt,
-      );
+      const context = await this.contextGatherer.gather({
+        userId: claimed.userId,
+        connectors: claimed.connectors,
+        prompt: claimed.prompt,
+      });
       result = await this.llmPlanner.plan({
         prompt: claimed.prompt,
         context,

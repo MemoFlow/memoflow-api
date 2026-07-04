@@ -163,4 +163,5 @@ When in doubt about placement or schema design, ask the `db-mentor` agent.
 4. Versioning (Mongo — `document_versions`)
 5. AI layer (`prompts` + `ai_suggestions` PG, `planning_jobs` Mongo)
 6. Gamification (PG)
-7. Connectors (OAuth via Composio + `connector_connections` reference table)
+7. Connectors (OAuth via Composio + `connector_connections` reference table; planning
+   jobs push the active-connector selection to an external context engine)

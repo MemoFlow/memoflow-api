@@ -39,6 +39,6 @@ import { UsersModule } from './users.module';
     RevokeConnectionUseCase,
     SyncConnectionStatusUseCase,
   ],
-  exports: [CONNECTOR_CONNECTION_REPOSITORY],
+  exports: [CONNECTOR_CONNECTION_REPOSITORY, CONNECTOR_GATEWAY],
 })
 export class ConnectorsModule {}
