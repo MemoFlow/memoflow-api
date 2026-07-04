@@ -1,16 +1,19 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { MongooseModule } from '@nestjs/mongoose';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { validate } from './config/env.validation';
+import { ContextModule } from './context.module';
 import { HealthModule } from './shared/health/health.module';
 import { UsersModule } from './users.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ validate, isGlobal: true }),
+    EventEmitterModule.forRoot(),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
@@ -38,6 +41,7 @@ import { UsersModule } from './users.module';
     }),
     HealthModule,
     UsersModule,
+    ContextModule,
   ],
   controllers: [AppController],
   providers: [AppService],

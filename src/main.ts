@@ -9,6 +9,10 @@ import { LoggingInterceptor } from './shared/interceptors/logging.interceptor';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // Lets in-process consumers (the BullMQ worker, Redis/Mongo/Postgres
+  // connections) drain cleanly on SIGTERM instead of being killed mid-job.
+  app.enableShutdownHooks();
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

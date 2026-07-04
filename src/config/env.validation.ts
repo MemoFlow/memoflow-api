@@ -79,6 +79,25 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   JWT_EXPIRES_IN: string = '15m';
+
+  @IsString()
+  @IsNotEmpty()
+  REDIS_HOST: string;
+
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  REDIS_PORT: number;
+
+  @IsOptional()
+  @IsString()
+  REDIS_PASSWORD?: string;
+
+  // Dev default '*' is convenient locally but unsafe beyond it — staging and
+  // production must set this explicitly to the real frontend origin.
+  @IsOptional()
+  @IsString()
+  WS_CORS_ORIGIN: string = '*';
 }
 
 export function validate(
