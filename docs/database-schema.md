@@ -44,22 +44,30 @@ validate that the referenced PG row exists before writing to Mongo. The
 | column | type | notes |
 | --- | --- | --- |
 | id | uuid | PK |
-| user_id | uuid | FK → users |
+| user_id | uuid | FK → users, ON DELETE CASCADE, **indexed** |
 | title | varchar | |
 | doc_type | varchar | |
 | status | varchar | |
 | style_config | jsonb | |
+| created_at | timestamptz | |
+| updated_at | timestamptz | |
 
 #### `sections`
 | column | type | notes |
 | --- | --- | --- |
 | id | uuid | PK |
-| document_id | uuid | FK → documents |
+| document_id | uuid | FK → documents, ON DELETE CASCADE, **indexed** |
 | title | varchar | |
 | content | text | |
-| order | int | **indexed** (ordered fetch per document) |
+| order | int | see composite index below |
 | status | varchar | |
-| word_count | int | |
+| word_count | int | server-computed, never client-set |
+| created_at | timestamptz | |
+| updated_at | timestamptz | |
+
+Composite index **(document_id, order)** — `IDX_sections_document_order` — satisfies
+"ordered fetch per document"; `document_id` also has its own plain index (FK lookup /
+existence checks).
 
 #### `ai_suggestions`
 | column | type | notes |
@@ -187,16 +195,18 @@ Async AI context-engine jobs (outline/suggestion generation using connector cont
 this collection first: `user_id`, `status`, `prompt`, `connectors`, `result`,
 `error_code`/`error_message`, and the timestamp fields. `prompt_version` and
 `context_used`, plus a richer `result` shape, arrive with roadmap item 5 (AI layer),
-which also wires real connectors. Until roadmap item 2 (documents + sections) lands,
-there is no PG `documents`/`sections` row to reference, so `document_id` and
-`section_id` are **nullable** — the job is created and processed with both `null`.
+which also wires real connectors. `document_id`/`section_id` stay **nullable** — the
+job is created and processed with both `null` today. Roadmap item 2 (documents +
+sections) has now landed, so a real PG `documents`/`sections` row exists to
+reference; binding a planning job to one is item 5's remaining work, not a schema
+change here.
 
 | field | type | notes |
 | --- | --- | --- |
 | _id | ObjectId | |
 | user_id | uuid (string) | **indexed** — references PG `users.id` |
-| document_id | uuid (string)? | **nullable until item 2** — indexed; references PG `documents.id` once populated |
-| section_id | uuid (string)? | **nullable until item 2** — references PG `sections.id` once populated |
+| document_id | uuid (string)? | **nullable** — indexed; item 2's `documents` table now exists to reference, but no use-case binds it yet (item 5) |
+| section_id | uuid (string)? | **nullable** — item 2's `sections` table now exists to reference, but no use-case binds it yet (item 5) |
 | status | string | **indexed** (pending / running / completed / failed) |
 | prompt | string | user's planning prompt |
 | connectors | string[] | e.g. ["notion", "github"] — unused until item 7 |

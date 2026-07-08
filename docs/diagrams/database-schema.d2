@@ -26,8 +26,11 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
     doc_type: varchar
     status: varchar
     style_config: jsonb
+    created_at: timestamptz
+    updated_at: timestamptz
   }
 
+  # order indexed via composite (document_id, order) — IDX_sections_document_order.
   sections: {
     shape: sql_table
     id: uuid {constraint: primary_key}
@@ -37,6 +40,8 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
     order: int
     status: varchar
     word_count: int
+    created_at: timestamptz
+    updated_at: timestamptz
   }
 
   ai_suggestions: {
@@ -132,8 +137,8 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
     customised: boolean
   }
 
-  documents.user_id -> users.id
-  sections.document_id -> documents.id
+  documents.user_id -> users.id: cascade
+  sections.document_id -> documents.id: cascade
   ai_suggestions.section_id -> sections.id
   ai_suggestions.user_id -> users.id
   connector_connections.user_id -> users.id
