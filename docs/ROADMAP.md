@@ -60,11 +60,22 @@ Legend: ✅ done · ◐ in progress · ☐ not started
   `GET /users/:id` (JWT-guarded). `last_active_at` updates on login.
 - Migration: `CreateUsers`.
 
-## 2. Documents + sections (PG) — ☐
+## 2. Documents + sections (PG) — ✅ done
 
-- `documents` (FK → users) and `sections` (FK → documents, `order` indexed) per
-  schema doc. CRUD + section reordering; ownership enforced via the JWT user.
-- Depends on item 1 (auth + users FK).
+- Slice implemented per the `documents`/`sections` tables in the schema doc:
+  `documents` (FK → users, `ON DELETE CASCADE`) and `sections` (FK → documents,
+  `ON DELETE CASCADE`); both tables carry `created_at`/`updated_at`. `sections` has
+  a composite index `(document_id, order)` (`IDX_sections_document_order`) plus a
+  plain index on `document_id`; `documents.user_id` is indexed.
+- Migration: `CreateDocumentsAndSections`.
+- Endpoints (all JWT-guarded, owner-scoped 404s, snake_case JSON responses):
+  `POST/GET /documents`, `GET/PATCH/DELETE /documents/:id`;
+  `POST/GET /documents/:documentId/sections`,
+  `PATCH /documents/:documentId/sections/reorder`,
+  `GET/PATCH/DELETE /documents/:documentId/sections/:id`.
+- `word_count` is server-computed; a section's `order` is append-on-create and only
+  ever changes via the reorder endpoint (absent from create/update DTOs).
+- Depended on item 1 (auth + users FK); unblocks items 3, 4, 6.
 
 ## 3. Templates (PG) — ☐
 

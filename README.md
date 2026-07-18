@@ -53,6 +53,17 @@ via `@nestjs/jwt` and validated by Passport-JWT.
 | `POST` | `/auth/login` | — | returns `{ accessToken }`; updates `last_active_at` |
 | `GET` | `/users/me` | JWT | the authenticated user |
 | `GET` | `/users/:id` | JWT | fetch a user by id |
+| `POST` | `/documents` | JWT | creates a document owned by the caller |
+| `GET` | `/documents` | JWT | lists the caller's documents |
+| `GET` | `/documents/:id` | JWT | fetch a document by id, owner-scoped |
+| `PATCH` | `/documents/:id` | JWT | partial update, owner-scoped |
+| `DELETE` | `/documents/:id` | JWT | owner-scoped; cascades to its sections; returns **204** |
+| `POST` | `/documents/:documentId/sections` | JWT | creates a section, appended to the end (`order` server-assigned) |
+| `GET` | `/documents/:documentId/sections` | JWT | lists a document's sections, ordered |
+| `PATCH` | `/documents/:documentId/sections/reorder` | JWT | reorders sections; body is the full set of section ids in the new order |
+| `GET` | `/documents/:documentId/sections/:id` | JWT | fetch a section by id, owner-scoped |
+| `PATCH` | `/documents/:documentId/sections/:id` | JWT | partial update (`title`/`content`/`status`); `order` not settable here |
+| `DELETE` | `/documents/:documentId/sections/:id` | JWT | owner-scoped; returns **204** |
 | `POST` | `/planning-jobs` | JWT | submits a planning prompt; returns **202** + `{ job_id, status: "pending" }` |
 | `GET` | `/planning-jobs/:id` | JWT | fetch a planning job by id, owner-scoped |
 | `POST` | `/connectors/:provider/connect` | JWT | starts a Composio OAuth connection for a provider; returns `{ redirect_url, connection_id, status }` |

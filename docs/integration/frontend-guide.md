@@ -81,7 +81,71 @@ Reads **self-heal**: a `GET` on an `initiated` connection re-checks Composio, so
 ### Disconnect — `DELETE /connectors/:id` (JWT) → `204`
 Revokes at Composio and marks the connection `revoked`. `404` if not yours.
 
-## 5. Planning jobs (async + real-time)
+## 5. Documents + sections
+
+A document is a container; sections are its ordered content blocks. All routes are
+JWT-guarded and **owner-scoped** — a document/section that doesn't exist, or belongs
+to another user, both 404 the same way (no existence leak). JSON is **snake_case** on
+responses; request bodies (except the reorder endpoint's `sectionIds`) are
+**camelCase** to match the DTOs below — check Swagger if in doubt.
+
+### Documents
+
+`POST /documents` (JWT) → `201`
+```json
+// request
+{ "title": "Q3 Planning Doc", "docType": "planning", "status": "draft", "styleConfig": {} }
+// response (DocumentResponseDto)
+{ "id": "uuid", "user_id": "uuid", "title": "Q3 Planning Doc", "doc_type": "planning",
+  "status": "draft", "style_config": {}, "created_at": "…", "updated_at": "…" }
+```
+`docType` is required; `status` (default `draft`) and `styleConfig` (default `{}`) are optional.
+
+- `GET /documents` (JWT) → `200` `DocumentResponseDto[]` — the caller's documents.
+- `GET /documents/:id` (JWT) → `200` `DocumentResponseDto`, `404` if not yours.
+- `PATCH /documents/:id` (JWT) → `200` `DocumentResponseDto` — partial update, same
+  fields as create (all optional). `404` if not yours.
+- `DELETE /documents/:id` (JWT) → `204` — cascades to its sections. `404` if not yours.
+
+### Sections
+
+Nested under a document: `/documents/:documentId/sections`. `:documentId` must be a
+document you own, or every route below 404s.
+
+`POST /documents/:documentId/sections` (JWT) → `201`
+```json
+// request — no `order`: a new section is always appended
+{ "title": "Introduction", "content": "Lorem ipsum dolor sit amet.", "status": "draft" }
+// response (SectionResponseDto)
+{ "id": "uuid", "document_id": "uuid", "title": "Introduction",
+  "content": "Lorem ipsum dolor sit amet.", "order": 0, "status": "draft",
+  "word_count": 6, "created_at": "…", "updated_at": "…" }
+```
+`word_count` is always server-computed from `content` — never send it, and it's
+recomputed automatically on any `PATCH` that changes `content`.
+
+- `GET /documents/:documentId/sections` (JWT) → `200` `SectionResponseDto[]`, ordered
+  by `order` ascending.
+- `GET /documents/:documentId/sections/:id` (JWT) → `200` `SectionResponseDto`, `404`
+  if not yours.
+- `PATCH /documents/:documentId/sections/:id` (JWT) → `200` `SectionResponseDto` —
+  partial update of `title`/`content`/`status` only; **`order` cannot be set here**,
+  `400`-level validation simply ignores it if sent (use reorder below instead).
+  `404` if not yours.
+- `DELETE /documents/:documentId/sections/:id` (JWT) → `204`. `404` if not yours.
+
+### Reordering sections — `PATCH /documents/:documentId/sections/reorder` (JWT) → `200`
+```json
+// request — sectionIds: the FULL set of this document's section ids, in the new order
+{ "sectionIds": ["uuid-3", "uuid-1", "uuid-2"] }
+// response
+[ /* SectionResponseDto[], re-fetched in the new order */ ]
+```
+`400` if `sectionIds` isn't exactly the document's current set of section ids (missing
+one, extra one, or a duplicate all reject). This is the **only** way a section's
+`order` changes — it's never settable via create or update.
+
+## 6. Planning jobs (async + real-time)
 
 Submitting a job kicks off async context-gathering + planning; you get a `job_id`
 immediately and follow progress over the WebSocket (REST polling is the fallback).
@@ -102,7 +166,7 @@ immediately and follow progress over the WebSocket (REST polling is the fallback
 `completed`; `error_code`/`error_message` on `failed`. `404` if not yours. This is the
 **durable source of truth** and the fallback when a socket isn't connected.
 
-## 6. Real-time WebSocket (Socket.IO)
+## 7. Real-time WebSocket (Socket.IO)
 
 Push updates for planning jobs. Default namespace `/`; the JWT travels in the handshake
 `auth.token` (browsers can't set WS headers).
@@ -135,7 +199,7 @@ socket.on('planning.error',     (p) => {/* { jobId, message } — e.g. subscribe
   additional `planning.status` relays (see `docs/contracts/context-engine.md`); the event
   names above stay stable.
 
-## 7. End-to-end example flow
+## 8. End-to-end example flow
 
 1. `POST /auth/login` → store `accessToken`.
 2. `POST /connectors/trello/connect` → open `redirect_url`; user authorizes.
@@ -150,7 +214,8 @@ socket.on('planning.error',     (p) => {/* { jobId, message } — e.g. subscribe
 - The planning `result` payload is a **stub echo** today; its final shape
   (`{ suggestions, outline, sources }`) lands with the AI layer (roadmap item 5). Treat
   `result` as opaque JSON until then.
-- Document/section endpoints don't exist yet (roadmap item 2) — `planning_jobs` has no
-  `document_id`/`section_id` bound until then.
+- Documents/sections exist (roadmap item 2, section 5 above), but `planning_jobs`
+  still has no `document_id`/`section_id` bound to them — that wiring is item 5's
+  remaining work.
 - `/docs` (Swagger) is generated from the code and is always authoritative if this guide
   and the API ever disagree.
