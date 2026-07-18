@@ -20,6 +20,7 @@ creating or changing any entity; update it in the same PR as schema changes.
 | `npm run migration:generate -- src/infrastructure/persistence/migrations/<Name>` | generate migration from entity diff |
 | `npm run migration:run` / `migration:revert` / `migration:show` | apply / revert / list migrations |
 | `npm run release` / `release:dry` / `release:first` | bump version + `CHANGELOG.md` + tag from Conventional Commits — mutating release CI-only, guarded by `scripts/release.sh`; `dry` previews (always allowed), `first` cuts the initial release |
+| `npm run cleanup:dead` | dry-run report of dead local branches (PR merged/closed) + stale GitHub deployment records; `-- --apply` deletes them |
 
 Copy `.env.example` to `.env` before first run. Swagger UI: `http://localhost:3000/docs`.
 
