@@ -30,7 +30,8 @@
     "smoke": "./scripts/smoke.sh",
     "release": "./scripts/release.sh",
     "release:dry": "./scripts/release.sh --dry-run",
-    "release:first": "./scripts/release.sh --first-release"
+    "release:first": "./scripts/release.sh --first-release",
+    "cleanup:dead": "./scripts/cleanup-dead.sh"
   },
   "dependencies": {
     "@composio/core": "0.13.1",
