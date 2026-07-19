@@ -4,6 +4,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   MinLength,
 } from 'class-validator';
 
@@ -23,4 +24,20 @@ export class SubmitPlanningJobDto {
   @IsArray()
   @IsString({ each: true })
   connectors?: string[];
+
+  @ApiPropertyOptional({
+    description:
+      'Bind this job to a document you own — 404 if not found/not owned.',
+  })
+  @IsOptional()
+  @IsUUID()
+  documentId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Bind this job to a section — 404 if not found, or if it doesn't belong to `documentId` (when both are given).",
+  })
+  @IsOptional()
+  @IsUUID()
+  sectionId?: string;
 }

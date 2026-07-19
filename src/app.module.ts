@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { MongooseModule } from '@nestjs/mongoose';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AiModule } from './ai.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { validate } from './config/env.validation';
@@ -45,6 +46,7 @@ import { UsersModule } from './users.module';
     }),
     HealthModule,
     UsersModule,
+    AiModule,
     ContextModule,
     ConnectorsModule,
     DocumentsModule,

@@ -8,9 +8,30 @@ import 'dotenv/config';
 import bcrypt from 'bcrypt';
 import mongoose from 'mongoose';
 import dataSource from '../src/infrastructure/persistence/typeorm.data-source';
+import { PromptOrmEntity } from '../src/infrastructure/persistence/ai/prompt.orm-entity';
 import { UserOrmEntity } from '../src/infrastructure/persistence/users/user.orm-entity';
 
 const BCRYPT_SALT_ROUNDS = 10;
+
+// Roadmap item 5 (AI layer) — one active prompt per feature type. Simple
+// placeholder templates: `generate-suggestion` substitutes `{{content}}`
+// with the section's text; the planning worker records `{{version}}` on
+// the job for observability but doesn't currently render this template
+// into the planner call (see `ProcessPlanningJobUseCase`'s doc comment).
+const SEED_PROMPTS = [
+  {
+    featureType: 'suggestion',
+    version: 'v1',
+    template:
+      'Improve the clarity and flow of the following text, keeping its meaning intact:\n\n{{content}}',
+  },
+  {
+    featureType: 'planning',
+    version: 'v1',
+    template:
+      'Given the following prompt and gathered context, suggest a short outline:\n\n{{prompt}}',
+  },
+];
 
 const SEED_USERS = [
   {
@@ -68,6 +89,29 @@ async function main(): Promise<void> {
       }),
     );
     console.log(`[seed] created user ${seedUser.email}`);
+  }
+
+  const promptRepository = dataSource.getRepository(PromptOrmEntity);
+  for (const seedPrompt of SEED_PROMPTS) {
+    const existing = await promptRepository.findOne({
+      where: { featureType: seedPrompt.featureType, isActive: true },
+    });
+    if (existing) {
+      console.log(
+        `[seed] active prompt for "${seedPrompt.featureType}" already exists — skipping`,
+      );
+      continue;
+    }
+
+    await promptRepository.save(
+      promptRepository.create({
+        featureType: seedPrompt.featureType,
+        version: seedPrompt.version,
+        template: seedPrompt.template,
+        isActive: true,
+      }),
+    );
+    console.log(`[seed] created active prompt for "${seedPrompt.featureType}"`);
   }
 
   await mongoose.disconnect();

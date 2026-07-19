@@ -2,9 +2,9 @@ import { ApiProperty } from '@nestjs/swagger';
 import { JobStatus, PlanningJob } from '../../../domain/context/planning-job';
 
 /**
- * Response DTO for `planning_jobs`. Only exposes the fields this branch's
- * subset skeleton populates (see docs/database-schema.md) — no
- * `prompt_version`/`context_used`, those arrive with roadmap item 5.
+ * Response DTO for `planning_jobs` (see docs/database-schema.md).
+ * `document_id`/`section_id`/`prompt_version`/`context_used` arrive with
+ * roadmap item 5 (AI layer).
  */
 export class PlanningJobResponseDto {
   @ApiProperty()
@@ -18,6 +18,18 @@ export class PlanningJobResponseDto {
 
   @ApiProperty({ type: [String] })
   connectors: string[];
+
+  @ApiProperty({ nullable: true })
+  document_id: string | null;
+
+  @ApiProperty({ nullable: true })
+  section_id: string | null;
+
+  @ApiProperty({ nullable: true })
+  prompt_version: string | null;
+
+  @ApiProperty({ nullable: true, type: Object })
+  context_used: Record<string, unknown> | null;
 
   @ApiProperty({ nullable: true, type: Object })
   result: Record<string, unknown> | null;
@@ -43,6 +55,10 @@ export class PlanningJobResponseDto {
     dto.status = job.status;
     dto.prompt = job.prompt;
     dto.connectors = job.connectors;
+    dto.document_id = job.documentId;
+    dto.section_id = job.sectionId;
+    dto.prompt_version = job.promptVersion;
+    dto.context_used = job.contextUsed;
     dto.result = job.result;
     dto.error_code = job.errorCode;
     dto.error_message = job.errorMessage;

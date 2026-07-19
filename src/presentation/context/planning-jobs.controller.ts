@@ -37,6 +37,11 @@ export class PlanningJobsController {
   @ApiResponse({ status: 202, type: PlanningJobResponseDto })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({
+    status: 404,
+    description:
+      'documentId/sectionId given but not found (or not owned by the caller)',
+  })
+  @ApiResponse({
     status: 503,
     description: 'Failed to enqueue the job for processing',
   })
@@ -48,6 +53,8 @@ export class PlanningJobsController {
       userId: user.id,
       prompt: dto.prompt,
       connectors: dto.connectors,
+      documentId: dto.documentId,
+      sectionId: dto.sectionId,
     });
     return PlanningJobResponseDto.fromDomain(job);
   }
