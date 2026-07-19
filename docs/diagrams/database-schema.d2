@@ -116,12 +116,16 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
     created_by: "uuid (nullable)" {constraint: foreign_key}
     style_config: jsonb
     is_published: boolean
+    created_at: timestamptz
+    updated_at: timestamptz
   }
 
+  # order indexed via composite (template_id, order) — IDX_template_sections_template_order.
   template_sections: {
     shape: sql_table
     id: uuid {constraint: primary_key}
     template_id: uuid {constraint: foreign_key}
+    title: varchar
     order: int
     word_count_min: int
     word_count_max: int
@@ -146,10 +150,10 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
   milestones.document_id -> documents.id
   mission_progress.user_id -> users.id
   mission_progress.mission_id -> daily_missions.id
-  templates.created_by -> users.id
-  template_sections.template_id -> templates.id
-  document_templates.document_id -> documents.id
-  document_templates.template_id -> templates.id
+  templates.created_by -> users.id: set null
+  template_sections.template_id -> templates.id: cascade
+  document_templates.document_id -> documents.id: cascade
+  document_templates.template_id -> templates.id: cascade
 }
 
 mongo: MongoDB (specialist — Mongoose) {
