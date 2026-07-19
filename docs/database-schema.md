@@ -73,13 +73,20 @@ existence checks).
 | column | type | notes |
 | --- | --- | --- |
 | id | uuid | PK |
-| section_id | uuid | FK → sections |
-| user_id | uuid | FK → users |
+| section_id | uuid | FK → sections, ON DELETE CASCADE, **indexed** |
+| user_id | uuid | FK → users, ON DELETE CASCADE, **indexed** |
 | feature_type | varchar | |
 | original_text | text | |
 | suggested_text | text | |
-| status | varchar | |
+| status | varchar | pending / accepted / rejected |
 | prompt_version | varchar | |
+| created_at | timestamptz | |
+| updated_at | timestamptz | |
+
+Plain indexes on `section_id` and `user_id` are a deliberate addition beyond the
+original design (landed with roadmap item 5): `section_id` is the FK lookup path for
+every suggestions-list/generate call; `user_id` is on the FK today and a natural
+future "my suggestions" query path.
 
 #### `prompts`
 | column | type | notes |
@@ -89,6 +96,12 @@ existence checks).
 | version | varchar | |
 | template | text | |
 | is_active | boolean | **indexed** |
+| created_at | timestamptz | |
+| updated_at | timestamptz | |
+
+No public controller — repository-internal active-prompt lookup
+(`findActiveByFeatureType`), seeded via `scripts/seed.ts` (one active prompt per
+feature type: `suggestion`, `planning`).
 
 #### `connector_connections`
 No provider tokens are stored here — **Composio is the token vault**; this API keeps
@@ -210,28 +223,30 @@ Mongo — versions are immutable and restoring doesn't create a new one.
 Async AI context-engine jobs (outline/suggestion generation using connector context).
 
 **Implementation status:** the *Context module async backbone* item (BullMQ queue +
-`planning_jobs` persistence, see `docs/ROADMAP.md`) lands a **subset skeleton** of
+`planning_jobs` persistence, see `docs/ROADMAP.md`) landed a **subset skeleton** of
 this collection first: `user_id`, `status`, `prompt`, `connectors`, `result`,
-`error_code`/`error_message`, and the timestamp fields. `prompt_version` and
-`context_used`, plus a richer `result` shape, arrive with roadmap item 5 (AI layer),
-which also wires real connectors. `document_id`/`section_id` stay **nullable** — the
-job is created and processed with both `null` today. Roadmap item 2 (documents +
-sections) has now landed, so a real PG `documents`/`sections` row exists to
-reference; binding a planning job to one is item 5's remaining work, not a schema
-change here.
+`error_code`/`error_message`, and the timestamp fields. Roadmap item 5 (AI layer) has
+now landed the rest: `prompt_version` and `context_used` are recorded by
+`ProcessPlanningJobUseCase` from the active `planning` prompt and the
+context-gatherer's output once a job runs (both stay `null` until then), and
+`document_id`/`section_id` are validated and bound at submission time —
+`SubmitPlanningJobUseCase` checks the caller owns the referenced PG `document` (and
+that a given `section` belongs to it) before writing either into Mongo, 404ing
+uniformly on any mismatch. Both stay `null` when the caller submits a job without a
+binding.
 
 | field | type | notes |
 | --- | --- | --- |
 | _id | ObjectId | |
 | user_id | uuid (string) | **indexed** — references PG `users.id` |
-| document_id | uuid (string)? | **nullable** — indexed; item 2's `documents` table now exists to reference, but no use-case binds it yet (item 5) |
-| section_id | uuid (string)? | **nullable** — item 2's `sections` table now exists to reference, but no use-case binds it yet (item 5) |
+| document_id | uuid (string)? | **nullable, indexed** — references PG `documents.id`; validated (caller-owned) and bound at submission time (item 5) |
+| section_id | uuid (string)? | **nullable** — references PG `sections.id`; validated (belongs to `document_id` when both given) and bound at submission time (item 5) |
 | status | string | **indexed** (pending / running / completed / failed) |
 | prompt | string | user's planning prompt |
 | connectors | string[] | e.g. ["notion", "github"] — unused until item 7 |
-| prompt_version | string | **arrives with item 5** (AI layer) |
-| context_used | object | **arrives with item 5**: `{ notion?, github?, total_tokens }` |
-| result | object | subset skeleton: stub/echo payload; richer `{ suggestions[], outline?, sources[] }` shape arrives with item 5 |
+| prompt_version | string? | **nullable** — the active `planning` prompt's version, recorded once the job runs (item 5) |
+| context_used | object? | **nullable** — the context-gatherer's output for this run, recorded once the job runs (item 5); flexible shape, varies by connector |
+| result | object? | **nullable** — stub/echo payload today; a richer `{ suggestions[], outline?, sources[] }` shape is provider-dependent future work |
 | error_code / error_message | string? | set when failed |
 | created_at / started_at / finished_at | date | timestamps |
 
