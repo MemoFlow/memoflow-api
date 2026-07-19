@@ -147,26 +147,33 @@ Unique composite index on **(user_id, provider)** — one connection per user pe
 | title | varchar | |
 | doc_type | varchar | **indexed** |
 | scope | varchar | **indexed** |
-| created_by | uuid | FK → users, nullable (system templates) |
+| created_by | uuid | FK → users, nullable (system templates), **ON DELETE SET NULL** — a deleted user's templates become system templates rather than being deleted |
 | style_config | jsonb | |
 | is_published | boolean | **indexed** |
+| created_at | timestamptz | |
+| updated_at | timestamptz | |
 
 #### `template_sections`
 | column | type | notes |
 | --- | --- | --- |
 | id | uuid | PK |
-| template_id | uuid | FK → templates |
-| order | int | |
+| template_id | uuid | FK → templates, **ON DELETE CASCADE**, **indexed** |
+| title | varchar | deliberate addition beyond the original design — sections created from a template need headings |
+| order | int | see composite index below |
 | word_count_min | int | |
 | word_count_max | int | |
 | is_required | boolean | |
+
+Composite index **(template_id, order)** — `IDX_template_sections_template_order` —
+satisfies "ordered fetch per template"; `template_id` also has its own plain index
+(FK lookup / existence checks).
 
 #### `document_templates`
 | column | type | notes |
 | --- | --- | --- |
 | id | uuid | PK |
-| document_id | uuid | FK → documents |
-| template_id | uuid | FK → templates |
+| document_id | uuid | FK → documents, **ON DELETE CASCADE**, **indexed** |
+| template_id | uuid | FK → templates, **ON DELETE CASCADE**, **indexed** |
 | applied_at | timestamptz | |
 | customised | boolean | |
 

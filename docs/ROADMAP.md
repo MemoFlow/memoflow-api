@@ -77,11 +77,25 @@ Legend: ✅ done · ◐ in progress · ☐ not started
   ever changes via the reorder endpoint (absent from create/update DTOs).
 - Depended on item 1 (auth + users FK); unblocks items 3, 4, 6.
 
-## 3. Templates (PG) — ☐
+## 3. Templates (PG) — ✅ done
 
-- `templates` (`doc_type`/`scope`/`is_published` indexed, nullable `created_by` for
-  system templates), `template_sections`, `document_templates` join.
-- Apply-template-to-document use-case. Depends on item 2.
+- Slice implemented per the `templates`/`template_sections`/`document_templates`
+  tables in the schema doc: `templates` (`doc_type`/`scope`/`is_published` indexed,
+  nullable `created_by` for system templates, FK → users **ON DELETE SET NULL** — a
+  deleted user's templates become system templates), `template_sections` (FK →
+  templates **ON DELETE CASCADE**, composite index `(template_id, order)` —
+  `IDX_template_sections_template_order` — plus a plain index on `template_id`), and
+  `document_templates` (FKs → documents/templates, both **ON DELETE CASCADE**, plain
+  indexes on `document_id`/`template_id`). `templates` carries `created_at`/
+  `updated_at`. `template_sections.title` is a deliberate addition beyond the
+  original schema-doc design — sections created from a template need headings.
+- Migration: `CreateTemplates`.
+- Endpoints (all JWT-guarded, snake_case JSON responses): `POST/GET /templates`,
+  `GET/PATCH/DELETE /templates/:id` (owner-scoped for own templates, readable if
+  `is_published`), `POST /templates/:id/apply` (applies a template to a document,
+  appending one section per template section).
+- Depended on item 2 (documents + sections FK); unblocks item 6 (gamification hooks
+  can reuse the same document-events pattern).
 
 ## 4. Versioning (Mongo — `document_versions`) — ☐
 

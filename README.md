@@ -64,6 +64,12 @@ via `@nestjs/jwt` and validated by Passport-JWT.
 | `GET` | `/documents/:documentId/sections/:id` | JWT | fetch a section by id, owner-scoped |
 | `PATCH` | `/documents/:documentId/sections/:id` | JWT | partial update (`title`/`content`/`status`); `order` not settable here |
 | `DELETE` | `/documents/:documentId/sections/:id` | JWT | owner-scoped; returns **204** |
+| `POST` | `/templates` | JWT | creates a template (with its sections) owned by the caller |
+| `GET` | `/templates` | JWT | lists templates visible to the caller (published or own); filter by `docType`/`scope` query params |
+| `GET` | `/templates/:id` | JWT | fetch a template by id; visible if published or owned by the caller |
+| `PATCH` | `/templates/:id` | JWT | partial update, owner-scoped; `sections` replaces the template's sections wholesale when provided |
+| `DELETE` | `/templates/:id` | JWT | owner-scoped; returns **204** |
+| `POST` | `/templates/:id/apply` | JWT | applies a template to a document, appending one section per template section |
 | `POST` | `/planning-jobs` | JWT | submits a planning prompt; returns **202** + `{ job_id, status: "pending" }` |
 | `GET` | `/planning-jobs/:id` | JWT | fetch a planning job by id, owner-scoped |
 | `POST` | `/connectors/:provider/connect` | JWT | starts a Composio OAuth connection for a provider; returns `{ redirect_url, connection_id, status }` |
