@@ -70,6 +70,10 @@ via `@nestjs/jwt` and validated by Passport-JWT.
 | `PATCH` | `/templates/:id` | JWT | partial update, owner-scoped; `sections` replaces the template's sections wholesale when provided |
 | `DELETE` | `/templates/:id` | JWT | owner-scoped; returns **204** |
 | `POST` | `/templates/:id/apply` | JWT | applies a template to a document, appending one section per template section |
+| `POST` | `/documents/:documentId/versions` | JWT | snapshots the document's current sections into a new immutable version |
+| `GET` | `/documents/:documentId/versions` | JWT | lists the document's version metadata (no sections payload), newest first |
+| `GET` | `/documents/:documentId/versions/:versionId` | JWT | fetch a version's full sections snapshot, owner-scoped |
+| `POST` | `/documents/:documentId/versions/:versionId/restore` | JWT | replaces the document's current sections with the version's snapshot; writes nothing to Mongo |
 | `POST` | `/planning-jobs` | JWT | submits a planning prompt; returns **202** + `{ job_id, status: "pending" }` |
 | `GET` | `/planning-jobs/:id` | JWT | fetch a planning job by id, owner-scoped |
 | `POST` | `/connectors/:provider/connect` | JWT | starts a Composio OAuth connection for a provider; returns `{ redirect_url, connection_id, status }` |
