@@ -162,13 +162,17 @@ worker → push). Item 7's context-gatherer is real when `CONTEXT_ENGINE_URL` is
 (stub fallback otherwise); the LLM planner is likewise real when `ANTHROPIC_API_KEY`
 is set (stub fallback otherwise) — see item 5 below.
 
-**External context-engine transport — contract-defined, API-side implementation
-pending:** the async API↔context-engine transport is now specified in
-`docs/contracts/context-engine.md` as RabbitMQ both ways (`ctx.gather.requests`
-API→n8n, `ctx.gather.results` n8n→API, correlated by `job_id`), replacing the
-gRPC option considered in `ARCHITECTURE.md`. The current `ContextEngineHttpClient`
-(HTTP, see item 7 branch 3) remains the live code path until the RabbitMQ
-implementation task lands.
+**External context-engine transport — contract-defined and now implemented API-side,
+flag-gated:** the async API↔context-engine transport specified in
+`docs/contracts/context-engine.md` (RabbitMQ both ways — `ctx.gather.requests`
+API→n8n, `ctx.gather.results` n8n→API, correlated by `job_id`; replaces the gRPC
+option considered in `ARCHITECTURE.md`) has landed on `feature/rabbitmq-transport`:
+publisher, results consumer, gather-timeout scheduler, and the `gathering`/`planning`
+`JobStatus` states. It is gated by `RABBITMQ_URL` — unset (dev/test/e2e default and
+any environment without a provisioned broker) keeps `ContextEngineHttpClient`
+(HTTP, see item 7 branch 3) as the live path, with `running` as its status. What's
+left for a real end-to-end run: provisioning a RabbitMQ broker per environment, and
+the n8n consumer side (context-engine team, per §5 of the contract).
 
 ## 5. AI layer — ✅ done
 
@@ -329,11 +333,12 @@ work already flagged as deferred in the sections above, not a numbered feature:
 - **Staging and production deploy targets are undecided** (item 0) — only the `development`
   tier deploys today (Render + MongoDB Atlas + Upstash Redis). Land staging/production
   workflows once the user picks hosting for those tiers; don't invent infrastructure.
-- **RabbitMQ context-engine transport is contract-defined but not implemented**
-  (see the Context module async backbone section and
+- **RabbitMQ context-engine transport is implemented API-side, flag-gated by
+  `RABBITMQ_URL`** (see the Context module async backbone section and
   `docs/contracts/context-engine.md`) — `ContextEngineHttpClient` (HTTP) remains the
-  live code path for item 7's context-engine push until the RabbitMQ implementation
-  task lands.
+  live path for item 7's context-engine push wherever `RABBITMQ_URL` is unset. Still
+  outstanding for a real end-to-end run: provisioning a RabbitMQ broker per
+  environment, and the n8n consumer side (context-engine team).
 - **gRPC and a separate Context-module worker deployment remain explicitly deferred**
   (Context module async backbone section) — only built if a concrete trigger from
   `ARCHITECTURE.md`'s "Service boundaries" appears.

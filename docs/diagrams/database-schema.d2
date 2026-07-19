@@ -207,6 +207,8 @@ mongo: MongoDB (specialist — Mongoose) {
     created_at: date
     started_at: date
     finished_at: date
+    chunk_sequences: "number[] (RabbitMQ transport idempotency guard, [] otherwise)"
+    data_chunks: "object[] (RabbitMQ transport: sequence, provider, content, token_estimate)"
   }
 }
 

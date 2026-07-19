@@ -108,10 +108,13 @@ stale webhook. `DELETE /connectors/:id` (JWT, owner-scoped) revokes the connecti
 Composio and marks it `revoked`.
 
 When a planning job runs, the worker resolves the user's **active** connectors and
-POSTs a `{ provider, mcpUrl: null, composioAccountId }` reference per connector
+sends a `{ provider, mcpUrl: null, composioAccountId }` reference per connector
 (built from the local `connector_connections` row, no extra Composio call) to the
-external context engine (`CONTEXT_ENGINE_URL`), which resolves the live MCP server
-itself from provider + `composioAccountId`. See
+external context engine, which resolves the live MCP server itself from
+provider + `composioAccountId`. This travels as an HTTP POST to `CONTEXT_ENGINE_URL`
+on the legacy synchronous path, or as the `connectors[]` field of the RabbitMQ
+`ctx.gather.requests` message when `RABBITMQ_URL` is set — see "Planning jobs" below
+for the two transports. See
 [`docs/ROADMAP.md`](docs/ROADMAP.md#7-connectors-oauth-via-composio---done) for
 current implementation status.
 
@@ -121,11 +124,24 @@ current implementation status.
 `pending` job to MongoDB (`planning_jobs`) and enqueues it on the Redis/BullMQ
 `planning` queue, returning immediately. An in-process worker (`@Processor`) then
 picks the job up and processes it through the context-gatherer + LLM-planner ports.
-The context-gatherer is real when `CONTEXT_ENGINE_URL` is set: it resolves the
-user's active connectors and POSTs them (plus the prompt) to the external context
-engine, which fetches and returns the actual context. Leave `CONTEXT_ENGINE_URL`
-unset (default in dev/test/e2e) to keep the built-in stub, which echoes the prompt
-back.
+
+Two context-gathering transports exist, selected by `RABBITMQ_URL`:
+
+- **Unset (default in dev/test/e2e):** the legacy synchronous path. If
+  `CONTEXT_ENGINE_URL` is also set, the worker POSTs the user's active connectors +
+  prompt to that URL (`ContextEngineHttpClient`) and awaits the response inline;
+  otherwise it uses the built-in stub, which echoes the prompt back. The job's
+  status is `running` while this is in flight.
+- **Set (`amqp://`/`amqps://`):** the async RabbitMQ transport
+  (`docs/contracts/context-engine.md`) — the worker publishes a request to
+  `ctx.gather.requests` (job moves to `gathering`) and a consumer assembles the
+  context from the `ctx.gather.results` chunk stream published by the external
+  context engine (n8n), each chunk relayed live over the WebSocket gateway
+  (`planning.chunk`). Once the terminal chunk arrives the job moves to `planning`.
+  A job stuck in `gathering` longer than `CONTEXT_GATHER_TIMEOUT_MS` fails with
+  `error_code: CONTEXT_ENGINE_TIMEOUT`. This transport requires a provisioned
+  RabbitMQ broker and (for a real end-to-end run) the n8n consumer side — not yet
+  deployed in any environment.
 
 A submitted job can optionally be bound to an owned `documentId`/`sectionId` — the
 use-case validates the caller owns the document (and that a given section belongs to
@@ -143,9 +159,11 @@ The frontend gets the result pushed in real time over WebSocket (`@nestjs/websoc
   missing or invalid token disconnects the socket immediately.
 - Each socket is joined server-side to a room derived from the verified token
   (`user:<id>`) — a client only ever receives events for its own planning jobs.
-- Three events relay a job's lifecycle, one terminal event per outcome:
-  `planning.status` (`running`), `planning.completed` (with `result`),
-  `planning.failed` (with `errorCode`/`errorMessage`).
+- Four events relay a job's lifecycle: `planning.status` (`running` on the legacy
+  path, or `gathering`/`planning` on the RabbitMQ transport path), `planning.chunk`
+  (RabbitMQ transport only — one per `ctx.gather.results` chunk, live), and one
+  terminal event per outcome: `planning.completed` (with `result`), `planning.failed`
+  (with `errorCode`/`errorMessage`).
 - After connecting (or reconnecting), emit `subscribe { jobId }` to get that job's
   *current* state immediately — covers a client that connects after the job already
   finished, or reconnects mid-job.
@@ -175,6 +193,8 @@ Beyond the database connection vars, auth requires:
 | `CONTEXT_ENGINE_URL` | no | — | base URL of the external context engine; unset keeps the planning worker on the built-in stub context-gatherer |
 | `CONTEXT_ENGINE_API_KEY` | no | — | sent as `Authorization: Bearer <key>` on context-engine requests, when set |
 | `CONTEXT_ENGINE_TIMEOUT_MS` | no | `10000` | aborts the context-engine POST after this many ms, failing the planning job fast instead of hanging |
+| `RABBITMQ_URL` | no | — | `amqp://`/`amqps://` broker URL; unset keeps the legacy synchronous `ContextEngineHttpClient`/stub gather path (`CONTEXT_ENGINE_URL` above); set to switch planning jobs onto the async RabbitMQ transport (`docs/contracts/context-engine.md`) |
+| `CONTEXT_GATHER_TIMEOUT_MS` | no | `120000` | only meaningful when `RABBITMQ_URL` is set — fails a job stuck in `gathering` past this many ms with `error_code: CONTEXT_ENGINE_TIMEOUT` |
 | `ANTHROPIC_API_KEY` | no | — | powers AI suggestion generation and the planning-job LLM planner; unset keeps both on their null/stub fallbacks (suggestions endpoint returns 503, planning jobs keep using `StubLlmPlanner`) |
 | `ANTHROPIC_MODEL` | no | `claude-sonnet-5` | Anthropic model id used for both suggestions and planning |
 | `ANTHROPIC_MAX_TOKENS` | no | `4096` | max output tokens per Anthropic call |
