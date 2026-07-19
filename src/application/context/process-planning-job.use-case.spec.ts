@@ -70,6 +70,30 @@ class InMemoryPlanningJobRepository implements PlanningJobRepository {
     return Promise.resolve(claimed);
   }
 
+  claimForGathering(): Promise<PlanningJob | null> {
+    return Promise.reject(
+      new Error('not implemented — this suite only exercises the legacy path'),
+    );
+  }
+
+  appendResultChunk(): ReturnType<PlanningJobRepository['appendResultChunk']> {
+    return Promise.reject(
+      new Error('not implemented — this suite only exercises the legacy path'),
+    );
+  }
+
+  claimForPlanning(): Promise<PlanningJob | null> {
+    return Promise.reject(
+      new Error('not implemented — this suite only exercises the legacy path'),
+    );
+  }
+
+  failIfStillGathering(): Promise<PlanningJob | null> {
+    return Promise.reject(
+      new Error('not implemented — this suite only exercises the legacy path'),
+    );
+  }
+
   private applyPatch(
     existing: PlanningJob,
     patch: UpdatePlanningJobStatusData,

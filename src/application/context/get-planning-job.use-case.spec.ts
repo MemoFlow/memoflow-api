@@ -21,6 +21,22 @@ class InMemoryPlanningJobRepository implements PlanningJobRepository {
   claimForProcessing(): Promise<PlanningJob | null> {
     return Promise.reject(new Error('not implemented'));
   }
+
+  claimForGathering(): Promise<PlanningJob | null> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
+  appendResultChunk(): ReturnType<PlanningJobRepository['appendResultChunk']> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
+  claimForPlanning(): Promise<PlanningJob | null> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
+  failIfStillGathering(): Promise<PlanningJob | null> {
+    return Promise.reject(new Error('not implemented'));
+  }
 }
 
 function makeJob(overrides: Partial<PlanningJob> = {}): PlanningJob {

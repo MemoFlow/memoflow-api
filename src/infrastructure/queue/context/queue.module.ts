@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PROMPT_QUEUE } from '../../../domain/context/prompt-queue';
 import { BullMqPromptQueue } from './bullmq-prompt-queue';
+import { GATHER_TIMEOUT_QUEUE_NAME } from './bullmq-gather-timeout.scheduler';
 
 @Module({
   imports: [
@@ -24,6 +25,13 @@ import { BullMqPromptQueue } from './bullmq-prompt-queue';
       }),
     }),
     BullModule.registerQueue({ name: 'planning' }),
+    // RabbitMQ context-engine transport's no-result timeout
+    // (docs/contracts/context-engine.md §4) — a durable BullMQ delayed job,
+    // not a bare setTimeout. Registered unconditionally (Redis is already
+    // required infra for the `planning` queue above); only actually
+    // scheduled when `RABBITMQ_URL` is configured (see
+    // `BullMqGatherTimeoutScheduler`/`ContextModule`).
+    BullModule.registerQueue({ name: GATHER_TIMEOUT_QUEUE_NAME }),
   ],
   providers: [{ provide: PROMPT_QUEUE, useClass: BullMqPromptQueue }],
   exports: [PROMPT_QUEUE, BullModule],

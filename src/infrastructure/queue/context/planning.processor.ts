@@ -32,17 +32,27 @@ export class PlanningProcessor extends WorkerHost {
         });
 
       if (!processed) {
-        // Nothing to do: already running (another worker) or already
-        // terminal (stalled-job retry replaying a finished job) — emitting
-        // here would be a spurious/duplicate event for a job whose outcome
-        // was already announced.
+        // Nothing to do: already running/gathering (another worker) or
+        // already terminal (stalled-job retry replaying a finished job) —
+        // emitting here would be a spurious/duplicate event for a job whose
+        // outcome was already announced.
         return;
       }
 
+      // `Running` for the legacy synchronous path (by the time we get here
+      // its gather+plan has already completed, so this is purely an
+      // "in-flight" progress signal preceding the completed/failed event
+      // below). `Gathering` for the RabbitMQ transport path — there,
+      // `finalJob` genuinely IS still in `gathering` at this point (the
+      // terminal transition happens later, asynchronously, via
+      // `HandleContextResultChunkUseCase`/`ContextResultsConsumer`).
       this.eventEmitter.emit('planning.status', {
         jobId,
         userId,
-        status: JobStatus.Running,
+        status:
+          finalJob.status === JobStatus.Gathering
+            ? JobStatus.Gathering
+            : JobStatus.Running,
       });
 
       if (finalJob.status === JobStatus.Completed) {
