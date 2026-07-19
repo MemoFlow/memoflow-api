@@ -81,14 +81,35 @@ async function pollUntilTerminal(
 
 /** Consumes exactly one message off `queue` (acking it) and resolves with
  * it — used to let the fake context-engine "witness" the request the API
- * published, so it can echo `job_id`/`user_id` back in its result chunks. */
+ * published, so it can echo `job_id`/`user_id` back in its result chunks.
+ *
+ * The consumer MUST be cancelled once it has served its one message (or
+ * timed out): a leaked consumer stays subscribed for the rest of the suite,
+ * and RabbitMQ round-robins later tests' messages to it — exactly the
+ * "messageCount=0, consumerCount=N, wait timed out" failure CI round 3's
+ * diagnostics exposed. Cancellation is race-safe: if the delivery callback
+ * fires before amqplib hands us the consumerTag, we flag the cancel and
+ * perform it as soon as the tag arrives. */
 function waitForOneMessage(
   channel: amqplib.Channel,
   queue: string,
   timeoutMs = 15_000,
 ): Promise<amqplib.ConsumeMessage> {
   return new Promise((resolve, reject) => {
+    let consumerTag: string | null = null;
+    let cancelWanted = false;
+
+    const cancelConsumer = () => {
+      cancelWanted = true;
+      if (consumerTag !== null) {
+        const tag = consumerTag;
+        consumerTag = null;
+        void channel.cancel(tag).catch(() => undefined);
+      }
+    };
+
     const timeout = setTimeout(() => {
+      cancelConsumer();
       reject(new Error(`Timed out waiting for a message on "${queue}"`));
     }, timeoutMs);
 
@@ -97,7 +118,12 @@ function waitForOneMessage(
         if (!msg) return;
         clearTimeout(timeout);
         channel.ack(msg);
+        cancelConsumer();
         resolve(msg);
+      })
+      .then((ok) => {
+        consumerTag = ok.consumerTag;
+        if (cancelWanted) cancelConsumer();
       })
       .catch((err: unknown) => {
         clearTimeout(timeout);
