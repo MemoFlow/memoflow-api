@@ -53,6 +53,14 @@ export class UserTypeOrmRepository implements UserRepository {
     await this.repository.update({ id }, { lastActiveAt: new Date() });
   }
 
+  async findTopByXp(limit: number): Promise<User[]> {
+    const entities = await this.repository.find({
+      order: { xp: 'DESC' },
+      take: limit,
+    });
+    return entities.map((entity) => this.toDomain(entity));
+  }
+
   private toDomain(entity: UserOrmEntity): User {
     return new User({
       id: entity.id,

@@ -87,6 +87,9 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
     updated_at: timestamptz
   }
 
+  # Unique composite index (user_id, document_id, milestone_type) —
+  # IDX_milestones_user_document_type — the idempotent-award guard
+  # awardOnce()'s ON CONFLICT DO NOTHING relies on.
   milestones: {
     shape: sql_table
     id: uuid {constraint: primary_key}
@@ -94,6 +97,7 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
     document_id: uuid {constraint: foreign_key}
     milestone_type: varchar
     xp_awarded: int
+    created_at: timestamptz
   }
 
   daily_missions: {
@@ -102,10 +106,13 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
     code: varchar
     description: varchar
     xp_reward: int
-    criteria: jsonb
+    criteria: "jsonb ({ event, target })"
     active_date: date
+    created_at: timestamptz
   }
 
+  # Unique composite index (user_id, mission_id) — IDX_mission_progress_user_mission
+  # — one progress row per (user, mission); incrementAtomic() upserts against it.
   mission_progress: {
     shape: sql_table
     id: uuid {constraint: primary_key}
@@ -113,6 +120,8 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
     mission_id: uuid {constraint: foreign_key}
     progress: int
     completed: boolean
+    created_at: timestamptz
+    updated_at: timestamptz
   }
 
   templates: {
@@ -154,10 +163,10 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
   ai_suggestions.section_id -> sections.id
   ai_suggestions.user_id -> users.id
   connector_connections.user_id -> users.id
-  milestones.user_id -> users.id
-  milestones.document_id -> documents.id
-  mission_progress.user_id -> users.id
-  mission_progress.mission_id -> daily_missions.id
+  milestones.user_id -> users.id: cascade
+  milestones.document_id -> documents.id: cascade
+  mission_progress.user_id -> users.id: cascade
+  mission_progress.mission_id -> daily_missions.id: cascade
   templates.created_by -> users.id: set null
   template_sections.template_id -> templates.id: cascade
   document_templates.document_id -> documents.id: cascade

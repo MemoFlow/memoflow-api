@@ -1,4 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { SECTION_UPDATED_EVENT } from '../../domain/documents/document-events';
 import { Document } from '../../domain/documents/document.entity';
 import { DocumentRepository } from '../../domain/documents/document.repository';
 import { Section } from '../../domain/documents/section.entity';
@@ -9,6 +11,10 @@ import {
 import { GetDocumentUseCase } from './get-document.use-case';
 import { GetSectionUseCase } from './get-section.use-case';
 import { UpdateSectionUseCase } from './update-section.use-case';
+
+function makeEventEmitter(): jest.Mocked<Pick<EventEmitter2, 'emit'>> {
+  return { emit: jest.fn() };
+}
 
 class InMemoryDocumentRepository implements DocumentRepository {
   constructor(private readonly documents: Document[] = []) {}
@@ -106,12 +112,14 @@ describe('UpdateSectionUseCase', () => {
   it('recomputes wordCount when content changes', async () => {
     const documentRepository = new InMemoryDocumentRepository([makeDocument()]);
     const sectionRepository = new InMemorySectionRepository([makeSection()]);
+    const eventEmitter = makeEventEmitter();
     const useCase = new UpdateSectionUseCase(
       new GetSectionUseCase(
         new GetDocumentUseCase(documentRepository),
         sectionRepository,
       ),
       sectionRepository,
+      eventEmitter as unknown as EventEmitter2,
     );
 
     const result = await useCase.execute({
@@ -128,12 +136,14 @@ describe('UpdateSectionUseCase', () => {
   it('leaves wordCount untouched when content is not part of the patch', async () => {
     const documentRepository = new InMemoryDocumentRepository([makeDocument()]);
     const sectionRepository = new InMemorySectionRepository([makeSection()]);
+    const eventEmitter = makeEventEmitter();
     const useCase = new UpdateSectionUseCase(
       new GetSectionUseCase(
         new GetDocumentUseCase(documentRepository),
         sectionRepository,
       ),
       sectionRepository,
+      eventEmitter as unknown as EventEmitter2,
     );
 
     const result = await useCase.execute({
@@ -152,12 +162,14 @@ describe('UpdateSectionUseCase', () => {
       makeDocument({ userId: 'user-1' }),
     ]);
     const sectionRepository = new InMemorySectionRepository([makeSection()]);
+    const eventEmitter = makeEventEmitter();
     const useCase = new UpdateSectionUseCase(
       new GetSectionUseCase(
         new GetDocumentUseCase(documentRepository),
         sectionRepository,
       ),
       sectionRepository,
+      eventEmitter as unknown as EventEmitter2,
     );
 
     await expect(
@@ -168,5 +180,34 @@ describe('UpdateSectionUseCase', () => {
         patch: { title: 'Hijacked' },
       }),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  it('emits section.updated with the recomputed wordCount after persisting', async () => {
+    const documentRepository = new InMemoryDocumentRepository([makeDocument()]);
+    const sectionRepository = new InMemorySectionRepository([makeSection()]);
+    const eventEmitter = makeEventEmitter();
+    const useCase = new UpdateSectionUseCase(
+      new GetSectionUseCase(
+        new GetDocumentUseCase(documentRepository),
+        sectionRepository,
+      ),
+      sectionRepository,
+      eventEmitter as unknown as EventEmitter2,
+    );
+
+    await useCase.execute({
+      userId: 'user-1',
+      documentId: 'doc-1',
+      sectionId: 'section-1',
+      patch: { content: 'one two three four five' },
+    });
+
+    expect(eventEmitter.emit).toHaveBeenCalledTimes(1);
+    expect(eventEmitter.emit).toHaveBeenCalledWith(SECTION_UPDATED_EVENT, {
+      userId: 'user-1',
+      documentId: 'doc-1',
+      sectionId: 'section-1',
+      wordCount: 5,
+    });
   });
 });

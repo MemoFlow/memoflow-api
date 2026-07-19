@@ -1,7 +1,8 @@
 # MemoFlow API
 
-REST API for MemoFlow — users, documents, AI-assisted writing features, and external
-connectors. Built with [NestJS 11](https://nestjs.com) on a **dual-database** design:
+REST API for MemoFlow — users, documents, AI-assisted writing features, gamification,
+and external connectors. Built with [NestJS 11](https://nestjs.com) on a
+**dual-database** design:
 
 - **PostgreSQL** (primary) — everything relational, via TypeORM with migrations only.
 - **MongoDB** (specialist) — exactly two collections (`document_versions`,
@@ -84,6 +85,8 @@ via `@nestjs/jwt` and validated by Passport-JWT.
 | `GET` | `/connectors/:id` | JWT | fetch a connector connection by id, owner-scoped; reconciles if `initiated` |
 | `POST` | `/connectors/webhook` | — | Composio-signed webhook (public); updates a connection's status |
 | `DELETE` | `/connectors/:id` | JWT | owner-scoped; revokes the Composio connection, sets status `revoked`; returns **204** |
+| `GET` | `/gamification/me` | JWT | the caller's `xp`/`level`, awarded milestones, and today's active daily missions with progress/completed |
+| `GET` | `/gamification/leaderboard` | JWT | top users by `xp`; `?limit=` optional (default 10, max 50) |
 
 Protected routes require `Authorization: Bearer <accessToken>`. Full request/response
 shapes are in Swagger (`/docs`).
