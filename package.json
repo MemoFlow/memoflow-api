@@ -34,6 +34,7 @@
     "cleanup:dead": "./scripts/cleanup-dead.sh"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.112.3",
     "@composio/core": "0.13.1",
     "@nestjs/bullmq": "^11.0.4",
     "@nestjs/common": "^11.0.1",
