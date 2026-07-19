@@ -230,20 +230,23 @@ describeWithDocker()('Templates (e2e)', () => {
 
   it('GET /templates filters by docType and scope', async () => {
     const token = await registerAndLogin('template-filter@example.com');
+    // docType values unique to this test: published templates created by other
+    // tests are visible to every user, so a shared docType (e.g. the helper's
+    // default 'blog') would leak them into this filtered listing.
     await createTemplate(token, {
       title: 'Blog Template',
-      docType: 'blog',
+      docType: 'filter-blog',
       scope: 'personal',
     });
     await createTemplate(token, {
       title: 'Report Template',
-      docType: 'report',
+      docType: 'filter-report',
       scope: 'org',
     });
 
     const res = await request(app.getHttpServer())
       .get('/templates')
-      .query({ docType: 'blog' })
+      .query({ docType: 'filter-blog' })
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
