@@ -19,7 +19,12 @@ import { JobStatus, PlanningJob } from '../../domain/context/planning-job';
 interface PlanningStatusEvent {
   jobId: string;
   userId: string;
-  status: JobStatus.Running;
+  // `Running` — the legacy synchronous HTTP/stub path (`PlanningProcessor`).
+  // `Gathering`/`Planning` — the RabbitMQ context-engine transport
+  // (`docs/contracts/context-engine.md` §4): `Gathering` once the request
+  // publishes, `Planning` once the terminal `completed` chunk arrives and
+  // the LLM planner starts.
+  status: JobStatus.Running | JobStatus.Gathering | JobStatus.Planning;
 }
 
 interface PlanningCompletedEvent {
@@ -35,6 +40,23 @@ interface PlanningFailedEvent {
   status: JobStatus.Failed;
   errorCode: string | null;
   errorMessage: string | null;
+}
+
+/**
+ * One `ctx.gather.results` chunk relayed live, as the RabbitMQ context-
+ * engine transport's `ContextResultsConsumer` receives it — this is what
+ * lets the frontend stream gathered context without polling
+ * (`docs/contracts/context-engine.md` §3). Only emitted for non-terminal
+ * chunks; the terminal `completed`/`failed` status chunk is instead relayed
+ * as the richer `planning.completed`/`planning.failed` event above.
+ */
+interface PlanningChunkEvent {
+  jobId: string;
+  userId: string;
+  sequence: number;
+  type: 'data' | 'status';
+  data?: { provider: string; content: string; tokenEstimate?: number };
+  status?: { phase: string; message?: string; errorCode?: string };
 }
 
 interface SubscribeMessagePayload {
@@ -166,6 +188,12 @@ export class PlanningGateway implements OnGatewayConnection {
     this.server.to(`user:${userId}`).emit('planning.failed', clientPayload);
   }
 
+  @OnEvent('planning.chunk')
+  handlePlanningChunk(payload: PlanningChunkEvent): void {
+    const { userId, ...clientPayload } = payload;
+    this.server.to(`user:${userId}`).emit('planning.chunk', clientPayload);
+  }
+
   /**
    * Maps a job's current state to the same (event name, payload) shape used
    * by the live `@OnEvent` relays, so catch-up and live delivery are
@@ -196,7 +224,8 @@ export class PlanningGateway implements OnGatewayConnection {
         },
       };
     }
-    // pending or running both catch up as `planning.status`.
+    // pending / running / gathering / planning all catch up as
+    // `planning.status`.
     return {
       event: 'planning.status',
       payload: { jobId: job.id, status: job.status },
