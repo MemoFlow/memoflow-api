@@ -83,6 +83,14 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false
 
+      # RabbitMQ URL for the context-engine transport — optional (amqps://
+      # CloudAMQP or similar). Set manually in the Render dashboard. When
+      # unset the API keeps the HTTP/stub context path; boot is unaffected.
+      # CONTEXT_GATHER_TIMEOUT_MS has a code default and is intentionally
+      # omitted here.
+      - key: RABBITMQ_URL
+        sync: false
+
       # Postgres connection fields sourced from the managed database above.
       - key: POSTGRES_HOST
         fromDatabase:
