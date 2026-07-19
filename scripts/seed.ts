@@ -9,9 +9,35 @@ import bcrypt from 'bcrypt';
 import mongoose from 'mongoose';
 import dataSource from '../src/infrastructure/persistence/typeorm.data-source';
 import { PromptOrmEntity } from '../src/infrastructure/persistence/ai/prompt.orm-entity';
+import { DailyMissionOrmEntity } from '../src/infrastructure/persistence/gamification/daily-mission.orm-entity';
 import { UserOrmEntity } from '../src/infrastructure/persistence/users/user.orm-entity';
 
 const BCRYPT_SALT_ROUNDS = 10;
+
+// Roadmap item 6 (gamification) — a few daily missions active "today"
+// (UTC calendar day, matching `DailyMissionTypeOrmRepository.findActiveOn`).
+// `code` is the natural idempotency key (re-running the seed for the same
+// day must never create duplicates).
+const SEED_DAILY_MISSIONS = [
+  {
+    code: 'write-3-sections',
+    description: 'Update 3 sections today',
+    xpReward: 15,
+    criteria: { event: 'section.updated', target: 3 },
+  },
+  {
+    code: 'create-a-section',
+    description: 'Create a new section today',
+    xpReward: 10,
+    criteria: { event: 'section.created', target: 1 },
+  },
+  {
+    code: 'start-a-document',
+    description: 'Start a new document today',
+    xpReward: 20,
+    criteria: { event: 'document.created', target: 1 },
+  },
+];
 
 // Roadmap item 5 (AI layer) — one active prompt per feature type. Simple
 // placeholder templates: `generate-suggestion` substitutes `{{content}}`
@@ -112,6 +138,38 @@ async function main(): Promise<void> {
       }),
     );
     console.log(`[seed] created active prompt for "${seedPrompt.featureType}"`);
+  }
+
+  const dailyMissionRepository = dataSource.getRepository(DailyMissionOrmEntity);
+  const today = new Date();
+  const todayDateOnly = today.toISOString().slice(0, 10);
+  for (const seedMission of SEED_DAILY_MISSIONS) {
+    const existing = await dailyMissionRepository
+      .createQueryBuilder('mission')
+      .where('mission.code = :code', { code: seedMission.code })
+      .andWhere('mission.active_date = :activeDate', {
+        activeDate: todayDateOnly,
+      })
+      .getOne();
+    if (existing) {
+      console.log(
+        `[seed] daily mission "${seedMission.code}" for ${todayDateOnly} already exists — skipping`,
+      );
+      continue;
+    }
+
+    await dailyMissionRepository.save(
+      dailyMissionRepository.create({
+        code: seedMission.code,
+        description: seedMission.description,
+        xpReward: seedMission.xpReward,
+        criteria: seedMission.criteria,
+        activeDate: today,
+      }),
+    );
+    console.log(
+      `[seed] created daily mission "${seedMission.code}" for ${todayDateOnly}`,
+    );
   }
 
   await mongoose.disconnect();

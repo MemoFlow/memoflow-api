@@ -11,6 +11,7 @@ import { ConnectorsModule } from './connectors.module';
 import { ContextModule } from './context.module';
 import { DocumentVersionsModule } from './document-versions.module';
 import { DocumentsModule } from './documents.module';
+import { GamificationModule } from './gamification.module';
 import { HealthModule } from './shared/health/health.module';
 import { TemplatesModule } from './templates.module';
 import { UsersModule } from './users.module';
@@ -52,6 +53,7 @@ import { UsersModule } from './users.module';
     DocumentsModule,
     DocumentVersionsModule,
     TemplatesModule,
+    GamificationModule,
   ],
   controllers: [AppController],
   providers: [AppService],
