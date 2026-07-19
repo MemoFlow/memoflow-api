@@ -1,5 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { randomUUID } from 'node:crypto';
+import { SECTION_CREATED_EVENT } from '../../domain/documents/document-events';
 import { Document } from '../../domain/documents/document.entity';
 import { DocumentRepository } from '../../domain/documents/document.repository';
 import { Section } from '../../domain/documents/section.entity';
@@ -9,6 +11,10 @@ import {
 } from '../../domain/documents/section.repository';
 import { CreateSectionUseCase } from './create-section.use-case';
 import { GetDocumentUseCase } from './get-document.use-case';
+
+function makeEventEmitter(): jest.Mocked<Pick<EventEmitter2, 'emit'>> {
+  return { emit: jest.fn() };
+}
 
 class InMemoryDocumentRepository implements DocumentRepository {
   constructor(private readonly documents: Document[] = []) {}
@@ -106,9 +112,11 @@ describe('CreateSectionUseCase', () => {
   it('computes wordCount from content server-side', async () => {
     const documentRepository = new InMemoryDocumentRepository([makeDocument()]);
     const sectionRepository = new InMemorySectionRepository();
+    const eventEmitter = makeEventEmitter();
     const useCase = new CreateSectionUseCase(
       new GetDocumentUseCase(documentRepository),
       sectionRepository,
+      eventEmitter as unknown as EventEmitter2,
     );
 
     const section = await useCase.execute({
@@ -124,9 +132,11 @@ describe('CreateSectionUseCase', () => {
   it('treats empty content as zero words', async () => {
     const documentRepository = new InMemoryDocumentRepository([makeDocument()]);
     const sectionRepository = new InMemorySectionRepository();
+    const eventEmitter = makeEventEmitter();
     const useCase = new CreateSectionUseCase(
       new GetDocumentUseCase(documentRepository),
       sectionRepository,
+      eventEmitter as unknown as EventEmitter2,
     );
 
     const section = await useCase.execute({
@@ -142,9 +152,11 @@ describe('CreateSectionUseCase', () => {
   it('appends after the last section when order is omitted', async () => {
     const documentRepository = new InMemoryDocumentRepository([makeDocument()]);
     const sectionRepository = new InMemorySectionRepository();
+    const eventEmitter = makeEventEmitter();
     const useCase = new CreateSectionUseCase(
       new GetDocumentUseCase(documentRepository),
       sectionRepository,
+      eventEmitter as unknown as EventEmitter2,
     );
 
     const first = await useCase.execute({
@@ -167,9 +179,11 @@ describe('CreateSectionUseCase', () => {
   it('always appends regardless of any pre-existing sections (order is not client-settable)', async () => {
     const documentRepository = new InMemoryDocumentRepository([makeDocument()]);
     const sectionRepository = new InMemorySectionRepository();
+    const eventEmitter = makeEventEmitter();
     const useCase = new CreateSectionUseCase(
       new GetDocumentUseCase(documentRepository),
       sectionRepository,
+      eventEmitter as unknown as EventEmitter2,
     );
 
     await useCase.execute({
@@ -195,9 +209,11 @@ describe('CreateSectionUseCase', () => {
       makeDocument({ userId: 'user-1' }),
     ]);
     const sectionRepository = new InMemorySectionRepository();
+    const eventEmitter = makeEventEmitter();
     const useCase = new CreateSectionUseCase(
       new GetDocumentUseCase(documentRepository),
       sectionRepository,
+      eventEmitter as unknown as EventEmitter2,
     );
 
     await expect(
@@ -208,5 +224,30 @@ describe('CreateSectionUseCase', () => {
         content: 'a',
       }),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  it('emits section.created after the section is persisted', async () => {
+    const documentRepository = new InMemoryDocumentRepository([makeDocument()]);
+    const sectionRepository = new InMemorySectionRepository();
+    const eventEmitter = makeEventEmitter();
+    const useCase = new CreateSectionUseCase(
+      new GetDocumentUseCase(documentRepository),
+      sectionRepository,
+      eventEmitter as unknown as EventEmitter2,
+    );
+
+    const section = await useCase.execute({
+      userId: 'user-1',
+      documentId: 'doc-1',
+      title: 'Intro',
+      content: 'four little words here',
+    });
+
+    expect(eventEmitter.emit).toHaveBeenCalledTimes(1);
+    expect(eventEmitter.emit).toHaveBeenCalledWith(SECTION_CREATED_EVENT, {
+      userId: 'user-1',
+      documentId: 'doc-1',
+      sectionId: section.id,
+    });
   });
 });

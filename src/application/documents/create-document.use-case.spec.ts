@@ -1,4 +1,6 @@
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { randomUUID } from 'node:crypto';
+import { DOCUMENT_CREATED_EVENT } from '../../domain/documents/document-events';
 import { Document } from '../../domain/documents/document.entity';
 import {
   CreateDocumentData,
@@ -41,10 +43,18 @@ class InMemoryDocumentRepository implements DocumentRepository {
   }
 }
 
+function makeEventEmitter(): jest.Mocked<Pick<EventEmitter2, 'emit'>> {
+  return { emit: jest.fn() };
+}
+
 describe('CreateDocumentUseCase', () => {
   it('creates a document defaulting status to draft and styleConfig to {}', async () => {
     const repository = new InMemoryDocumentRepository();
-    const useCase = new CreateDocumentUseCase(repository);
+    const eventEmitter = makeEventEmitter();
+    const useCase = new CreateDocumentUseCase(
+      repository,
+      eventEmitter as unknown as EventEmitter2,
+    );
 
     const document = await useCase.execute({
       userId: 'user-1',
@@ -61,7 +71,11 @@ describe('CreateDocumentUseCase', () => {
 
   it('honors an explicit status and styleConfig when provided', async () => {
     const repository = new InMemoryDocumentRepository();
-    const useCase = new CreateDocumentUseCase(repository);
+    const eventEmitter = makeEventEmitter();
+    const useCase = new CreateDocumentUseCase(
+      repository,
+      eventEmitter as unknown as EventEmitter2,
+    );
 
     const document = await useCase.execute({
       userId: 'user-1',
@@ -73,5 +87,26 @@ describe('CreateDocumentUseCase', () => {
 
     expect(document.status).toBe('published');
     expect(document.styleConfig).toEqual({ theme: 'dark' });
+  });
+
+  it('emits document.created after the document is persisted', async () => {
+    const repository = new InMemoryDocumentRepository();
+    const eventEmitter = makeEventEmitter();
+    const useCase = new CreateDocumentUseCase(
+      repository,
+      eventEmitter as unknown as EventEmitter2,
+    );
+
+    const document = await useCase.execute({
+      userId: 'user-1',
+      title: 'Q3 Planning',
+      docType: 'planning',
+    });
+
+    expect(eventEmitter.emit).toHaveBeenCalledTimes(1);
+    expect(eventEmitter.emit).toHaveBeenCalledWith(DOCUMENT_CREATED_EVENT, {
+      userId: 'user-1',
+      documentId: document.id,
+    });
   });
 });
