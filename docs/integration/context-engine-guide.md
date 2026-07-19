@@ -30,7 +30,9 @@ n8n workflow --publish chunks--> [ctx.gather.results] --consume--> MemoFlow API 
 ## 2. Prerequisites
 
 - **RabbitMQ access** — connection string `amqps://<user>:<pass>@<host>/<vhost>` (TLS).
-  Shared with the MemoFlow API. Managed (e.g. CloudAMQP) or self-hosted.
+  Shared with the MemoFlow API. Managed (e.g. CloudAMQP) or self-hosted — the
+  `development` environment uses CloudAMQP's free tier (LavinMQ under the hood,
+  TLS-only on port `5671`), confirmed compatible with this contract.
 - **Composio credentials** — a Composio API key with access to the same connected
   accounts the API created, so you can resolve each `composio_account_id` to a live MCP.
 - **n8n** — with the **RabbitMQ Trigger** and **RabbitMQ** (producer) nodes available.
@@ -145,5 +147,7 @@ Rules:
 
 > Full field semantics, lifecycle, and versioning:
 > [`../contracts/context-engine.md`](../contracts/context-engine.md). The API-side
-> producer/consumer isn't built yet (contract-first) — coordinate go-live with the
-> MemoFlow team.
+> producer/consumer is **live on `development`**, verified end-to-end 2026-07-20
+> against a CloudAMQP free-tier broker (LavinMQ under the hood) and the external
+> n8n consumer — this guide is now the operational reference, not a contract-first
+> spec. Staging and production still need their own broker before go-live there.

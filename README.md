@@ -139,9 +139,12 @@ Two context-gathering transports exist, selected by `RABBITMQ_URL`:
   context engine (n8n), each chunk relayed live over the WebSocket gateway
   (`planning.chunk`). Once the terminal chunk arrives the job moves to `planning`.
   A job stuck in `gathering` longer than `CONTEXT_GATHER_TIMEOUT_MS` fails with
-  `error_code: CONTEXT_ENGINE_TIMEOUT`. This transport requires a provisioned
-  RabbitMQ broker and (for a real end-to-end run) the n8n consumer side — not yet
-  deployed in any environment.
+  `error_code: CONTEXT_ENGINE_TIMEOUT`. **Live on the `development` environment**,
+  verified end-to-end 2026-07-20 (~600ms round trip; DLQ behavior confirmed) against
+  a CloudAMQP free-tier broker (LavinMQ under the hood, `amqps://` TLS-only) and the
+  external n8n-hosted context engine. Staging and production still need their own
+  `RABBITMQ_URL` provisioned before their first deploys — see
+  [`docs/contracts/context-engine.md`](docs/contracts/context-engine.md).
 
 A submitted job can optionally be bound to an owned `documentId`/`sectionId` — the
 use-case validates the caller owns the document (and that a given section belongs to
