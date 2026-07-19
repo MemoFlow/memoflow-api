@@ -42,8 +42,19 @@ Legend: ✅ done · ◐ in progress · ☐ not started
   BullMQ/WebSocket backbone runs in the deployed dev tier, dev Redis is likewise
   external — **Upstash free tier**, TLS-only (`REDIS_TLS=true`) — with
   `REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD` set manually as secrets.
+- ✅ `deploy-dev.yml` hardened (PR #25): `jq` parses of Render API responses are now
+  guarded so a non-JSON response body can't fail the job after the deploy hook has
+  already fired; curl failures still fast-fail; response logging is redacted.
+- **Incident, fixed 2026-07-19:** `COMPOSIO_API_KEY` / `COMPOSIO_AUTH_CONFIG_IDS` /
+  `COMPOSIO_WEBHOOK_SECRET` were missing from the `memoflow-dev-api` Render service —
+  every dev deploy from 2026-07-04 silently failed (Render `update_failed`, old
+  process stayed live) until this was caught and the secrets were set 2026-07-19.
+  Deploys have been green since. `RABBITMQ_URL` is also now set on the dev service
+  (see the Context module async backbone section below).
 - ☐ Staging and production deploy workflows/targets remain **undecided** — land
-  once the user picks hosting for those tiers; don't invent infrastructure.
+  once the user picks hosting for those tiers; don't invent infrastructure. Whenever
+  they do land, both services will need `COMPOSIO_*` and `RABBITMQ_URL` set before
+  their first deploy — the dev outage above is the cautionary example.
 
 ## 1. Users + JWT auth (PG) — ✅ done
 
@@ -162,17 +173,25 @@ worker → push). Item 7's context-gatherer is real when `CONTEXT_ENGINE_URL` is
 (stub fallback otherwise); the LLM planner is likewise real when `ANTHROPIC_API_KEY`
 is set (stub fallback otherwise) — see item 5 below.
 
-**External context-engine transport — contract-defined and now implemented API-side,
-flag-gated:** the async API↔context-engine transport specified in
+**External context-engine transport — live on `development`, verified end-to-end
+2026-07-20:** the async API↔context-engine transport specified in
 `docs/contracts/context-engine.md` (RabbitMQ both ways — `ctx.gather.requests`
 API→n8n, `ctx.gather.results` n8n→API, correlated by `job_id`; replaces the gRPC
-option considered in `ARCHITECTURE.md`) has landed on `feature/rabbitmq-transport`:
-publisher, results consumer, gather-timeout scheduler, and the `gathering`/`planning`
-`JobStatus` states. It is gated by `RABBITMQ_URL` — unset (dev/test/e2e default and
-any environment without a provisioned broker) keeps `ContextEngineHttpClient`
-(HTTP, see item 7 branch 3) as the live path, with `running` as its status. What's
-left for a real end-to-end run: provisioning a RabbitMQ broker per environment, and
-the n8n consumer side (context-engine team, per §5 of the contract).
+option considered in `ARCHITECTURE.md`) landed on `feature/rabbitmq-transport`
+(PR #22): publisher, results consumer, gather-timeout scheduler, and the
+`gathering`/`planning` `JobStatus` states. It is gated by `RABBITMQ_URL` — unset (the
+default in local dev via `.env`, test/e2e, and any environment without a provisioned
+broker) keeps `ContextEngineHttpClient` (HTTP, see item 7 branch 3) as the fallback
+path, with `running` as its status.
+
+On the `development` Render service, `RABBITMQ_URL` is now set (dashboard secret,
+already declared `sync: false` in `render.yaml`) to a **CloudAMQP free-tier broker**
+(actually **LavinMQ** under the hood — `amqps://` TLS-only, port `5671`) shared with
+the external, n8n-hosted context engine, which now consumes `ctx.gather.requests` and
+replies on `ctx.gather.results` — both sides are implemented and live. Verified
+round trip **~600ms**; DLQ behavior confirmed (a result for an unknown `job_id`
+dead-letters correctly instead of hanging). Staging and production still need their
+own `RABBITMQ_URL` provisioned before their first deploys.
 
 ## 5. AI layer — ✅ done
 
@@ -306,7 +325,11 @@ context-engine push).
   /connectors/:id` (JWT-guarded, owner-scoped) revokes the Composio connection and
   sets status `revoked`, returns 204. `composio_account_id` is now **indexed**
   (migration `AddConnectorComposioAccountIndex`) since the webhook looks connections
-  up by it.
+  up by it. On `development`, the webhook is registered with Composio (V3) at
+  `https://memoflow-dev-api.onrender.com/connectors/webhook` for the
+  `connected_account.expired` and `trigger.disabled` events; the Composio Connect
+  Link passes the MemoFlow user uuid as the Composio `user_id`, keeping the two
+  systems' user identifiers aligned.
 - **Branch 3 (implemented, `feature/connector-context-engine`)** — planning-job
   worker resolves the user's active connectors and POSTs
   `{ userId, connectors: [...], prompt }` to `CONTEXT_ENGINE_URL`; the context
@@ -333,12 +356,19 @@ work already flagged as deferred in the sections above, not a numbered feature:
 - **Staging and production deploy targets are undecided** (item 0) — only the `development`
   tier deploys today (Render + MongoDB Atlas + Upstash Redis). Land staging/production
   workflows once the user picks hosting for those tiers; don't invent infrastructure.
-- **RabbitMQ context-engine transport is implemented API-side, flag-gated by
-  `RABBITMQ_URL`** (see the Context module async backbone section and
-  `docs/contracts/context-engine.md`) — `ContextEngineHttpClient` (HTTP) remains the
-  live path for item 7's context-engine push wherever `RABBITMQ_URL` is unset. Still
-  outstanding for a real end-to-end run: provisioning a RabbitMQ broker per
-  environment, and the n8n consumer side (context-engine team).
+- **RabbitMQ context-engine transport is live on `development`, verified
+  end-to-end 2026-07-20** (see the Context module async backbone section and
+  `docs/contracts/context-engine.md`) — `RABBITMQ_URL` is set on the dev Render
+  service (CloudAMQP/LavinMQ free tier) and the n8n-hosted context engine consumes
+  `ctx.gather.requests` / replies on `ctx.gather.results`. `ContextEngineHttpClient`
+  (HTTP) remains the fallback path for item 7's context-engine push wherever
+  `RABBITMQ_URL` is unset — still every environment other than `development`.
+  Outstanding: provisioning `RABBITMQ_URL` for staging/production before their
+  first deploys.
+- **`ANTHROPIC_API_KEY` is unset on `development`** — the AI suggestion endpoint
+  returns 503 ("AI not configured") and the planning-job LLM planner stays on
+  `StubLlmPlanner` ("(stub plan)") on the deployed dev service. Item 5's code is
+  done; this is a deploy-config gap, not a missing feature.
 - **gRPC and a separate Context-module worker deployment remain explicitly deferred**
   (Context module async backbone section) — only built if a concrete trigger from
   `ARCHITECTURE.md`'s "Service boundaries" appears.

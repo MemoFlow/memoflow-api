@@ -1,10 +1,15 @@
 # Context-Engine Transport Contract
 
-> **Status:** contract defined; **API-side implemented**, flag-gated by `RABBITMQ_URL`
-> (`feature/rabbitmq-transport`). Unset `RABBITMQ_URL` keeps the legacy synchronous
-> `ContextEngineHttpClient`/stub path active — no broker required to boot. What remains
-> is broker provisioning per environment and the n8n consumer side (context-engine team)
-> for a real end-to-end run.
+> **Status: live on `development`, verified end-to-end 2026-07-20.** Both sides are
+> implemented — the API side (`feature/rabbitmq-transport`) and the n8n-hosted
+> context-engine consumer/producer. Round trip measured **~600ms**; DLQ behavior
+> confirmed (a result for an unknown `job_id` dead-letters correctly instead of
+> hanging). The dev broker is CloudAMQP's free tier (actually **LavinMQ** under the
+> hood — `amqps://` TLS-only, port `5671`), confirmed compatible with this contract.
+> Flag-gated by `RABBITMQ_URL`: unset keeps the legacy synchronous
+> `ContextEngineHttpClient`/stub path active — no broker required to boot. Staging
+> and production still need their own `RABBITMQ_URL` provisioned before their first
+> deploys.
 > **Audience:** the context-engine (n8n) team and the MemoFlow frontend team.
 > **Machine-readable schemas:** [`context-request.schema.json`](./context-request.schema.json),
 > [`context-result.schema.json`](./context-result.schema.json).
@@ -14,11 +19,12 @@ context engine** (an n8n environment that drives per-connector MCP agents). Beca
 MCP gathering far exceeds a synchronous HTTP timeout, the API↔CE hop is **asynchronous
 over RabbitMQ in both directions**, correlated by `job_id`.
 
-> The API now implements this transport, but only when `RABBITMQ_URL` is set. Unset (the
-> default in dev/test/e2e and any environment without a provisioned broker), it falls
-> back to the synchronous HTTP call (`ContextEngineHttpClient`). Setting `RABBITMQ_URL`
-> **supersedes** the HTTP path for that environment. This document remains the agreed
-> wire contract the CE team builds against.
+> The API implements this transport, but only when `RABBITMQ_URL` is set. Unset (the
+> default when developing locally via `.env`, in test/e2e, and in any environment
+> without a provisioned broker), it falls back to the synchronous HTTP call
+> (`ContextEngineHttpClient`). Setting `RABBITMQ_URL` **supersedes** the HTTP path for
+> that environment — it is set today on the deployed `development` Render service.
+> This document remains the agreed wire contract the CE team builds against.
 
 ## Overview & sequence
 

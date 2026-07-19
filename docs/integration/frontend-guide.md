@@ -162,9 +162,14 @@ immediately and follow progress over the WebSocket (REST polling is the fallback
 `503` if the job couldn't be enqueued.
 
 ### Poll — `GET /planning-jobs/:id` (JWT) → `200` `PlanningJobResponseDto`
-`status` ∈ `pending | running | completed | failed`. `result` is populated on
-`completed`; `error_code`/`error_message` on `failed`. `404` if not yours. This is the
-**durable source of truth** and the fallback when a socket isn't connected.
+`status` ∈ `pending | running | gathering | planning | completed | failed`. `running`
+is the legacy synchronous context-gather path; `gathering`/`planning` only appear
+when the environment has the async RabbitMQ transport enabled (live on
+`development` as of 2026-07-20 — see
+[`../contracts/context-engine.md`](../contracts/context-engine.md)). `result` is
+populated on `completed`; `error_code`/`error_message` on `failed`. `404` if not
+yours. This is the **durable source of truth** and the fallback when a socket isn't
+connected.
 
 ## 7. Real-time WebSocket (Socket.IO)
 
@@ -182,7 +187,8 @@ socket.on('ready', () => {
   socket.emit('subscribe', { jobId });
 });
 
-socket.on('planning.status',    (p) => {/* { jobId, status } — pending|running */});
+socket.on('planning.status',    (p) => {/* { jobId, status } — pending|running|gathering|planning */});
+socket.on('planning.chunk',     (p) => {/* { jobId, sequence, type: 'data'|'status', data?, status? } — RabbitMQ transport only, one per non-terminal ctx.gather.results chunk */});
 socket.on('planning.completed', (p) => {/* { jobId, status, result } */});
 socket.on('planning.failed',    (p) => {/* { jobId, status, errorCode, errorMessage } */});
 socket.on('planning.error',     (p) => {/* { jobId, message } — e.g. subscribe to a job that isn't yours/doesn't exist */});
@@ -195,9 +201,14 @@ socket.on('planning.error',     (p) => {/* { jobId, message } — e.g. subscribe
 - `subscribe {jobId}` replays the job's **current** state once (catch-up), then live
   `@OnEvent` relays continue. Delivery is best-effort — `GET /planning-jobs/:id` remains
   the durable fallback.
-- When the context-engine transport goes live, incremental context chunks will surface as
-  additional `planning.status` relays (see `docs/contracts/context-engine.md`); the event
-  names above stay stable.
+- **`planning.chunk` is live on `development`** (verified end-to-end 2026-07-20): once
+  the async RabbitMQ context-engine transport is enabled for an environment
+  (`RABBITMQ_URL` set — see [`../contracts/context-engine.md`](../contracts/context-engine.md)),
+  each gathered context chunk relays as a `planning.chunk` event as it arrives, in
+  addition to `planning.status` moving through `gathering` → `planning`. On
+  environments without the transport enabled, only `planning.status`
+  (`pending`/`running`) and the two terminal events fire — `planning.chunk` never
+  arrives there.
 
 ## 8. End-to-end example flow
 
@@ -206,8 +217,9 @@ socket.on('planning.error',     (p) => {/* { jobId, message } — e.g. subscribe
 3. Poll `GET /connectors/:id` until `status: active`.
 4. Open the Socket.IO connection with `auth.token`; wait for `ready`.
 5. `POST /planning-jobs` `{ prompt, connectors: ["trello"] }` → keep `job_id`.
-6. Render live off `planning.status` / `planning.completed` / `planning.failed`; if the
-   socket drops, fall back to `GET /planning-jobs/:id`.
+6. Render live off `planning.status` / `planning.chunk` (RabbitMQ-transport
+   environments only) / `planning.completed` / `planning.failed`; if the socket
+   drops, fall back to `GET /planning-jobs/:id`.
 
 ## Notes & non-final surfaces
 
