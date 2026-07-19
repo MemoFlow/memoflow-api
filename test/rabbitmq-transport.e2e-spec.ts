@@ -109,16 +109,101 @@ async function settle(ms = 500): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Forces a bare `localhost` hostname to the IPv4 loopback literal.
+ *
+ * Node >=17 resolves `localhost` in whatever order the OS/DNS returns
+ * (no IPv4-first preference by default), and on some CI Docker daemons the
+ * published container port is only reachable on the IPv4 loopback — a
+ * connection attempt that lands on `::1` first (or exclusively, depending
+ * on `net.connect`'s `autoSelectFamily` support on the runner's Node
+ * version) can produce a persistent `ECONNREFUSED` that never falls
+ * through to the address that's actually listening. Using the IPv4 literal
+ * directly skips DNS resolution entirely (`net.isIP` short-circuits it in
+ * both `amqplib` and Node's own `net.connect`), removing the ambiguity.
+ *
+ * Round-tripping through the WHATWG `URL` class leaves a path-less
+ * `amqp://` URL's empty path unchanged (empty-path-to-`/` normalization
+ * only applies to special schemes like http/ws, not `amqp:`). Either way
+ * the resolved vhost is unaffected — amqplib treats both `''` and `/` as
+ * "use the default vhost".
+ */
+function forceIPv4(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl);
+    if (url.hostname === 'localhost') {
+      url.hostname = '127.0.0.1';
+    }
+    return url.toString();
+  } catch {
+    // Defensive fallback only — `new URL` handles `amqp://` URLs fine in
+    // every Node version this project targets, but never let a parsing
+    // quirk crash the whole e2e setup over a cosmetic hostname swap.
+    return rawUrl.replace('localhost', '127.0.0.1');
+  }
+}
+
+/** Prefers `getAmqpUrl()` (present on `@testcontainers/rabbitmq` today) but
+ * falls back to building the URL manually from `getHost()`/
+ * `getMappedPort()` in case that API ever changes shape — then forces IPv4
+ * per `forceIPv4`'s doc comment. */
+function buildRabbitMqUrl(container: StartedRabbitMQContainer): string {
+  const raw =
+    typeof container.getAmqpUrl === 'function'
+      ? container.getAmqpUrl()
+      : `amqp://${container.getHost()}:${container.getMappedPort(5672)}`;
+  return forceIPv4(raw);
+}
+
+/**
+ * Raw, retried amqplib connect against the built URL — a pre-flight check
+ * so a broker that's unreachable (container reports "started" but the AMQP
+ * listener isn't actually accepting connections yet, a known source of
+ * flakiness with `Wait.forLogMessage("Server startup complete")` on
+ * resource-constrained CI runners) fails fast with a clear, diagnosable
+ * error instead of the app's `amqp-connection-manager` retrying silently
+ * in the background until individual test assertions time out generically.
+ */
+async function preflightRabbitMq(
+  url: string,
+  attempts = 15,
+  delayMs = 2_000,
+): Promise<void> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const conn = await amqplib.connect(url, { timeout: 5_000 });
+      await conn.close();
+      return;
+    } catch (err) {
+      lastErr = err;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  const lastErrMessage =
+    lastErr instanceof Error ? lastErr.message : String(lastErr);
+  throw new Error(
+    `RabbitMQ pre-flight failed: could not connect to "${url}" after ` +
+      `${attempts} attempts (${(attempts * delayMs) / 1000}s). Last error: ` +
+      `${lastErrMessage}`,
+  );
+}
+
 // Boots the full AppModule against Testcontainers PostgreSQL + Redis + a
 // real RabbitMQ broker (in-memory Mongo), with RABBITMQ_URL set — the
 // queue-transport path (docs/contracts/context-engine.md). Docker-gated
-// like the rest of the PG-backed e2e suites.
+// like the rest of the PG-backed e2e suites. Deliberately its OWN file
+// (not sharing a Jest worker/module registry with the flag-off suite in
+// `rabbitmq-transport-flag-off.e2e-spec.ts`) — a RabbitMQ container
+// problem (slow start, background reconnect noise, a wedged teardown)
+// must never be able to fail a suite that has nothing to do with it.
 describeWithDocker()('RabbitMQ context-engine transport (e2e)', () => {
   let app: INestApplication<App>;
   let pg: PgTestEnv;
   let mongo: MongoTestEnv;
   let redis: RedisTestEnv;
   let rabbitmq: StartedRabbitMQContainer;
+  let rabbitmqUrl: string;
   let ceConnection: amqplib.ChannelModel;
   let ceChannel: amqplib.Channel;
 
@@ -142,8 +227,42 @@ describeWithDocker()('RabbitMQ context-engine transport (e2e)', () => {
     pg = await startPgContainer();
     mongo = await startMongoMemory();
     redis = await startRedisContainer();
-    rabbitmq = await new RabbitMQContainer('rabbitmq:3.13-alpine').start();
 
+    try {
+      rabbitmq = await new RabbitMQContainer('rabbitmq:3.13-alpine')
+        // Default is 30s — generous headroom for a cold image pull +
+        // Erlang VM boot on a CI runner that's also starting PG/Redis/Mongo
+        // concurrently, so a genuinely slow (not broken) start doesn't get
+        // misreported as "container failed".
+        .withStartupTimeout(120_000)
+        .start();
+    } catch (err) {
+      // Fail loudly and unambiguously at the describe level — every test
+      // below would otherwise report its own generic, harder-to-diagnose
+      // timeout instead of the real "container never started" cause.
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`RabbitMQ Testcontainer failed to start: ${message}`, {
+        cause: err,
+      });
+    }
+
+    rabbitmqUrl = buildRabbitMqUrl(rabbitmq);
+
+    // Pre-flight: the container reporting "started" (its log-message wait
+    // strategy matched) does not guarantee the AMQP listener is already
+    // accepting external connections — confirm it actually is, with a
+    // clear, URL-bearing error if not, before wiring up the app or the
+    // fake CE against it.
+    await preflightRabbitMq(rabbitmqUrl);
+
+    // RABBITMQ_URL (and everything else) MUST land in process.env before
+    // `Test.createTestingModule(...).compile()` below — that's what runs
+    // `ConfigModule`'s `validate(process.env)`, and `ContextModule`'s
+    // RabbitMQ-gated providers (CONTEXT_REQUEST_PUBLISHER/
+    // GATHER_TIMEOUT_SCHEDULER/ContextResultsConsumer) read the resulting
+    // cached `ConfigService` value, not a live `process.env` read at
+    // request time. This mirrors how every other e2e suite here injects
+    // CONTEXT_ENGINE_URL/etc. before compiling the module.
     Object.assign(process.env, pg.env, redis.env, {
       MONGODB_URI: mongo.uri,
       JWT_SECRET: 'test-only-secret',
@@ -151,7 +270,7 @@ describeWithDocker()('RabbitMQ context-engine transport (e2e)', () => {
       COMPOSIO_API_KEY: 'test-only-composio-key',
       COMPOSIO_AUTH_CONFIG_IDS: 'trello:ac_test,notion:ac_test,github:ac_test',
       COMPOSIO_WEBHOOK_SECRET: 'test-only-composio-webhook-secret',
-      RABBITMQ_URL: rabbitmq.getAmqpUrl(),
+      RABBITMQ_URL: rabbitmqUrl,
       CONTEXT_GATHER_TIMEOUT_MS: '120000',
     });
 
@@ -171,8 +290,8 @@ describeWithDocker()('RabbitMQ context-engine transport (e2e)', () => {
     await dataSource.runMigrations();
     await dataSource.destroy();
 
-    // Import late so ConfigModule validation sees the test env vars
-    // (including RABBITMQ_URL, which is what switches ContextModule's
+    // Import late so ConfigModule validation sees the test env vars set
+    // above (including RABBITMQ_URL, which is what switches ContextModule's
     // CONTEXT_REQUEST_PUBLISHER/GATHER_TIMEOUT_SCHEDULER/
     // ContextResultsConsumer providers on).
     const { AppModule } = await import('./../src/app.module');
@@ -195,19 +314,27 @@ describeWithDocker()('RabbitMQ context-engine transport (e2e)', () => {
 
     // A second, independent AMQP connection plays the fake context-engine:
     // consumes ctx.gather.requests, publishes ctx.gather.result chunks.
-    ceConnection = await amqplib.connect(rabbitmq.getAmqpUrl());
+    // Same exact URL the app used (built once, above) — never re-derived.
+    ceConnection = await amqplib.connect(rabbitmqUrl);
     ceChannel = await ceConnection.createChannel();
-  }, 180_000);
+    // Hook budget must exceed container startup (120s, .withStartupTimeout
+    // above) + worst-case preflight (15 attempts x (5s connect timeout + 2s
+    // delay) = 105s) + PG/Mongo/app boot slack, so a slow-but-healthy runner
+    // fails with preflight's diagnosable error, never Jest's generic hook
+    // timeout. Keep these numbers in sync if either side changes.
+  }, 300_000);
 
   afterAll(async () => {
-    await ceChannel?.close();
-    await ceConnection?.close();
-    await app?.close();
-    await pg?.container.stop();
-    await mongo?.server.stop();
-    await redis?.container.stop();
-    await rabbitmq?.stop();
-  });
+    // Each teardown step is independent — one failing/hanging step must
+    // never prevent the others from at least being attempted.
+    await ceChannel?.close().catch(() => undefined);
+    await ceConnection?.close().catch(() => undefined);
+    await app?.close().catch(() => undefined);
+    await pg?.container.stop().catch(() => undefined);
+    await mongo?.server.stop().catch(() => undefined);
+    await redis?.container.stop().catch(() => undefined);
+    await rabbitmq?.stop().catch(() => undefined);
+  }, 60_000);
 
   it(
     'publishes a ctx.gather.request with the contract body + message ' +
@@ -382,100 +509,3 @@ describeWithDocker()('RabbitMQ context-engine transport (e2e)', () => {
     30_000,
   );
 });
-
-// Same Docker-availability gate, own container set, deliberately WITHOUT
-// RABBITMQ_URL — proves the two transports coexist: with the var unset,
-// ContextModule never binds CONTEXT_REQUEST_PUBLISHER, so
-// ProcessPlanningJobUseCase takes its legacy branch exactly as
-// `test/context.e2e-spec.ts` (left completely unmodified) already covers.
-describeWithDocker()(
-  'RabbitMQ context-engine transport — flag off (e2e)',
-  () => {
-    let app: INestApplication<App>;
-    let pg: PgTestEnv;
-    let mongo: MongoTestEnv;
-    let redis: RedisTestEnv;
-
-    beforeAll(async () => {
-      pg = await startPgContainer();
-      mongo = await startMongoMemory();
-      redis = await startRedisContainer();
-
-      Object.assign(process.env, pg.env, redis.env, {
-        MONGODB_URI: mongo.uri,
-        JWT_SECRET: 'test-only-secret',
-        JWT_EXPIRES_IN: '15m',
-        COMPOSIO_API_KEY: 'test-only-composio-key',
-        COMPOSIO_AUTH_CONFIG_IDS:
-          'trello:ac_test,notion:ac_test,github:ac_test',
-        COMPOSIO_WEBHOOK_SECRET: 'test-only-composio-webhook-secret',
-      });
-      delete process.env.RABBITMQ_URL;
-
-      const dataSourceModule =
-        await import('./../src/infrastructure/persistence/typeorm.data-source');
-      const dataSource = dataSourceModule.default;
-      dataSource.setOptions({
-        host: pg.env.POSTGRES_HOST,
-        port: Number(pg.env.POSTGRES_PORT),
-        username: pg.env.POSTGRES_USER,
-        password: pg.env.POSTGRES_PASSWORD,
-        database: pg.env.POSTGRES_DB,
-      });
-      await dataSource.initialize();
-      await dataSource.runMigrations();
-      await dataSource.destroy();
-
-      const { AppModule } = await import('./../src/app.module');
-      const moduleFixture: TestingModule = await Test.createTestingModule({
-        imports: [AppModule],
-      }).compile();
-
-      app = moduleFixture.createNestApplication();
-      app.useGlobalPipes(
-        new ValidationPipe({
-          whitelist: true,
-          transform: true,
-          transformOptions: { enableImplicitConversion: true },
-        }),
-      );
-      await app.init();
-    }, 180_000);
-
-    afterAll(async () => {
-      await app?.close();
-      await pg?.container.stop();
-      await mongo?.server.stop();
-      await redis?.container.stop();
-    });
-
-    it(
-      'submits and completes a planning job via the legacy stub gather+plan ' +
-        'path when RABBITMQ_URL is unset',
-      async () => {
-        const token = await registerAndLogin(
-          app,
-          'legacy-still-works@example.com',
-        );
-
-        const submitRes = await request(app.getHttpServer())
-          .post('/planning-jobs')
-          .set('Authorization', `Bearer ${token}`)
-          .send({ prompt: 'Legacy path must still work' })
-          .expect(202);
-        expect(submitRes.body.status).toBe('pending');
-
-        const jobId = submitRes.body.job_id as string;
-        const finalState = await pollUntilTerminal(app, jobId, token);
-
-        expect(finalState.status).toBe('completed');
-        expect(finalState.result).toEqual({
-          suggestions: ['(stub plan) Legacy path must still work'],
-          outline: null,
-          sources: [],
-        });
-      },
-      30_000,
-    );
-  },
-);
