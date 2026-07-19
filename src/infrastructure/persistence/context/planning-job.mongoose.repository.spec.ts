@@ -211,4 +211,239 @@ describe('PlanningJobMongooseRepository', () => {
       expect(result).toBeNull();
     });
   });
+
+  describe('claimForGathering', () => {
+    it('atomically claims a pending job, moving it to gathering', async () => {
+      const claimed = fakeDoc({ status: JobStatus.Gathering });
+      const exec = jest.fn().mockResolvedValue(claimed);
+      const model = {
+        findOneAndUpdate: jest.fn().mockReturnValue({ exec }),
+      };
+      const repository = new PlanningJobMongooseRepository(model as any);
+
+      const result = await repository.claimForGathering(
+        '507f1f77bcf86cd799439011',
+      );
+
+      expect(model.findOneAndUpdate).toHaveBeenCalledWith(
+        { _id: '507f1f77bcf86cd799439011', status: JobStatus.Pending },
+        { status: JobStatus.Gathering, started_at: expect.any(Date) },
+        { new: true },
+      );
+      expect(result?.status).toBe(JobStatus.Gathering);
+    });
+
+    it('returns null when the job is not pending', async () => {
+      const exec = jest.fn().mockResolvedValue(null);
+      const model = {
+        findOneAndUpdate: jest.fn().mockReturnValue({ exec }),
+      };
+      const repository = new PlanningJobMongooseRepository(model as any);
+
+      const result = await repository.claimForGathering(
+        '507f1f77bcf86cd799439011',
+      );
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('appendResultChunk', () => {
+    it('atomically pushes a data chunk guarded by (job_id, sequence)', async () => {
+      const updated = fakeDoc({
+        status: JobStatus.Gathering,
+        chunk_sequences: [0],
+        data_chunks: [
+          {
+            sequence: 0,
+            provider: 'trello',
+            content: '{}',
+            token_estimate: 42,
+          },
+        ],
+      });
+      const exec = jest.fn().mockResolvedValue(updated);
+      const model = {
+        findOneAndUpdate: jest.fn().mockReturnValue({ exec }),
+      };
+      const repository = new PlanningJobMongooseRepository(model as any);
+
+      const result = await repository.appendResultChunk(
+        '507f1f77bcf86cd799439011',
+        {
+          sequence: 0,
+          type: 'data',
+          data: { provider: 'trello', content: '{}', tokenEstimate: 42 },
+        },
+      );
+
+      expect(model.findOneAndUpdate).toHaveBeenCalledWith(
+        {
+          _id: '507f1f77bcf86cd799439011',
+          chunk_sequences: { $ne: 0 },
+        },
+        {
+          $push: {
+            chunk_sequences: 0,
+            data_chunks: {
+              sequence: 0,
+              provider: 'trello',
+              content: '{}',
+              token_estimate: 42,
+            },
+          },
+        },
+        { new: true },
+      );
+      expect(result.applied).toBe(true);
+      expect(result.job?.dataChunks).toEqual([
+        { sequence: 0, provider: 'trello', content: '{}', tokenEstimate: 42 },
+      ]);
+    });
+
+    it('does not push data_chunks for a status chunk', async () => {
+      const updated = fakeDoc({ status: JobStatus.Gathering });
+      const exec = jest.fn().mockResolvedValue(updated);
+      const model = {
+        findOneAndUpdate: jest.fn().mockReturnValue({ exec }),
+      };
+      const repository = new PlanningJobMongooseRepository(model as any);
+
+      await repository.appendResultChunk('507f1f77bcf86cd799439011', {
+        sequence: 1,
+        type: 'status',
+      });
+
+      expect(model.findOneAndUpdate).toHaveBeenCalledWith(
+        { _id: '507f1f77bcf86cd799439011', chunk_sequences: { $ne: 1 } },
+        { $push: { chunk_sequences: 1 } },
+        { new: true },
+      );
+    });
+
+    it('returns applied:false and the current job on a duplicate sequence', async () => {
+      const findOneAndUpdateExec = jest.fn().mockResolvedValue(null);
+      const existing = fakeDoc({
+        status: JobStatus.Gathering,
+        chunk_sequences: [0],
+      });
+      const findByIdExec = jest.fn().mockResolvedValue(existing);
+      const model = {
+        findOneAndUpdate: jest
+          .fn()
+          .mockReturnValue({ exec: findOneAndUpdateExec }),
+        findById: jest.fn().mockReturnValue({ exec: findByIdExec }),
+      };
+      const repository = new PlanningJobMongooseRepository(model as any);
+
+      const result = await repository.appendResultChunk(
+        '507f1f77bcf86cd799439011',
+        { sequence: 0, type: 'status' },
+      );
+
+      expect(result.applied).toBe(false);
+      expect(result.job?.status).toBe(JobStatus.Gathering);
+    });
+
+    it('returns applied:false and job:null when the job does not exist at all', async () => {
+      const findOneAndUpdateExec = jest.fn().mockResolvedValue(null);
+      const findByIdExec = jest.fn().mockResolvedValue(null);
+      const model = {
+        findOneAndUpdate: jest
+          .fn()
+          .mockReturnValue({ exec: findOneAndUpdateExec }),
+        findById: jest.fn().mockReturnValue({ exec: findByIdExec }),
+      };
+      const repository = new PlanningJobMongooseRepository(model as any);
+
+      const result = await repository.appendResultChunk('missing-id', {
+        sequence: 0,
+        type: 'status',
+      });
+
+      expect(result.applied).toBe(false);
+      expect(result.job).toBeNull();
+    });
+  });
+
+  describe('claimForPlanning', () => {
+    it('atomically claims a gathering job, moving it to planning and recording contextUsed', async () => {
+      const claimed = fakeDoc({
+        status: JobStatus.Planning,
+        context_used: { chunks: [] },
+      });
+      const exec = jest.fn().mockResolvedValue(claimed);
+      const model = { findOneAndUpdate: jest.fn().mockReturnValue({ exec }) };
+      const repository = new PlanningJobMongooseRepository(model as any);
+
+      const result = await repository.claimForPlanning(
+        '507f1f77bcf86cd799439011',
+        { chunks: [] },
+      );
+
+      expect(model.findOneAndUpdate).toHaveBeenCalledWith(
+        { _id: '507f1f77bcf86cd799439011', status: JobStatus.Gathering },
+        { status: JobStatus.Planning, context_used: { chunks: [] } },
+        { new: true },
+      );
+      expect(result?.status).toBe(JobStatus.Planning);
+    });
+
+    it('returns null (loses the race) when the job is not gathering', async () => {
+      const exec = jest.fn().mockResolvedValue(null);
+      const model = { findOneAndUpdate: jest.fn().mockReturnValue({ exec }) };
+      const repository = new PlanningJobMongooseRepository(model as any);
+
+      const result = await repository.claimForPlanning(
+        '507f1f77bcf86cd799439011',
+        {},
+      );
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('failIfStillGathering', () => {
+    it('atomically fails a gathering job with the given error_code/error_message', async () => {
+      const failed = fakeDoc({
+        status: JobStatus.Failed,
+        error_code: 'CONTEXT_ENGINE_TIMEOUT',
+        error_message: 'timed out',
+      });
+      const exec = jest.fn().mockResolvedValue(failed);
+      const model = { findOneAndUpdate: jest.fn().mockReturnValue({ exec }) };
+      const repository = new PlanningJobMongooseRepository(model as any);
+
+      const result = await repository.failIfStillGathering(
+        '507f1f77bcf86cd799439011',
+        { errorCode: 'CONTEXT_ENGINE_TIMEOUT', errorMessage: 'timed out' },
+      );
+
+      expect(model.findOneAndUpdate).toHaveBeenCalledWith(
+        { _id: '507f1f77bcf86cd799439011', status: JobStatus.Gathering },
+        {
+          status: JobStatus.Failed,
+          error_code: 'CONTEXT_ENGINE_TIMEOUT',
+          error_message: 'timed out',
+          finished_at: expect.any(Date),
+        },
+        { new: true },
+      );
+      expect(result?.status).toBe(JobStatus.Failed);
+      expect(result?.errorCode).toBe('CONTEXT_ENGINE_TIMEOUT');
+    });
+
+    it('returns null (loses the race) when the job is not gathering — e.g. already completed', async () => {
+      const exec = jest.fn().mockResolvedValue(null);
+      const model = { findOneAndUpdate: jest.fn().mockReturnValue({ exec }) };
+      const repository = new PlanningJobMongooseRepository(model as any);
+
+      const result = await repository.failIfStillGathering(
+        '507f1f77bcf86cd799439011',
+        { errorCode: 'CONTEXT_ENGINE_TIMEOUT', errorMessage: 'timed out' },
+      );
+
+      expect(result).toBeNull();
+    });
+  });
 });

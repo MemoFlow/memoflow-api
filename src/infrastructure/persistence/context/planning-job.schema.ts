@@ -64,6 +64,24 @@ export class PlanningJobOdmEntity {
 
   @Prop({ type: Date, default: null })
   finished_at: Date | null;
+
+  // RabbitMQ context-engine transport (docs/contracts/context-engine.md §3-4).
+  // Guards `appendResultChunk`'s idempotent-by-`(job_id, sequence)` append:
+  // a chunk's sequence is pushed here (regardless of `data`/`status` type)
+  // so a redelivered/duplicate chunk is rejected by the atomic
+  // `chunk_sequences: { $ne: sequence }` filter instead of double-processed.
+  @Prop({ type: [Number], default: [] })
+  chunk_sequences: number[];
+
+  // Accumulated `data` chunks (sequence-ordered by push order), assembled
+  // into `context_used` once the terminal `completed` status chunk arrives.
+  @Prop({ type: [Object], default: [] })
+  data_chunks: Array<{
+    sequence: number;
+    provider: string;
+    content: string;
+    token_estimate: number | null;
+  }>;
 }
 
 export type PlanningJobDocument = HydratedDocument<PlanningJobOdmEntity>;
