@@ -1,3 +1,5 @@
+import { Prompt } from '../../domain/ai/prompt.entity';
+import { PromptRepository } from '../../domain/ai/prompt.repository';
 import { ContextGatherer } from '../../domain/context/context-gatherer.port';
 import {
   LlmPlanner,
@@ -86,8 +88,40 @@ class InMemoryPlanningJobRepository implements PlanningJobRepository {
         patch.startedAt !== undefined ? patch.startedAt : existing.startedAt,
       finishedAt:
         patch.finishedAt !== undefined ? patch.finishedAt : existing.finishedAt,
+      promptVersion:
+        patch.promptVersion !== undefined
+          ? patch.promptVersion
+          : existing.promptVersion,
+      contextUsed:
+        patch.contextUsed !== undefined
+          ? patch.contextUsed
+          : existing.contextUsed,
     });
   }
+}
+
+class FakePromptRepository implements PromptRepository {
+  constructor(private readonly prompts: Prompt[] = []) {}
+
+  findActiveByFeatureType(featureType: string): Promise<Prompt | null> {
+    return Promise.resolve(
+      this.prompts.find((p) => p.featureType === featureType && p.isActive) ??
+        null,
+    );
+  }
+}
+
+function makePlanningPrompt(overrides: Partial<Prompt> = {}): Prompt {
+  return new Prompt({
+    id: 'prompt-1',
+    featureType: 'planning',
+    version: 'v1',
+    template: 'Plan this: {{prompt}}',
+    isActive: true,
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    ...overrides,
+  });
 }
 
 class StubGatherer implements ContextGatherer {
@@ -139,6 +173,7 @@ describe('ProcessPlanningJobUseCase', () => {
       repository,
       new StubGatherer(),
       new StubPlanner(),
+      new FakePromptRepository([makePlanningPrompt()]),
     );
 
     const { processed, job } = await useCase.execute({ jobId: 'job-1' });
@@ -151,6 +186,45 @@ describe('ProcessPlanningJobUseCase', () => {
       sources: [],
     });
     expect(job.finishedAt).not.toBeNull();
+    expect(job.promptVersion).toBe('v1');
+    expect(job.contextUsed).toEqual({ note: 'stub' });
+  });
+
+  it('records promptVersion null when no active planning prompt is configured', async () => {
+    const repository = new InMemoryPlanningJobRepository();
+    repository.seed(makeJob());
+    const useCase = new ProcessPlanningJobUseCase(
+      repository,
+      new StubGatherer(),
+      new StubPlanner(),
+      new FakePromptRepository([]),
+    );
+
+    const { job } = await useCase.execute({ jobId: 'job-1' });
+
+    expect(job.promptVersion).toBeNull();
+  });
+
+  it('records contextUsed on a failed job when gather succeeded but plan threw', async () => {
+    const repository = new InMemoryPlanningJobRepository();
+    repository.seed(makeJob());
+    class ThrowingPlanner implements LlmPlanner {
+      plan(): Promise<PlanningResult> {
+        return Promise.reject(new Error('planner exploded'));
+      }
+    }
+    const useCase = new ProcessPlanningJobUseCase(
+      repository,
+      new StubGatherer(),
+      new ThrowingPlanner(),
+      new FakePromptRepository([makePlanningPrompt()]),
+    );
+
+    const { job } = await useCase.execute({ jobId: 'job-1' });
+
+    expect(job.status).toBe(JobStatus.Failed);
+    expect(job.contextUsed).toEqual({ note: 'stub' });
+    expect(job.promptVersion).toBe('v1');
   });
 
   it('passes { userId, connectors, prompt } to the gatherer', async () => {
@@ -164,6 +238,7 @@ describe('ProcessPlanningJobUseCase', () => {
       repository,
       gatherer,
       new StubPlanner(),
+      new FakePromptRepository([makePlanningPrompt()]),
     );
 
     await useCase.execute({ jobId: 'job-1' });
@@ -182,6 +257,7 @@ describe('ProcessPlanningJobUseCase', () => {
       repository,
       new ThrowingGatherer(),
       new StubPlanner(),
+      new FakePromptRepository([makePlanningPrompt()]),
     );
 
     const { processed, job } = await useCase.execute({ jobId: 'job-1' });
@@ -206,6 +282,7 @@ describe('ProcessPlanningJobUseCase', () => {
       repository,
       gatherer,
       new StubPlanner(),
+      new FakePromptRepository([makePlanningPrompt()]),
     );
 
     const { processed, job } = await useCase.execute({ jobId: 'job-1' });
@@ -228,6 +305,7 @@ describe('ProcessPlanningJobUseCase', () => {
       repository,
       new StubGatherer(),
       new StubPlanner(),
+      new FakePromptRepository([makePlanningPrompt()]),
     );
 
     const { processed, job } = await useCase.execute({ jobId: 'job-1' });
@@ -249,6 +327,7 @@ describe('ProcessPlanningJobUseCase', () => {
       repository,
       gatherer,
       new StubPlanner(),
+      new FakePromptRepository([makePlanningPrompt()]),
     );
 
     const { processed, job } = await useCase.execute({ jobId: 'job-1' });
@@ -264,6 +343,7 @@ describe('ProcessPlanningJobUseCase', () => {
       repository,
       new StubGatherer(),
       new StubPlanner(),
+      new FakePromptRepository([makePlanningPrompt()]),
     );
 
     await expect(useCase.execute({ jobId: 'missing' })).rejects.toThrow(
