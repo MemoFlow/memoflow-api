@@ -10,6 +10,7 @@ import {
 import {
   CONTEXT_EXCHANGE,
   CTX_GATHER_RESULT_ROUTING_KEY,
+  CTX_GATHER_REQUESTS_DLQ,
   CTX_GATHER_REQUESTS_QUEUE,
 } from '../src/infrastructure/amqp/context-topology';
 import { startMongoMemory, MongoTestEnv } from './utils/mongo-memory';
@@ -107,6 +108,100 @@ function waitForOneMessage(
 
 async function settle(ms = 500): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Polls `GET /planning-jobs/:id` in the background and records every
+ * DISTINCT status seen (pending -> gathering -> planning ->
+ * completed/failed), so a failure can show the actual sequence observed
+ * rather than just a final snapshot. Diagnostics only — polling failures
+ * are swallowed (the test's own assertions are what fail loudly); call
+ * `stop()` once the test's own wait resolves either way.
+ */
+function observeStatusTransitions(
+  app: INestApplication<App>,
+  jobId: string,
+  token: string,
+  intervalMs = 500,
+): { stop: () => void; transitions: () => string[] } {
+  const seen: string[] = [];
+  let stopped = false;
+
+  const loop = async () => {
+    while (!stopped) {
+      try {
+        const res = await request(app.getHttpServer())
+          .get(`/planning-jobs/${jobId}`)
+          .set('Authorization', `Bearer ${token}`);
+        const status = (res.body?.status as string | undefined) ?? 'unknown';
+        if (seen[seen.length - 1] !== status) {
+          seen.push(status);
+        }
+      } catch {
+        // Diagnostics only — never let a poll failure crash the observer.
+      }
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+  };
+  void loop();
+
+  return {
+    stop: () => {
+      stopped = true;
+    },
+    transitions: () => [...seen],
+  };
+}
+
+/**
+ * On a `waitForOneMessage` timeout, turns an opaque "timed out" into a
+ * pinpointed cause by dumping: the job's current status/error_code (was the
+ * worker even claimed it? did it fail before publishing?), the observed
+ * status-transition sequence, and both queues' message counts (empty
+ * `ctx.gather.requests` + empty DLQ = the publish never happened at all;
+ * a message sitting in the DLQ = a topology/routing mismatch, not a
+ * publish failure).
+ */
+async function diagnoseTimeout(
+  app: INestApplication<App>,
+  jobId: string,
+  token: string,
+  channel: amqplib.Channel,
+  transitions: string[],
+  label: string,
+): Promise<void> {
+  let statusLine = 'unavailable';
+  try {
+    const res = await request(app.getHttpServer())
+      .get(`/planning-jobs/${jobId}`)
+      .set('Authorization', `Bearer ${token}`);
+    statusLine =
+      `status=${res.body?.status as string | undefined} ` +
+      `error_code=${res.body?.error_code as string | null | undefined} ` +
+      `error_message=${res.body?.error_message as string | null | undefined}`;
+  } catch (err) {
+    statusLine = `<failed to fetch job: ${err instanceof Error ? err.message : String(err)}>`;
+  }
+
+  const describeQueue = async (queue: string): Promise<string> => {
+    try {
+      const { messageCount, consumerCount } = await channel.checkQueue(queue);
+      return `${queue}: messageCount=${messageCount} consumerCount=${consumerCount}`;
+    } catch (err) {
+      return `${queue}: <checkQueue failed: ${err instanceof Error ? err.message : String(err)}>`;
+    }
+  };
+  const [requestsQueueLine, dlqLine] = await Promise.all([
+    describeQueue(CTX_GATHER_REQUESTS_QUEUE),
+    describeQueue(CTX_GATHER_REQUESTS_DLQ),
+  ]);
+
+  console.error(
+    `[diagnose:${label}] job ${jobId} — ${statusLine}\n` +
+      `[diagnose:${label}] status transitions observed: ${transitions.join(' -> ') || '<none>'}\n` +
+      `[diagnose:${label}] ${requestsQueueLine}\n` +
+      `[diagnose:${label}] ${dlqLine}`,
+  );
 }
 
 /**
@@ -351,7 +446,23 @@ describeWithDocker()('RabbitMQ context-engine transport (e2e)', () => {
       const jobId = submitRes.body.job_id as string;
       expect(submitRes.body.status).toBe('pending');
 
-      const msg = await received;
+      const observer = observeStatusTransitions(app, jobId, token);
+      let msg: amqplib.ConsumeMessage;
+      try {
+        msg = await received;
+      } catch (err) {
+        await diagnoseTimeout(
+          app,
+          jobId,
+          token,
+          ceChannel,
+          observer.transitions(),
+          'request-publish',
+        );
+        throw err;
+      } finally {
+        observer.stop();
+      }
       const body = JSON.parse(msg.content.toString('utf-8')) as Record<
         string,
         unknown
@@ -398,7 +509,23 @@ describeWithDocker()('RabbitMQ context-engine transport (e2e)', () => {
         .expect(202);
       const jobId = submitRes.body.job_id as string;
 
-      const requestMsg = await received;
+      const observer = observeStatusTransitions(app, jobId, token);
+      let requestMsg: amqplib.ConsumeMessage;
+      try {
+        requestMsg = await received;
+      } catch (err) {
+        await diagnoseTimeout(
+          app,
+          jobId,
+          token,
+          ceChannel,
+          observer.transitions(),
+          'completed-flow',
+        );
+        throw err;
+      } finally {
+        observer.stop();
+      }
       const userId = (
         JSON.parse(requestMsg.content.toString('utf-8')) as { user_id: string }
       ).user_id;
@@ -483,7 +610,23 @@ describeWithDocker()('RabbitMQ context-engine transport (e2e)', () => {
         .expect(202);
       const jobId = submitRes.body.job_id as string;
 
-      const requestMsg = await received;
+      const observer = observeStatusTransitions(app, jobId, token);
+      let requestMsg: amqplib.ConsumeMessage;
+      try {
+        requestMsg = await received;
+      } catch (err) {
+        await diagnoseTimeout(
+          app,
+          jobId,
+          token,
+          ceChannel,
+          observer.transitions(),
+          'failed-flow',
+        );
+        throw err;
+      } finally {
+        observer.stop();
+      }
       const userId = (
         JSON.parse(requestMsg.content.toString('utf-8')) as { user_id: string }
       ).user_id;
