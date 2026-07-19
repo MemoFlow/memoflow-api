@@ -127,10 +127,18 @@ Unique composite index on **(user_id, provider)** — one connection per user pe
 | column | type | notes |
 | --- | --- | --- |
 | id | uuid | PK |
-| user_id | uuid | FK → users |
-| document_id | uuid | FK → documents |
+| user_id | uuid | FK → users, **ON DELETE CASCADE**, **indexed** |
+| document_id | uuid | FK → documents, **ON DELETE CASCADE**, **indexed** |
 | milestone_type | varchar | |
 | xp_awarded | int | |
+| created_at | timestamptz | |
+
+Unique composite index **(user_id, document_id, milestone_type)** —
+`IDX_milestones_user_document_type` — deliberate addition beyond the original
+design: it's the idempotent-award guard `MilestoneTypeOrmRepository.awardOnce`
+relies on (`INSERT ... ON CONFLICT DO NOTHING RETURNING *`), so a double
+`document.created`/`section.created`/`section.updated` event can never award the
+same milestone twice for the same document.
 
 #### `daily_missions`
 | column | type | notes |
@@ -139,17 +147,33 @@ Unique composite index on **(user_id, provider)** — one connection per user pe
 | code | varchar | |
 | description | varchar | |
 | xp_reward | int | |
-| criteria | jsonb | |
+| criteria | jsonb | `{ event, target }` — `event` matches a documents domain event name (e.g. `section.updated`), `target` is the count of that event required to complete the mission |
 | active_date | date | **indexed** |
+| created_at | timestamptz | |
 
 #### `mission_progress`
 | column | type | notes |
 | --- | --- | --- |
 | id | uuid | PK |
-| user_id | uuid | FK → users |
-| mission_id | uuid | FK → daily_missions |
+| user_id | uuid | FK → users, **ON DELETE CASCADE**, **indexed** |
+| mission_id | uuid | FK → daily_missions, **ON DELETE CASCADE**, **indexed** |
 | progress | int | |
 | completed | boolean | |
+| created_at | timestamptz | |
+| updated_at | timestamptz | |
+
+Unique composite index **(user_id, mission_id)** — `IDX_mission_progress_user_mission`
+— deliberate addition beyond the original design: exactly one progress row per
+(user, mission), so `MissionProgressTypeOrmRepository.incrementAtomic` can upsert
+against it (`ON CONFLICT DO NOTHING`) and then run a single guarded
+`UPDATE ... WHERE ... AND completed = false RETURNING *`, making the progress
+increment and the completion flip race-safe without a read-modify-write.
+
+`users.xp`/`users.level` are updated atomically by `UserRepository.incrementXp` —
+a single `UPDATE ... RETURNING` that computes both columns in one statement
+(`level = FLOOR(xp / 100) + 1`, 100 XP per level, level 1 at 0 XP). No schema
+change: both columns already exist on `users` (see Core above; `xp` is indexed
+for the leaderboard).
 
 ### Templates
 

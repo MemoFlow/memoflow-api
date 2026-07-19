@@ -214,11 +214,57 @@ implementation task lands.
 - Depended on items 2 and 4, and on the Context module async backbone above
   (queue/worker/WS foundation); unblocks nothing further on the roadmap.
 
-## 6. Gamification (PG) — ☐
+## 6. Gamification (PG) — ✅ done
 
-- `milestones`, `daily_missions` (`active_date` indexed), `mission_progress`;
-  XP/level updates on `users` (leaderboard uses the indexed `xp`).
-- Hooks into document/section events from item 2. Depends on items 1–2.
+- Slice implemented per the `milestones`/`daily_missions`/`mission_progress` tables
+  in the schema doc: `milestones` (FK → users **ON DELETE CASCADE**, FK → documents
+  **ON DELETE CASCADE**, both indexed, plus a unique composite index `(user_id,
+  document_id, milestone_type)` — `IDX_milestones_user_document_type`), `daily_missions`
+  (`active_date` indexed, `criteria` jsonb shaped `{ event, target }`), and
+  `mission_progress` (FK → users / FK → daily_missions, both **ON DELETE CASCADE**
+  and indexed, plus a unique composite index `(user_id, mission_id)` —
+  `IDX_mission_progress_user_mission`). `milestones`/`daily_missions` carry
+  `created_at`; `mission_progress` carries `created_at`/`updated_at`. Both composite
+  unique indexes are deliberate additions beyond the schema doc's plain column
+  listing, documented in the migration itself (mirrors how `document_versions`'
+  compound index and `connector_connections`' `(user_id, provider)` index are
+  documented as additions in their own migrations) — they're the idempotency guards
+  `MilestoneTypeOrmRepository.awardOnce` (`INSERT ... ON CONFLICT DO NOTHING
+  RETURNING *`) and `MissionProgressTypeOrmRepository.incrementAtomic` (upsert then a
+  guarded `UPDATE ... WHERE ... AND completed = false RETURNING *`) rely on so a
+  duplicate event can never double-award XP or race a completion flip.
+- Migration: `CreateGamification`.
+- Endpoints (both JWT-guarded, snake_case JSON responses): `GET /gamification/me`
+  (the caller's `xp`/`level`, awarded milestones, and today's active missions with
+  progress/completed), `GET /gamification/leaderboard` (top users by `xp`,
+  `?limit=` optional, default 10, max 50; projects only `user_id`/`display_name`/
+  `xp`/`level`, never `email`/`password_hash`).
+- Event hooks: three domain events defined in `src/domain/documents/document-events.ts`
+  — `document.created`, `section.created`, `section.updated` (with `wordCount`) —
+  emitted via `EventEmitter2` from `CreateDocumentUseCase`/`CreateSectionUseCase`/
+  `UpdateSectionUseCase` after a successful write. `GamificationListener`
+  (presentation layer) is the sole subscriber and the sole place errors are
+  swallowed (logged, never rethrown) — a gamification failure must never fail the
+  originating documents request.
+- Milestone rules (`src/application/gamification/milestone-rules.ts`): `document.created`
+  → `document_created` milestone, 50 XP; `section.created` → `first_section`
+  milestone, 25 XP; `section.updated` → `section_goal` milestone, 25 XP, gated on
+  `wordCount >= 100`. Each rule can only ever award once per document thanks to the
+  `milestones` composite unique index.
+- Level curve: `UserRepository.incrementXp` is a single `UPDATE ... RETURNING` that
+  computes both `xp` and `level` atomically (`level = FLOOR(xp / 100) + 1` — 100 XP
+  per level, level 1 at 0 XP) — never a read-modify-write, so concurrent XP awards
+  for the same user can't clobber each other. No `users` schema change (both columns
+  already existed; `xp` was already indexed for the leaderboard).
+- Daily missions are matched on `criteria.event` against the same three domain
+  events, advancing `mission_progress` atomically and awarding `mission.xp_reward`
+  exactly once — on the increment that flips `completed` false → true.
+- Seed: `scripts/seed.ts` seeds three daily missions active "today" (UTC calendar
+  day), idempotent on `code` — `start-a-document` (`document.created`, target 1, 20
+  XP), `create-a-section` (`section.created`, target 1, 10 XP), `write-3-sections`
+  (`section.updated`, target 3, 15 XP).
+- Hooks into document/section events from item 2. Depended on items 1–2; final
+  numbered roadmap item.
 
 ## 7. Connectors (OAuth via Composio) — ✅ done
 
@@ -274,6 +320,23 @@ context-engine push).
   planning arrived with item 5 above.
 
 ---
+
+## Roadmap complete — remaining work
+
+All 7 numbered roadmap items are now ✅ done. What's left is infrastructure/transport
+work already flagged as deferred in the sections above, not a numbered feature:
+
+- **Staging and production deploy targets are undecided** (item 0) — only the `development`
+  tier deploys today (Render + MongoDB Atlas + Upstash Redis). Land staging/production
+  workflows once the user picks hosting for those tiers; don't invent infrastructure.
+- **RabbitMQ context-engine transport is contract-defined but not implemented**
+  (see the Context module async backbone section and
+  `docs/contracts/context-engine.md`) — `ContextEngineHttpClient` (HTTP) remains the
+  live code path for item 7's context-engine push until the RabbitMQ implementation
+  task lands.
+- **gRPC and a separate Context-module worker deployment remain explicitly deferred**
+  (Context module async backbone section) — only built if a concrete trigger from
+  `ARCHITECTURE.md`'s "Service boundaries" appears.
 
 ## Standing rules for every item
 
