@@ -36,6 +36,10 @@ class InMemoryUserRepository implements UserRepository {
   updateLastActiveAt(): Promise<void> {
     return Promise.resolve();
   }
+
+  findTopByXp(): Promise<User[]> {
+    return Promise.reject(new Error('not implemented'));
+  }
 }
 
 describe('RegisterUserUseCase', () => {

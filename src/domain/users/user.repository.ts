@@ -13,4 +13,6 @@ export interface UserRepository {
   findByEmail(email: string): Promise<User | null>;
   create(data: CreateUserData): Promise<User>;
   updateLastActiveAt(id: string): Promise<void>;
+  /** Top `limit` users by `xp` descending, for the leaderboard. */
+  findTopByXp(limit: number): Promise<User[]>;
 }
