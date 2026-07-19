@@ -91,6 +91,10 @@ export class PlanningJobMongooseRepository implements PlanningJobRepository {
       update.error_message = patch.errorMessage;
     if (patch.startedAt !== undefined) update.started_at = patch.startedAt;
     if (patch.finishedAt !== undefined) update.finished_at = patch.finishedAt;
+    if (patch.promptVersion !== undefined)
+      update.prompt_version = patch.promptVersion;
+    if (patch.contextUsed !== undefined)
+      update.context_used = patch.contextUsed;
     return update;
   }
 
@@ -103,6 +107,8 @@ export class PlanningJobMongooseRepository implements PlanningJobRepository {
       status: doc.status,
       prompt: doc.prompt,
       connectors: doc.connectors,
+      promptVersion: doc.prompt_version ?? null,
+      contextUsed: doc.context_used ?? null,
       result: doc.result,
       errorCode: doc.error_code,
       errorMessage: doc.error_message,

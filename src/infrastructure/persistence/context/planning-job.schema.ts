@@ -8,8 +8,8 @@ import { JobStatus } from '../../../domain/context/planning-job';
  * the schema doc; the repository's `toDomain` mapper converts to the
  * camelCase domain `PlanningJob`.
  *
- * This branch ships the foundation subset of the documented fields —
- * `prompt_version` / `context_used` are deferred to the AI layer item.
+ * `prompt_version`/`context_used` arrive with roadmap item 5 (AI layer);
+ * `document_id`/`section_id` are now bound at submission time (also item 5).
  */
 @Schema({ collection: 'planning_jobs' })
 export class PlanningJobOdmEntity {
@@ -36,6 +36,16 @@ export class PlanningJobOdmEntity {
 
   @Prop({ type: [String], default: [] })
   connectors: string[];
+
+  // Roadmap item 5 (AI layer) — recorded by the worker (ProcessPlanningJobUseCase)
+  // from the active 'planning' prompt; null until the job runs.
+  @Prop({ type: String, default: null })
+  prompt_version: string | null;
+
+  // Roadmap item 5 (AI layer) — the context-gatherer result used for this
+  // run; null until the job runs. Flexible shape (varies by connector).
+  @Prop({ type: Object, default: null })
+  context_used: Record<string, unknown> | null;
 
   @Prop({ type: Object, default: null })
   result: Record<string, unknown> | null;

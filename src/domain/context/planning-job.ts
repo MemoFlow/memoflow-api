@@ -2,10 +2,10 @@
  * Domain entity for `planning_jobs` (see docs/database-schema.md).
  * Plain TypeScript — no mongoose imports.
  *
- * This branch (context-queue-infra) ships the foundation subset only:
- * `document_id`/`section_id` stay null until document/section linkage
- * (roadmap item 2) lands, and `connectors`/`result` are populated by the
- * (later) processing use-case — this slice only creates/reads the shell.
+ * `document_id`/`section_id` are set at submission time (roadmap item 5)
+ * once ownership has been validated by `SubmitPlanningJobUseCase`.
+ * `prompt_version`/`context_used` are recorded by `ProcessPlanningJobUseCase`
+ * once the job runs — both `null` until then.
  */
 export enum JobStatus {
   Pending = 'pending',
@@ -22,6 +22,8 @@ export class PlanningJob {
   status: JobStatus;
   prompt: string;
   connectors: string[];
+  promptVersion: string | null;
+  contextUsed: Record<string, unknown> | null;
   result: Record<string, unknown> | null;
   errorCode: string | null;
   errorMessage: string | null;
@@ -37,6 +39,8 @@ export class PlanningJob {
     status: JobStatus;
     prompt: string;
     connectors: string[];
+    promptVersion?: string | null;
+    contextUsed?: Record<string, unknown> | null;
     result: Record<string, unknown> | null;
     errorCode: string | null;
     errorMessage: string | null;
@@ -51,6 +55,8 @@ export class PlanningJob {
     this.status = props.status;
     this.prompt = props.prompt;
     this.connectors = props.connectors;
+    this.promptVersion = props.promptVersion ?? null;
+    this.contextUsed = props.contextUsed ?? null;
     this.result = props.result;
     this.errorCode = props.errorCode;
     this.errorMessage = props.errorMessage;

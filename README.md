@@ -74,8 +74,11 @@ via `@nestjs/jwt` and validated by Passport-JWT.
 | `GET` | `/documents/:documentId/versions` | JWT | lists the document's version metadata (no sections payload), newest first |
 | `GET` | `/documents/:documentId/versions/:versionId` | JWT | fetch a version's full sections snapshot, owner-scoped |
 | `POST` | `/documents/:documentId/versions/:versionId/restore` | JWT | replaces the document's current sections with the version's snapshot; writes nothing to Mongo |
-| `POST` | `/planning-jobs` | JWT | submits a planning prompt; returns **202** + `{ job_id, status: "pending" }` |
+| `POST` | `/planning-jobs` | JWT | submits a planning prompt (optionally bound to an owned `documentId`/`sectionId`); returns **202** + `{ job_id, status: "pending" }` |
 | `GET` | `/planning-jobs/:id` | JWT | fetch a planning job by id, owner-scoped |
+| `POST` | `/sections/:sectionId/suggestions` | JWT | generates an AI suggestion for a section; 404 if the section isn't owned by the caller or no active prompt exists for `featureType`; 503 if AI isn't configured |
+| `GET` | `/sections/:sectionId/suggestions` | JWT | lists a section's AI suggestions, newest first |
+| `PATCH` | `/suggestions/:id` | JWT | accepts or rejects a **pending** suggestion; 409 if already reviewed |
 | `POST` | `/connectors/:provider/connect` | JWT | starts a Composio OAuth connection for a provider; returns `{ redirect_url, connection_id, status }` |
 | `GET` | `/connectors` | JWT | lists the caller's connector connections; reconciles any `initiated` connection against Composio first |
 | `GET` | `/connectors/:id` | JWT | fetch a connector connection by id, owner-scoped; reconciles if `initiated` |
@@ -119,8 +122,15 @@ The context-gatherer is real when `CONTEXT_ENGINE_URL` is set: it resolves the
 user's active connectors and POSTs them (plus the prompt) to the external context
 engine, which fetches and returns the actual context. Leave `CONTEXT_ENGINE_URL`
 unset (default in dev/test/e2e) to keep the built-in stub, which echoes the prompt
-back. The LLM-planner port is still a stub either way — real model integration
-lands with roadmap item 5.
+back.
+
+A submitted job can optionally be bound to an owned `documentId`/`sectionId` — the
+use-case validates the caller owns the document (and that a given section belongs to
+it) before writing either into Mongo, 404ing uniformly on any mismatch. The
+LLM-planner port is likewise real when `ANTHROPIC_API_KEY` is set (Anthropic
+`claude-sonnet-5` by default), recording the active `planning` prompt's version and
+the context used on the job once it runs; unset keeps the built-in `StubLlmPlanner`
+(echoes the prompt back).
 
 The frontend gets the result pushed in real time over WebSocket (`@nestjs/websockets`
 + socket.io) instead of only polling:
@@ -162,6 +172,9 @@ Beyond the database connection vars, auth requires:
 | `CONTEXT_ENGINE_URL` | no | — | base URL of the external context engine; unset keeps the planning worker on the built-in stub context-gatherer |
 | `CONTEXT_ENGINE_API_KEY` | no | — | sent as `Authorization: Bearer <key>` on context-engine requests, when set |
 | `CONTEXT_ENGINE_TIMEOUT_MS` | no | `10000` | aborts the context-engine POST after this many ms, failing the planning job fast instead of hanging |
+| `ANTHROPIC_API_KEY` | no | — | powers AI suggestion generation and the planning-job LLM planner; unset keeps both on their null/stub fallbacks (suggestions endpoint returns 503, planning jobs keep using `StubLlmPlanner`) |
+| `ANTHROPIC_MODEL` | no | `claude-sonnet-5` | Anthropic model id used for both suggestions and planning |
+| `ANTHROPIC_MAX_TOKENS` | no | `4096` | max output tokens per Anthropic call |
 
 See [`.env.example`](.env.example) for the full list (`NODE_ENV`, `PORT`,
 `MONGODB_URI`, `POSTGRES_*`).

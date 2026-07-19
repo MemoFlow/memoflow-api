@@ -22,6 +22,10 @@ export interface UpdatePlanningJobStatusData {
   errorMessage?: string | null;
   startedAt?: Date | null;
   finishedAt?: Date | null;
+  /** Version of the active 'planning' prompt used, recorded by the worker. */
+  promptVersion?: string | null;
+  /** Context-gatherer result used for this run, recorded by the worker. */
+  contextUsed?: Record<string, unknown> | null;
 }
 
 export interface PlanningJobRepository {

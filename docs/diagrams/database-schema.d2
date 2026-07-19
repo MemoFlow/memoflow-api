@@ -44,6 +44,8 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
     updated_at: timestamptz
   }
 
+  # section_id/user_id plain indexes are a deliberate addition beyond the original
+  # design (item 5) — both are FK lookup paths on every suggestions call.
   ai_suggestions: {
     shape: sql_table
     id: uuid {constraint: primary_key}
@@ -54,8 +56,12 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
     suggested_text: text
     status: varchar
     prompt_version: varchar
+    created_at: timestamptz
+    updated_at: timestamptz
   }
 
+  # No public controller — repository-internal active-prompt lookup, seeded via
+  # scripts/seed.ts.
   prompts: {
     shape: sql_table
     id: uuid {constraint: primary_key}
@@ -63,6 +69,8 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
     version: varchar
     template: text
     is_active: boolean
+    created_at: timestamptz
+    updated_at: timestamptz
   }
 
   # No provider tokens — Composio is the OAuth vault + MCP host; this API keeps only
@@ -170,17 +178,20 @@ mongo: MongoDB (specialist — Mongoose) {
     saved_at: date
   }
 
+  # document_id/section_id validated (caller-owned document; section belongs to it)
+  # and bound at submission time by SubmitPlanningJobUseCase (item 5); both stay
+  # null when the caller submits a job without a binding.
   planning_jobs: {
     shape: sql_table
     _id: ObjectId {constraint: primary_key}
     user_id: "uuid (string)"
-    document_id: "uuid (string)? (null until item 2)"
-    section_id: "uuid (string)? (null until item 2)"
+    document_id: "uuid (string)?"
+    section_id: "uuid (string)?"
     status: string
     prompt: string
     connectors: "string[] (unused until item 7)"
-    prompt_version: "string (item 5)"
-    context_used: "object (item 5)"
+    prompt_version: "string? (recorded once the job runs)"
+    context_used: "object? (recorded once the job runs)"
     result: object
     error_code: "string?"
     error_message: "string?"
@@ -194,4 +205,5 @@ mongo: MongoDB (specialist — Mongoose) {
 mongo.document_versions.document_id -> pg.documents.id: app-validated {style.stroke-dash: 4}
 mongo.document_versions.user_id -> pg.users.id: app-validated {style.stroke-dash: 4}
 mongo.planning_jobs.user_id -> pg.users.id: app-validated {style.stroke-dash: 4}
-mongo.planning_jobs.document_id -> pg.documents.id: "app-validated (null until item 2)" {style.stroke-dash: 4}
+mongo.planning_jobs.document_id -> pg.documents.id: app-validated {style.stroke-dash: 4}
+mongo.planning_jobs.section_id -> pg.sections.id: app-validated {style.stroke-dash: 4}

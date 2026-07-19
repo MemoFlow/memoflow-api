@@ -157,9 +157,10 @@ the next started:
   `planning_jobs` stays the durable source of truth and `GET /planning-jobs/:id`
   remains the REST fallback for clients without a live socket.
 
-Item 5 (AI layer) can now build on a complete async backbone (submit → queue →
+Item 5 (AI layer) built on this complete async backbone (submit → queue →
 worker → push). Item 7's context-gatherer is real when `CONTEXT_ENGINE_URL` is set
-(stub fallback otherwise); the LLM planner stays stubbed until item 5 lands.
+(stub fallback otherwise); the LLM planner is likewise real when `ANTHROPIC_API_KEY`
+is set (stub fallback otherwise) — see item 5 below.
 
 **External context-engine transport — contract-defined, API-side implementation
 pending:** the async API↔context-engine transport is now specified in
@@ -169,14 +170,49 @@ gRPC option considered in `ARCHITECTURE.md`. The current `ContextEngineHttpClien
 (HTTP, see item 7 branch 3) remains the live code path until the RabbitMQ
 implementation task lands.
 
-## 5. AI layer — ☐
+## 5. AI layer — ✅ done
 
-- PG: `prompts` (`feature_type`, `is_active` indexed), `ai_suggestions`
-  (FKs → sections/users). Mongo: `planning_jobs` (status-indexed job lifecycle:
-  pending/running/completed/failed, flexible `context_used`/`result` payloads).
-- Async job flow: enqueue → worker updates status → results fetched. Provider
-  integration details resolved at design time. **Depends on items 2 and 4, and on
-  the Context module async backbone above** (queue/worker/WS foundation).
+- Slice implemented per the `prompts`/`ai_suggestions` tables in the schema doc:
+  `prompts` (`feature_type`/`is_active` indexed, no public controller — repository-
+  internal active-prompt lookup) and `ai_suggestions` (FK → sections **ON DELETE
+  CASCADE**, FK → users **ON DELETE CASCADE**, plain indexes on `section_id`/
+  `user_id` — a deliberate addition beyond the original schema-doc design, both on
+  the FK lookup path for every suggestions call). Both tables carry `created_at`/
+  `updated_at`.
+- Migration: `CreateAiLayer`.
+- Endpoints (all JWT-guarded, snake_case JSON responses): `POST
+  /sections/:sectionId/suggestions` (generates and persists a suggestion; 404 if the
+  section isn't found/owned or no active prompt exists for the given `featureType`,
+  503 if the generator isn't configured, 422/502/503 mapped from typed provider
+  errors — refused/truncated-or-other/rate-limited), `GET
+  /sections/:sectionId/suggestions` (lists a section's suggestions, newest first),
+  `PATCH /suggestions/:id` (accept/reject a **pending** suggestion; 409 if already
+  reviewed). Ownership is derived transitively through the section's document, same
+  404-never-leaks-existence convention as items 2–4.
+- Provider: Anthropic (`claude-sonnet-5` by default) via the `@anthropic-ai/sdk`
+  client, wired behind two ports — `SuggestionGenerator` (suggestions) and
+  `LlmPlanner` (planning jobs) — both **optional**: `ANTHROPIC_API_KEY` unset keeps
+  `AiModule`'s `SUGGESTION_GENERATOR` on `NullSuggestionGenerator` (suggestions
+  endpoint returns 503 "AI not configured") and `ContextModule`'s `LLM_PLANNER` on
+  the existing `StubLlmPlanner` (echoes the prompt) — mirrors the item 7
+  `CONTEXT_GATHERER` factory convention, so `start:dev`/smoke/e2e/tests keep working
+  with no AI provider configured. New optional env vars in `env.validation.ts` +
+  `.env.example`: `ANTHROPIC_API_KEY` (unset = both fallbacks), `ANTHROPIC_MODEL`
+  (default `claude-sonnet-5`), `ANTHROPIC_MAX_TOKENS` (default `4096`).
+  `AiModule` exports its `AnthropicClientProvider` so `ContextModule` shares one
+  Anthropic client instance rather than constructing a second.
+- Seed: `scripts/seed.ts` now seeds one active prompt per feature type —
+  `suggestion` (v1, substitutes `{{content}}`) and `planning` (v1) — idempotent,
+  dev/test only.
+- Mongo `planning_jobs` completed (see `docs/database-schema.md`): `prompt_version`/
+  `context_used` are now recorded by `ProcessPlanningJobUseCase` once a job runs;
+  `document_id`/`section_id` are now validated and bound at submission time —
+  `SubmitPlanningJobUseCase` checks the caller owns the referenced document (and
+  that a given section belongs to it) before writing either into Mongo, 404ing
+  uniformly on any mismatch, same convention as the ai feature's
+  `assertSectionOwnedByUser`.
+- Depended on items 2 and 4, and on the Context module async backbone above
+  (queue/worker/WS foundation); unblocks nothing further on the roadmap.
 
 ## 6. Gamification (PG) — ☐
 
@@ -234,7 +270,8 @@ context-engine push).
   `CONTEXT_ENGINE_URL`, `CONTEXT_ENGINE_API_KEY` (Bearer auth when set),
   `CONTEXT_ENGINE_TIMEOUT_MS` (default `10000`ms fetch-abort timeout so a hung
   context engine fails the job fast, not silently). No PG schema change. The LLM
-  planner stays stubbed — that's item 5's remaining work.
+  planner was stubbed at the time this branch landed — real Anthropic-backed
+  planning arrived with item 5 above.
 
 ---
 

@@ -1,4 +1,6 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { PROMPT_REPOSITORY } from '../../domain/ai/prompt.repository';
+import type { PromptRepository } from '../../domain/ai/prompt.repository';
 import { CONTEXT_GATHERER } from '../../domain/context/context-gatherer.port';
 import type { ContextGatherer } from '../../domain/context/context-gatherer.port';
 import { LLM_PLANNER } from '../../domain/context/llm-planner.port';
@@ -9,6 +11,9 @@ import type {
 import { JobStatus, PlanningJob } from '../../domain/context/planning-job';
 import { PLANNING_JOB_REPOSITORY } from '../../domain/context/planning-job.repository';
 import type { PlanningJobRepository } from '../../domain/context/planning-job.repository';
+
+/** Feature type of the active prompt whose version is recorded on the job. */
+const PLANNING_FEATURE_TYPE = 'planning';
 
 export interface ProcessPlanningJobInput {
   jobId: string;
@@ -37,6 +42,8 @@ export class ProcessPlanningJobUseCase {
     private readonly contextGatherer: ContextGatherer,
     @Inject(LLM_PLANNER)
     private readonly llmPlanner: LlmPlanner,
+    @Inject(PROMPT_REPOSITORY)
+    private readonly promptRepository: PromptRepository,
   ) {}
 
   async execute(
@@ -57,9 +64,18 @@ export class ProcessPlanningJobUseCase {
       return { processed: false, job: existing };
     }
 
+    // Recorded on the job regardless of outcome (see docs/database-schema.md
+    // §planning_jobs) — a missing active 'planning' prompt is not itself a
+    // processing failure, it just leaves promptVersion null.
+    const activePrompt = await this.promptRepository.findActiveByFeatureType(
+      PLANNING_FEATURE_TYPE,
+    );
+    const promptVersion = activePrompt?.version ?? null;
+
+    let context: Record<string, unknown> | undefined;
     let result: PlanningResult;
     try {
-      const context = await this.contextGatherer.gather({
+      context = await this.contextGatherer.gather({
         userId: claimed.userId,
         connectors: claimed.connectors,
         prompt: claimed.prompt,
@@ -70,18 +86,28 @@ export class ProcessPlanningJobUseCase {
       });
     } catch (err) {
       // A domain failure (gather/plan) is a terminal state, not a queue
-      // retry — write `failed` and return it, do not rethrow.
+      // retry — write `failed` and return it, do not rethrow. `contextUsed`
+      // is recorded when gather succeeded but plan subsequently failed.
       const errorMessage =
         err instanceof Error ? err.message : 'Planning job processing failed';
+      const contextUsed = context ?? null;
       const failed = await this.planningJobRepository.updateStatus(claimed.id, {
         status: JobStatus.Failed,
         errorCode: 'PROCESSING_FAILED',
         errorMessage,
         finishedAt: new Date(),
+        promptVersion,
+        contextUsed,
       });
       return {
         processed: true,
-        job: failed ?? { ...claimed, status: JobStatus.Failed, errorMessage },
+        job: failed ?? {
+          ...claimed,
+          status: JobStatus.Failed,
+          errorMessage,
+          promptVersion,
+          contextUsed,
+        },
       };
     }
 
@@ -92,6 +118,8 @@ export class ProcessPlanningJobUseCase {
         status: JobStatus.Completed,
         result: resultDoc,
         finishedAt: new Date(),
+        promptVersion,
+        contextUsed: context,
       },
     );
     return {
@@ -100,6 +128,8 @@ export class ProcessPlanningJobUseCase {
         ...claimed,
         status: JobStatus.Completed,
         result: resultDoc,
+        promptVersion,
+        contextUsed: context ?? null,
       },
     };
   }

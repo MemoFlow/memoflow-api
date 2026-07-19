@@ -65,6 +65,24 @@ services:
       - key: WS_CORS_ORIGIN
         sync: false
 
+      # Composio is the OAuth token vault/MCP host for connectors — required
+      # at boot (env validation fails without them). Set manually in the
+      # Render dashboard. COMPOSIO_BASE_URL has a code default and is
+      # intentionally omitted here.
+      - key: COMPOSIO_API_KEY
+        sync: false
+      - key: COMPOSIO_AUTH_CONFIG_IDS
+        sync: false
+      - key: COMPOSIO_WEBHOOK_SECRET
+        sync: false
+
+      # Anthropic API key for the AI layer — optional at boot; AI
+      # suggestion/planning endpoints return 503 without it. Set manually in
+      # the Render dashboard. ANTHROPIC_MODEL/ANTHROPIC_MAX_TOKENS have code
+      # defaults and are intentionally omitted here.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
       # Postgres connection fields sourced from the managed database above.
       - key: POSTGRES_HOST
         fromDatabase:
