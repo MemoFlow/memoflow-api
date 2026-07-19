@@ -201,6 +201,25 @@ export class EnvironmentVariables {
   @IsInt()
   @Min(1)
   CONTEXT_ENGINE_TIMEOUT_MS: number = 10_000;
+
+  // Roadmap item 5 (AI layer). Deliberately OPTIONAL — unlike Composio's
+  // required vars, a missing key here must never break boot: `AiModule`'s
+  // `SUGGESTION_GENERATOR` provider factory and `ContextModule`'s
+  // `LLM_PLANNER` factory both fall back to a null/stub implementation when
+  // unset, so `start:dev`/smoke/e2e/tests keep working with no AI provider
+  // configured.
+  @IsOptional()
+  @IsString()
+  ANTHROPIC_API_KEY?: string;
+
+  @IsOptional()
+  @IsString()
+  ANTHROPIC_MODEL: string = 'claude-sonnet-5';
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  ANTHROPIC_MAX_TOKENS: number = 4096;
 }
 
 export function validate(
