@@ -8,6 +8,7 @@ import { AppService } from './app.service';
 import { validate } from './config/env.validation';
 import { ConnectorsModule } from './connectors.module';
 import { ContextModule } from './context.module';
+import { DocumentVersionsModule } from './document-versions.module';
 import { DocumentsModule } from './documents.module';
 import { HealthModule } from './shared/health/health.module';
 import { TemplatesModule } from './templates.module';
@@ -47,6 +48,7 @@ import { UsersModule } from './users.module';
     ContextModule,
     ConnectorsModule,
     DocumentsModule,
+    DocumentVersionsModule,
     TemplatesModule,
   ],
   controllers: [AppController],

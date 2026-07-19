@@ -97,12 +97,26 @@ Legend: ✅ done · ◐ in progress · ☐ not started
 - Depended on item 2 (documents + sections FK); unblocks item 6 (gamification hooks
   can reuse the same document-events pattern).
 
-## 4. Versioning (Mongo — `document_versions`) — ☐
+## 4. Versioning (Mongo — `document_versions`) — ✅ done
 
 - First Mongo module: `/new-module document-versions --db mongo`. Immutable
-  snapshots, embedded `sections_snapshot`, indexed `document_id`/`user_id`/`saved_at`.
-- **Cross-DB rule applies**: use-case must validate the PG document/user rows exist
-  before writing; `api-reviewer` checks this. Save/list/restore endpoints.
+  snapshots, embedded `sections_snapshot` (`{title, content, order, status,
+  word_count}`), indexed `document_id`/`user_id`/`saved_at`.
+- **Cross-DB rule applies**: `SaveVersionUseCase`/`GetVersionUseCase` validate the
+  caller owns the referenced PG document before touching Mongo.
+- **Unique compound index (document_id, version)** — deliberate addition beyond the
+  original design: closes the concurrent-save version race where two saves for the
+  same document both compute the same `maxVersion + 1`; the repository's `create()`
+  catches the resulting duplicate-key error and retries once with a freshly
+  recomputed version.
+- `SectionRepository` gained a `replaceAll(documentId, sections)` extension: deletes
+  and reinserts a document's sections atomically in one PG transaction, used by
+  restore. Restore writes nothing to Mongo — versions stay immutable.
+- Endpoints (all JWT-guarded, owner-scoped 404s): `POST/GET
+  /documents/:documentId/versions` (save a snapshot / list metadata newest-first),
+  `GET /documents/:documentId/versions/:versionId` (full snapshot),
+  `POST /documents/:documentId/versions/:versionId/restore` (replaces the
+  document's current sections).
 - Depends on item 2.
 
 ## Context module async backbone (bounded) — ✅ done (all 3 branches)

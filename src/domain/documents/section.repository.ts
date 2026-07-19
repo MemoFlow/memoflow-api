@@ -19,6 +19,14 @@ export interface UpdateSectionData {
   order?: number;
 }
 
+export interface ReplaceSectionData {
+  title: string;
+  content: string;
+  order: number;
+  status: string;
+  wordCount: number;
+}
+
 export interface SectionRepository {
   create(data: CreateSectionData): Promise<Section>;
   findById(id: string): Promise<Section | null>;
@@ -32,4 +40,15 @@ export interface SectionRepository {
    * single transaction.
    */
   reorder(documentId: string, orderedIds: string[]): Promise<void>;
+  /**
+   * Atomically replaces ALL of a document's sections with `sections` —
+   * used by document-versions' restore-version use-case. Deletes the
+   * existing rows and reinserts from `sections` (order/status/wordCount
+   * exactly as given, e.g. from a stored snapshot) within a single
+   * transaction. Returns the number of sections inserted.
+   */
+  replaceAll(
+    documentId: string,
+    sections: ReplaceSectionData[],
+  ): Promise<number>;
 }

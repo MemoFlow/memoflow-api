@@ -71,6 +71,10 @@ class InMemorySectionRepository implements SectionRepository {
     });
     return Promise.resolve();
   }
+
+  replaceAll(): Promise<number> {
+    return Promise.reject(new Error('not implemented'));
+  }
 }
 
 function makeDocument(overrides: Partial<Document> = {}): Document {

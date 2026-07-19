@@ -187,12 +187,24 @@ Immutable snapshots of a document's sections at save time.
 | field | type | notes |
 | --- | --- | --- |
 | _id | ObjectId | |
-| document_id | uuid (string) | **indexed** — references PG `documents.id` |
+| document_id | uuid (string) | **indexed** — references PG `documents.id`; also part of the unique compound index below |
 | user_id | uuid (string) | **indexed** — references PG `users.id` |
-| version | int | |
+| version | int | also part of the unique compound index below |
 | label | string? | optional user label |
-| sections_snapshot | array | embedded full section contents |
+| sections_snapshot | array | embedded full section contents: `[{ title, content, order, status, word_count }]` |
 | saved_at | date | **indexed** |
+
+**Unique compound index (document_id, version).** Deliberate addition beyond the
+original design: closes the concurrent-save version race where two saves for the
+same document both compute the same `maxVersion + 1`. The Mongoose repository's
+`create()` catches the resulting `E11000` duplicate-key error and retries once with
+a freshly recomputed version before giving up.
+
+**Restore semantics:** `POST /documents/:documentId/versions/:versionId/restore`
+replaces the document's current PostgreSQL `sections` rows atomically (delete +
+reinsert, single transaction, via `SectionRepository.replaceAll`) with the
+snapshot's `order`/`status`/`word_count` as stored. Restoring writes nothing to
+Mongo — versions are immutable and restoring doesn't create a new one.
 
 ### `planning_jobs`
 Async AI context-engine jobs (outline/suggestion generation using connector context).

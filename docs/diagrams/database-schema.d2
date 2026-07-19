@@ -157,6 +157,8 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
 }
 
 mongo: MongoDB (specialist — Mongoose) {
+  # Unique compound index (document_id, version) — closes the concurrent-save
+  # version race; repository create() retries once on duplicate-key.
   document_versions: {
     shape: sql_table
     _id: ObjectId {constraint: primary_key}
@@ -164,7 +166,7 @@ mongo: MongoDB (specialist — Mongoose) {
     user_id: "uuid (string)"
     version: int
     "label": "string?"
-    sections_snapshot: "array (embedded)"
+    sections_snapshot: "array (embedded: title, content, order, status, word_count)"
     saved_at: date
   }
 

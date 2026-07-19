@@ -4,9 +4,11 @@ import { DataSource, Repository } from 'typeorm';
 import { Section } from '../../../domain/documents/section.entity';
 import {
   CreateSectionData,
+  ReplaceSectionData,
   SectionRepository,
   UpdateSectionData,
 } from '../../../domain/documents/section.repository';
+import { DocumentOrmEntity } from './document.orm-entity';
 import { SectionOrmEntity } from './section.orm-entity';
 
 @Injectable()
@@ -76,6 +78,50 @@ export class SectionTypeOrmRepository implements SectionRepository {
       for (const [index, id] of orderedIds.entries()) {
         await repository.update({ id, documentId }, { order: index });
       }
+    });
+  }
+
+  async replaceAll(
+    documentId: string,
+    sections: ReplaceSectionData[],
+  ): Promise<number> {
+    return this.dataSource.transaction(async (manager) => {
+      const documentRepo = manager.getRepository(DocumentOrmEntity);
+      const sectionRepo = manager.getRepository(SectionOrmEntity);
+
+      // Lock the parent document row for the duration of the transaction.
+      // This only serializes `replaceAll`/`applyToDocument` callers against
+      // each other (both take this same lock) — it does NOT serialize
+      // against `create`/`update`/`delete`/`reorder` above, none of which
+      // take a document-row lock. A concurrent plain section create can
+      // still commit mid-restore and survive the DELETE below. Closing that
+      // gap (locking every section-write path against the parent document
+      // row) is a tracked follow-up shared with templates'
+      // `DocumentTemplateTypeOrmRepository.applyToDocument`, not fixed here.
+      await documentRepo
+        .createQueryBuilder('document')
+        .setLock('pessimistic_write')
+        .where('document.id = :documentId', { documentId })
+        .getOne();
+
+      await sectionRepo.delete({ documentId });
+
+      if (!sections.length) {
+        return 0;
+      }
+
+      const entities = sections.map((section) =>
+        sectionRepo.create({
+          documentId,
+          title: section.title,
+          content: section.content,
+          order: section.order,
+          status: section.status,
+          wordCount: section.wordCount,
+        }),
+      );
+      await sectionRepo.save(entities);
+      return entities.length;
     });
   }
 
