@@ -1,6 +1,10 @@
 # Context-Engine Transport Contract
 
-> **Status:** contract defined; API-side implementation pending.
+> **Status:** contract defined; **API-side implemented**, flag-gated by `RABBITMQ_URL`
+> (`feature/rabbitmq-transport`). Unset `RABBITMQ_URL` keeps the legacy synchronous
+> `ContextEngineHttpClient`/stub path active — no broker required to boot. What remains
+> is broker provisioning per environment and the n8n consumer side (context-engine team)
+> for a real end-to-end run.
 > **Audience:** the context-engine (n8n) team and the MemoFlow frontend team.
 > **Machine-readable schemas:** [`context-request.schema.json`](./context-request.schema.json),
 > [`context-result.schema.json`](./context-result.schema.json).
@@ -10,10 +14,11 @@ context engine** (an n8n environment that drives per-connector MCP agents). Beca
 MCP gathering far exceeds a synchronous HTTP timeout, the API↔CE hop is **asynchronous
 over RabbitMQ in both directions**, correlated by `job_id`.
 
-> Today the API still uses a synchronous HTTP call (`ContextEngineHttpClient`). This
-> contract defines the target transport; it **supersedes** that HTTP path when the
-> implementation task lands. Until then this document is the agreed wire contract the CE
-> team builds against — no API runtime code implements it yet.
+> The API now implements this transport, but only when `RABBITMQ_URL` is set. Unset (the
+> default in dev/test/e2e and any environment without a provisioned broker), it falls
+> back to the synchronous HTTP call (`ContextEngineHttpClient`). Setting `RABBITMQ_URL`
+> **supersedes** the HTTP path for that environment. This document remains the agreed
+> wire contract the CE team builds against.
 
 ## Overview & sequence
 
@@ -147,18 +152,21 @@ pending ── publish request ──▶ gathering ── terminal `completed` �
   echoing `job_id`/`user_id`, per [`context-result.schema.json`](./context-result.schema.json).
 - `nack`→DLQ on unrecoverable errors; keep processing idempotent.
 
-**MemoFlow API provides** (future implementation task — not built yet):
+**MemoFlow API provides** (implemented, flag-gated by `RABBITMQ_URL`):
 - Publish requests to `ctx.gather.requests` per [`context-request.schema.json`](./context-request.schema.json).
 - Consume `ctx.gather.results`, relay chunks to the FE over WebSocket, assemble context,
   resume/complete/fail the planning job.
-- **Implementation prerequisites (not present today):** a RabbitMQ client
-  (`amqplib`, or the `@nestjs/microservices` RMQ transport), env vars `RABBITMQ_URL` +
-  configurable exchange/queue names, and retiring `ContextEngineHttpClient` in favour of
-  the queue producer. The `gathering`/`planning` states in §4 do **not** yet exist in
-  `JobStatus` (`src/domain/context/planning-job.ts`, today `pending`/`running`/`completed`/
-  `failed`) — the implementation task must add them and update `planning_jobs.status` in
-  `docs/database-schema.md` in the same change (deciding whether `running` is dropped or
-  kept as a superstate).
+- **Implementation notes:** the RabbitMQ client is `amqplib` via
+  `amqp-connection-manager` (auto-reconnecting channel wrappers for both the publisher
+  and the results consumer); topology (exchange/queue/routing-key names) is hardcoded
+  per §1, not env-configurable — only the broker URL (`RABBITMQ_URL`) is. When
+  `RABBITMQ_URL` is unset, `ContextEngineHttpClient`/the stub gather path stays active
+  instead — the queue producer does not retire it, the two paths are switched on
+  presence of that var. The `gathering`/`planning` states in §4 now exist in
+  `JobStatus` (`src/domain/context/planning-job.ts`); `running` was **kept**, not
+  dropped — it remains the status used by the legacy synchronous HTTP/stub path, which
+  never transitions through `gathering`/`planning`. `docs/database-schema.md`'s
+  `planning_jobs.status` enum reflects the same three-way split.
 
 ## §6 Versioning & non-goals
 

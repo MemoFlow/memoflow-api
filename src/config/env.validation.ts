@@ -220,6 +220,28 @@ export class EnvironmentVariables {
   @IsInt()
   @Min(1)
   ANTHROPIC_MAX_TOKENS: number = 4096;
+
+  // RabbitMQ context-engine transport (docs/contracts/context-engine.md).
+  // Deliberately OPTIONAL — unset keeps `ContextModule`'s
+  // `CONTEXT_REQUEST_PUBLISHER`/`GATHER_TIMEOUT_SCHEDULER`/
+  // `ContextResultsConsumer` providers unbound (all three are
+  // `RABBITMQ_URL`-gated `useFactory`s), so the legacy synchronous
+  // `ContextEngineHttpClient`/stub gather path stays the only one active
+  // and boot never requires a broker. Set (amqp:// or amqps://) to switch
+  // `ProcessPlanningJobUseCase` onto the async queue-transport path.
+  @IsOptional()
+  @IsString()
+  RABBITMQ_URL?: string;
+
+  // How long (ms) a planning job may sit in `gathering` before the
+  // context-engine transport fails it with `error_code:
+  // CONTEXT_ENGINE_TIMEOUT` (docs/contracts/context-engine.md §4). Only
+  // meaningful when `RABBITMQ_URL` is set — enforced via a durable BullMQ
+  // delayed job, not a bare `setTimeout`.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  CONTEXT_GATHER_TIMEOUT_MS: number = 120_000;
 }
 
 export function validate(

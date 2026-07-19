@@ -259,13 +259,33 @@ that a given `section` belongs to it) before writing either into Mongo, 404ing
 uniformly on any mismatch. Both stay `null` when the caller submits a job without a
 binding.
 
+**RabbitMQ context-engine transport** (`docs/contracts/context-engine.md`, API-side
+implemented flag-gated by `RABBITMQ_URL`) added `gathering`/`planning` to `status` and
+two chunk-accumulation fields, `chunk_sequences`/`data_chunks`:
+
+- `status` gains `gathering` (request published, awaiting `ctx.gather.results`) and
+  `planning` (terminal `completed` chunk received, LLM planner running) — the async
+  queue-transport path moves `pending -> gathering -> planning ->
+  completed/failed`. `running` is **kept**, not dropped: it remains the status used by
+  the legacy synchronous HTTP/stub path (`ProcessPlanningJobUseCase`'s in-process
+  gather+plan, still the active path when `RABBITMQ_URL` is unset) — that path never
+  sets `gathering`/`planning`.
+- `chunk_sequences`/`data_chunks` accumulate the `ctx.gather.results` stream durably so
+  a terminal `completed` chunk can assemble the full context without replaying the
+  RabbitMQ stream. **Idempotency:** each incoming chunk's `sequence` is pushed to
+  `chunk_sequences` via an atomic `chunk_sequences: { $ne: sequence }` filter on the
+  update — a redelivered/duplicate `(job_id, sequence)` is rejected by that filter
+  instead of double-appended to `data_chunks`, matching the contract's
+  idempotent-by-`(job_id, sequence)` rule (§3). Both fields are `[]` for jobs that
+  never went through the queue-transport path.
+
 | field | type | notes |
 | --- | --- | --- |
 | _id | ObjectId | |
 | user_id | uuid (string) | **indexed** — references PG `users.id` |
 | document_id | uuid (string)? | **nullable, indexed** — references PG `documents.id`; validated (caller-owned) and bound at submission time (item 5) |
 | section_id | uuid (string)? | **nullable** — references PG `sections.id`; validated (belongs to `document_id` when both given) and bound at submission time (item 5) |
-| status | string | **indexed** (pending / running / completed / failed) |
+| status | string | **indexed** (pending / running / gathering / planning / completed / failed — `running` is the legacy HTTP/stub path, `gathering`/`planning` are the RabbitMQ transport path) |
 | prompt | string | user's planning prompt |
 | connectors | string[] | e.g. ["notion", "github"] — unused until item 7 |
 | prompt_version | string? | **nullable** — the active `planning` prompt's version, recorded once the job runs (item 5) |
@@ -273,6 +293,8 @@ binding.
 | result | object? | **nullable** — stub/echo payload today; a richer `{ suggestions[], outline?, sources[] }` shape is provider-dependent future work |
 | error_code / error_message | string? | set when failed |
 | created_at / started_at / finished_at | date | timestamps |
+| chunk_sequences | number[] | RabbitMQ transport only — `[]` otherwise; guards idempotent chunk append, see above |
+| data_chunks | object[] | RabbitMQ transport only — `[]` otherwise; each `{ sequence, provider, content, token_estimate }`, assembled into `context_used` once the terminal `completed` chunk arrives |
 
 ---
 

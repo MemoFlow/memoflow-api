@@ -1,10 +1,10 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CONNECTOR_CONNECTION_REPOSITORY } from '../../domain/connectors/connector-connection.repository';
 import type { ConnectorConnectionRepository } from '../../domain/connectors/connector-connection.repository';
-import type { ConnectorMcpReference } from '../../domain/connectors/connector-gateway.port';
 import { ContextEnginePort } from '../../domain/context/context-engine.port';
 import type { GatherContextInput } from '../../domain/context/context-engine.port';
+import { resolveActiveConnectorReferences } from '../../domain/context/resolve-connector-references';
 
 /** Default `fetch` timeout for the context-engine POST, overridable via
  * `CONTEXT_ENGINE_TIMEOUT_MS`. */
@@ -24,8 +24,6 @@ const DEFAULT_CONTEXT_ENGINE_TIMEOUT_MS = 10_000;
  */
 @Injectable()
 export class ContextEngineHttpClient implements ContextEnginePort {
-  private readonly logger = new Logger(ContextEngineHttpClient.name);
-
   constructor(
     @Inject(CONNECTOR_CONNECTION_REPOSITORY)
     private readonly connectorConnectionRepository: ConnectorConnectionRepository,
@@ -35,36 +33,11 @@ export class ContextEngineHttpClient implements ContextEnginePort {
   async gatherContext(
     input: GatherContextInput,
   ): Promise<Record<string, unknown>> {
-    const active = await this.connectorConnectionRepository.findActiveByUser(
+    const connectors = await resolveActiveConnectorReferences(
+      this.connectorConnectionRepository,
       input.userId,
+      input.connectors,
     );
-
-    const connectors: ConnectorMcpReference[] = [];
-    for (const connector of input.connectors) {
-      const row = active.find((c) => (c.provider as string) === connector);
-      if (!row) {
-        this.logger.debug(
-          `Skipping requested connector "${connector}" for user ` +
-            `"${input.userId}": not an active connection`,
-        );
-        continue;
-      }
-      if (!row.composioAccountId) {
-        // Data-integrity edge case: an `active` row should always carry a
-        // Composio account id by the time it reaches this status. Skip
-        // rather than push a broken reference to the context engine.
-        this.logger.warn(
-          `Active connector connection ${row.id} (user "${input.userId}", ` +
-            `provider "${connector}") has no composioAccountId — skipping`,
-        );
-        continue;
-      }
-      connectors.push({
-        provider: row.provider,
-        mcpUrl: null,
-        composioAccountId: row.composioAccountId,
-      });
-    }
 
     const url = this.config.getOrThrow<string>('CONTEXT_ENGINE_URL');
     const apiKey = this.config.get<string>('CONTEXT_ENGINE_API_KEY');
