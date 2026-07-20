@@ -188,6 +188,7 @@ Beyond the database connection vars, auth requires:
 | `REDIS_PORT` | yes | — | Redis port (`0`–`65535`) |
 | `REDIS_PASSWORD` | no | — | Redis auth password, if required |
 | `REDIS_TLS` | no | `false` | set `true` for managed TLS-only Redis (e.g. Upstash); local docker Redis stays `false` — mirrors `POSTGRES_SSL` |
+| `CORS_ORIGIN` | no | `*` | frontend origin allowed for cross-origin REST API requests; `*` is dev-only — must be set explicitly in staging/production, never `*` |
 | `WS_CORS_ORIGIN` | no | `*` | frontend origin allowed to open the planning WebSocket; `*` is dev-only — must be set explicitly in staging/production, never `*` |
 | `COMPOSIO_API_KEY` | yes | — | authenticates this API to Composio (the OAuth vault + MCP host for connectors) |
 | `COMPOSIO_BASE_URL` | no | — | override the Composio API base URL (defaults to Composio's hosted endpoint) |

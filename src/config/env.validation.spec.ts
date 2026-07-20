@@ -66,6 +66,18 @@ describe('env.validation REDIS_*', () => {
     expect(result.WS_CORS_ORIGIN).toBe('https://app.memoflow.dev');
   });
 
+  it('defaults CORS_ORIGIN to *', () => {
+    const result = validate(baseConfig());
+    expect(result.CORS_ORIGIN).toBe('*');
+  });
+
+  it('accepts an explicit CORS_ORIGIN', () => {
+    const result = validate(
+      baseConfig({ CORS_ORIGIN: 'https://app.memoflow.dev' }),
+    );
+    expect(result.CORS_ORIGIN).toBe('https://app.memoflow.dev');
+  });
+
   it('rejects an out-of-range REDIS_PORT', () => {
     expect(() => validate(baseConfig({ REDIS_PORT: '70000' }))).toThrow(
       /REDIS_PORT/,
