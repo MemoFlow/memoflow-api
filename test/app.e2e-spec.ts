@@ -22,7 +22,7 @@ describeWithDocker()('AppController (e2e)', () => {
     mongo = await startMongoMemory();
     Object.assign(process.env, pg.env, {
       MONGODB_URI: mongo.uri,
-      JWT_SECRET: 'test-only-secret',
+      JWT_SECRET: 'test-only-secret-that-is-at-least-32-chars-long',
       JWT_EXPIRES_IN: '15m',
       COMPOSIO_API_KEY: 'test-only-composio-key',
       COMPOSIO_AUTH_CONFIG_IDS: 'trello:ac_test,notion:ac_test,github:ac_test',

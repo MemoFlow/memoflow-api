@@ -14,7 +14,7 @@ function baseConfig(overrides: Record<string, unknown> = {}) {
     POSTGRES_USER: 'memoflow',
     POSTGRES_PASSWORD: 'memoflow',
     POSTGRES_DB: 'memoflow',
-    JWT_SECRET: 'test-secret',
+    JWT_SECRET: 'test-only-secret-that-is-at-least-32-chars-long',
     REDIS_HOST: 'localhost',
     REDIS_PORT: '6379',
     COMPOSIO_API_KEY: 'composio-test-key',
@@ -108,6 +108,25 @@ describe('env.validation REDIS_*', () => {
     const config = baseConfig();
     delete (config as Record<string, unknown>).REDIS_HOST;
     expect(() => validate(config)).toThrow(/REDIS_HOST/);
+  });
+});
+
+describe('env.validation JWT_SECRET', () => {
+  it('rejects a JWT_SECRET shorter than 32 characters', () => {
+    expect(() =>
+      validate(baseConfig({ JWT_SECRET: 'too-short-secret' })),
+    ).toThrow(/JWT_SECRET/);
+  });
+
+  it('accepts a JWT_SECRET of 32 characters or more', () => {
+    const result = validate(
+      baseConfig({
+        JWT_SECRET: 'test-only-secret-that-is-at-least-32-chars-long',
+      }),
+    );
+    expect(result.JWT_SECRET).toBe(
+      'test-only-secret-that-is-at-least-32-chars-long',
+    );
   });
 });
 
