@@ -1,9 +1,11 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   AiSuggestion,
   SuggestionStatus,
 } from '../../domain/ai/ai-suggestion.entity';
 import { AiSuggestionRepository } from '../../domain/ai/ai-suggestion.repository';
+import { SUGGESTION_REVIEWED_EVENT } from '../../domain/audit/audit-events';
 import { Document } from '../../domain/documents/document.entity';
 import { DocumentRepository } from '../../domain/documents/document.repository';
 import { Section } from '../../domain/documents/section.entity';
@@ -145,6 +147,10 @@ function makeSuggestion(overrides: Partial<AiSuggestion> = {}): AiSuggestion {
   });
 }
 
+function makeEventEmitter(): jest.Mocked<Pick<EventEmitter2, 'emit'>> {
+  return { emit: jest.fn() };
+}
+
 describe('ReviewSuggestionUseCase', () => {
   function build(opts: {
     suggestions?: AiSuggestion[];
@@ -156,16 +162,18 @@ describe('ReviewSuggestionUseCase', () => {
     );
     const sectionRepository = new InMemorySectionRepository(opts.sections);
     const documentRepository = new InMemoryDocumentRepository(opts.documents);
+    const eventEmitter = makeEventEmitter();
     const useCase = new ReviewSuggestionUseCase(
       aiSuggestionRepository,
       sectionRepository,
       documentRepository,
+      eventEmitter as unknown as EventEmitter2,
     );
-    return { useCase, aiSuggestionRepository };
+    return { useCase, aiSuggestionRepository, eventEmitter };
   }
 
-  it('accepts a pending suggestion', async () => {
-    const { useCase, aiSuggestionRepository } = build({
+  it('accepts a pending suggestion and emits suggestion.reviewed', async () => {
+    const { useCase, aiSuggestionRepository, eventEmitter } = build({
       suggestions: [makeSuggestion()],
       sections: [makeSection()],
       documents: [makeDocument()],
@@ -181,10 +189,15 @@ describe('ReviewSuggestionUseCase', () => {
     expect(aiSuggestionRepository.markReviewedCalls).toEqual([
       { id: 'suggestion-1', status: SuggestionStatus.Accepted },
     ]);
+    expect(eventEmitter.emit).toHaveBeenCalledWith(SUGGESTION_REVIEWED_EVENT, {
+      userId: 'user-1',
+      suggestionId: 'suggestion-1',
+      decision: SuggestionStatus.Accepted,
+    });
   });
 
-  it('rejects a pending suggestion', async () => {
-    const { useCase } = build({
+  it('rejects a pending suggestion and emits suggestion.reviewed with decision=rejected', async () => {
+    const { useCase, eventEmitter } = build({
       suggestions: [makeSuggestion()],
       sections: [makeSection()],
       documents: [makeDocument()],
@@ -197,6 +210,11 @@ describe('ReviewSuggestionUseCase', () => {
     });
 
     expect(result.status).toBe(SuggestionStatus.Rejected);
+    expect(eventEmitter.emit).toHaveBeenCalledWith(SUGGESTION_REVIEWED_EVENT, {
+      userId: 'user-1',
+      suggestionId: 'suggestion-1',
+      decision: SuggestionStatus.Rejected,
+    });
   });
 
   it('404s when the suggestion does not exist', async () => {

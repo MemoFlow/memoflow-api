@@ -1,9 +1,18 @@
 import { UnauthorizedException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import {
+  AUTH_LOGIN_EVENT,
+  AUTH_LOGIN_FAILED_EVENT,
+} from '../../domain/audit/audit-events';
 import { User } from '../../domain/users/user.entity';
 import { UserRepository } from '../../domain/users/user.repository';
 import { LoginUserUseCase } from './login-user.use-case';
+
+function makeEventEmitter(): jest.Mocked<Pick<EventEmitter2, 'emit'>> {
+  return { emit: jest.fn() };
+}
 
 class InMemoryUserRepository implements UserRepository {
   readonly updatedLastActiveAtIds: string[] = [];
@@ -35,6 +44,7 @@ class InMemoryUserRepository implements UserRepository {
 describe('LoginUserUseCase', () => {
   let repository: InMemoryUserRepository;
   let jwtService: JwtService;
+  let eventEmitter: jest.Mocked<Pick<EventEmitter2, 'emit'>>;
   let useCase: LoginUserUseCase;
   let user: User;
 
@@ -51,7 +61,12 @@ describe('LoginUserUseCase', () => {
     });
     repository = new InMemoryUserRepository([user]);
     jwtService = new JwtService({ secret: 'test-secret' });
-    useCase = new LoginUserUseCase(repository, jwtService);
+    eventEmitter = makeEventEmitter();
+    useCase = new LoginUserUseCase(
+      repository,
+      jwtService,
+      eventEmitter as unknown as EventEmitter2,
+    );
   });
 
   it('returns an access token for valid credentials', async () => {
@@ -74,19 +89,38 @@ describe('LoginUserUseCase', () => {
     expect(repository.updatedLastActiveAtIds).toEqual(['user-1']);
   });
 
-  it('rejects an unknown email', async () => {
+  it('emits auth.login with the userId on success', async () => {
+    await useCase.execute({
+      email: 'ada@example.com',
+      password: 'correct-password',
+    });
+
+    expect(eventEmitter.emit).toHaveBeenCalledWith(AUTH_LOGIN_EVENT, {
+      userId: 'user-1',
+    });
+  });
+
+  it('rejects an unknown email and emits auth.login_failed with a null userId', async () => {
     await expect(
       useCase.execute({ email: 'unknown@example.com', password: 'whatever' }),
     ).rejects.toThrow(UnauthorizedException);
 
     expect(repository.updatedLastActiveAtIds).toEqual([]);
+    expect(eventEmitter.emit).toHaveBeenCalledWith(AUTH_LOGIN_FAILED_EVENT, {
+      userId: null,
+      email: 'unknown@example.com',
+    });
   });
 
-  it('rejects an incorrect password and does not update last_active_at', async () => {
+  it('rejects an incorrect password, does not update last_active_at, and emits auth.login_failed with the userId', async () => {
     await expect(
       useCase.execute({ email: 'ada@example.com', password: 'wrong' }),
     ).rejects.toThrow(UnauthorizedException);
 
     expect(repository.updatedLastActiveAtIds).toEqual([]);
+    expect(eventEmitter.emit).toHaveBeenCalledWith(AUTH_LOGIN_FAILED_EVENT, {
+      userId: 'user-1',
+      email: 'ada@example.com',
+    });
   });
 });
