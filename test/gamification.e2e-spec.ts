@@ -198,12 +198,19 @@ describeWithDocker()('Gamification (e2e)', () => {
     await createDocument(token, 'First Doc');
     // The gamification event is fire-and-forget (`EventEmitter2.emit()` is
     // not awaited by the request), so poll instead of asserting once
-    // immediately after the triggering call.
-    const me = await waitForGamification(token, (state) =>
-      state.milestones.some((m) => m.milestone_type === 'document_created'),
-    );
+    // immediately after the triggering call. The predicate checks `xp`
+    // (not just milestone presence): `GetMyGamificationUseCase` reads the
+    // user row and the milestones list via two separate non-transactional
+    // queries, so a poll landing between "milestone row visible" and "xp
+    // update visible" can observe the milestone with a stale xp — polling
+    // on `xp` itself (like the leaderboard tests below) is race-free
+    // because it only returns once that same read reflects the award.
+    const me = await waitForGamification(token, (state) => state.xp >= 50);
 
     expect(me.xp).toBeGreaterThanOrEqual(50);
+    expect(
+      me.milestones.some((m) => m.milestone_type === 'document_created'),
+    ).toBe(true);
   });
 
   it('does not double-award document_created for a second document by the same user', async () => {

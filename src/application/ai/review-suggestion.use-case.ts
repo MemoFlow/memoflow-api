@@ -4,12 +4,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   AiSuggestion,
   SuggestionStatus,
 } from '../../domain/ai/ai-suggestion.entity';
 import { AI_SUGGESTION_REPOSITORY } from '../../domain/ai/ai-suggestion.repository';
 import type { AiSuggestionRepository } from '../../domain/ai/ai-suggestion.repository';
+import { SUGGESTION_REVIEWED_EVENT } from '../../domain/audit/audit-events';
 import { DOCUMENT_REPOSITORY } from '../../domain/documents/document.repository';
 import type { DocumentRepository } from '../../domain/documents/document.repository';
 import { SECTION_REPOSITORY } from '../../domain/documents/section.repository';
@@ -42,6 +44,7 @@ export class ReviewSuggestionUseCase {
     private readonly sectionRepository: SectionRepository,
     @Inject(DOCUMENT_REPOSITORY)
     private readonly documentRepository: DocumentRepository,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async execute(input: ReviewSuggestionInput): Promise<AiSuggestion> {
@@ -81,6 +84,13 @@ export class ReviewSuggestionUseCase {
         `Suggestion ${input.suggestionId} has already been reviewed`,
       );
     }
+
+    this.eventEmitter.emit(SUGGESTION_REVIEWED_EVENT, {
+      userId: input.userId,
+      suggestionId: reviewed.id,
+      decision: reviewed.status,
+    });
+
     return reviewed;
   }
 }

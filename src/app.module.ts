@@ -6,6 +6,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AiModule } from './ai.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { AuditModule } from './audit.module';
 import { validate } from './config/env.validation';
 import { ConnectorsModule } from './connectors.module';
 import { ContextModule } from './context.module';
@@ -56,6 +57,7 @@ import { UsersModule } from './users.module';
     DocumentVersionsModule,
     TemplatesModule,
     GamificationModule,
+    AuditModule,
   ],
   controllers: [AppController],
   providers: [AppService],

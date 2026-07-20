@@ -1,4 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { CONNECTOR_REVOKED_EVENT } from '../../domain/audit/audit-events';
 import { ConnectorConnection } from '../../domain/connectors/connector-connection.entity';
 import {
   ConnectorConnectionRepository,
@@ -71,6 +73,10 @@ class FakeConnectorGateway implements ConnectorGateway {
   }
 }
 
+function makeEventEmitter(): jest.Mocked<Pick<EventEmitter2, 'emit'>> {
+  return { emit: jest.fn() };
+}
+
 function makeConnection(
   overrides: Partial<ConnectorConnection> = {},
 ): ConnectorConnection {
@@ -94,7 +100,13 @@ describe('RevokeConnectionUseCase', () => {
     const gateway = new FakeConnectorGateway();
     const syncUseCase = new SyncConnectionStatusUseCase(repo, gateway);
     const getUseCase = new GetConnectionUseCase(repo, syncUseCase);
-    const useCase = new RevokeConnectionUseCase(getUseCase, gateway, repo);
+    const eventEmitter = makeEventEmitter();
+    const useCase = new RevokeConnectionUseCase(
+      getUseCase,
+      gateway,
+      repo,
+      eventEmitter as unknown as EventEmitter2,
+    );
 
     const result = await useCase.execute({
       connectionId: 'conn-1',
@@ -103,6 +115,11 @@ describe('RevokeConnectionUseCase', () => {
 
     expect(gateway.revokedAccountIds).toEqual(['ca_123']);
     expect(result.status).toBe(ConnectorStatus.Revoked);
+    expect(eventEmitter.emit).toHaveBeenCalledWith(CONNECTOR_REVOKED_EVENT, {
+      userId: 'user-1',
+      connectionId: 'conn-1',
+      provider: ConnectorProvider.Trello,
+    });
   });
 
   it("404s (does not call the gateway) for another user's connection", async () => {
@@ -111,12 +128,19 @@ describe('RevokeConnectionUseCase', () => {
     const gateway = new FakeConnectorGateway();
     const syncUseCase = new SyncConnectionStatusUseCase(repo, gateway);
     const getUseCase = new GetConnectionUseCase(repo, syncUseCase);
-    const useCase = new RevokeConnectionUseCase(getUseCase, gateway, repo);
+    const eventEmitter = makeEventEmitter();
+    const useCase = new RevokeConnectionUseCase(
+      getUseCase,
+      gateway,
+      repo,
+      eventEmitter as unknown as EventEmitter2,
+    );
 
     await expect(
       useCase.execute({ connectionId: 'conn-1', userId: 'user-2' }),
     ).rejects.toThrow(NotFoundException);
     expect(gateway.revokedAccountIds).toEqual([]);
+    expect(eventEmitter.emit).not.toHaveBeenCalled();
   });
 
   it('404s for a missing connection', async () => {
@@ -124,20 +148,33 @@ describe('RevokeConnectionUseCase', () => {
     const gateway = new FakeConnectorGateway();
     const syncUseCase = new SyncConnectionStatusUseCase(repo, gateway);
     const getUseCase = new GetConnectionUseCase(repo, syncUseCase);
-    const useCase = new RevokeConnectionUseCase(getUseCase, gateway, repo);
+    const eventEmitter = makeEventEmitter();
+    const useCase = new RevokeConnectionUseCase(
+      getUseCase,
+      gateway,
+      repo,
+      eventEmitter as unknown as EventEmitter2,
+    );
 
     await expect(
       useCase.execute({ connectionId: 'missing', userId: 'user-1' }),
     ).rejects.toThrow(NotFoundException);
+    expect(eventEmitter.emit).not.toHaveBeenCalled();
   });
 
-  it('is idempotent: revoking an already-Revoked connection does not call the gateway again', async () => {
+  it('is idempotent: revoking an already-Revoked connection does not call the gateway or emit again', async () => {
     const connection = makeConnection({ status: ConnectorStatus.Revoked });
     const repo = new InMemoryConnectorConnectionRepository([connection]);
     const gateway = new FakeConnectorGateway();
     const syncUseCase = new SyncConnectionStatusUseCase(repo, gateway);
     const getUseCase = new GetConnectionUseCase(repo, syncUseCase);
-    const useCase = new RevokeConnectionUseCase(getUseCase, gateway, repo);
+    const eventEmitter = makeEventEmitter();
+    const useCase = new RevokeConnectionUseCase(
+      getUseCase,
+      gateway,
+      repo,
+      eventEmitter as unknown as EventEmitter2,
+    );
 
     const result = await useCase.execute({
       connectionId: 'conn-1',
@@ -146,15 +183,22 @@ describe('RevokeConnectionUseCase', () => {
 
     expect(gateway.revokedAccountIds).toEqual([]);
     expect(result.status).toBe(ConnectorStatus.Revoked);
+    expect(eventEmitter.emit).not.toHaveBeenCalled();
   });
 
-  it('a retried DELETE (revoke twice) only calls the gateway once', async () => {
+  it('a retried DELETE (revoke twice) only calls the gateway and emits once', async () => {
     const connection = makeConnection();
     const repo = new InMemoryConnectorConnectionRepository([connection]);
     const gateway = new FakeConnectorGateway();
     const syncUseCase = new SyncConnectionStatusUseCase(repo, gateway);
     const getUseCase = new GetConnectionUseCase(repo, syncUseCase);
-    const useCase = new RevokeConnectionUseCase(getUseCase, gateway, repo);
+    const eventEmitter = makeEventEmitter();
+    const useCase = new RevokeConnectionUseCase(
+      getUseCase,
+      gateway,
+      repo,
+      eventEmitter as unknown as EventEmitter2,
+    );
 
     await useCase.execute({ connectionId: 'conn-1', userId: 'user-1' });
     const second = await useCase.execute({
@@ -164,5 +208,6 @@ describe('RevokeConnectionUseCase', () => {
 
     expect(gateway.revokedAccountIds).toEqual(['ca_123']);
     expect(second.status).toBe(ConnectorStatus.Revoked);
+    expect(eventEmitter.emit).toHaveBeenCalledTimes(1);
   });
 });
