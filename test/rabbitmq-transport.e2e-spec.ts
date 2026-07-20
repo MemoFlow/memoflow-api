@@ -427,7 +427,7 @@ describeWithDocker()('RabbitMQ context-engine transport (e2e)', () => {
     // CONTEXT_ENGINE_URL/etc. before compiling the module.
     Object.assign(process.env, pg.env, redis.env, {
       MONGODB_URI: mongo.uri,
-      JWT_SECRET: 'test-only-secret',
+      JWT_SECRET: 'test-only-secret-that-is-at-least-32-chars-long',
       JWT_EXPIRES_IN: '15m',
       COMPOSIO_API_KEY: 'test-only-composio-key',
       COMPOSIO_AUTH_CONFIG_IDS: 'trello:ac_test,notion:ac_test,github:ac_test',

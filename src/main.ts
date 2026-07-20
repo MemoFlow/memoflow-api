@@ -59,19 +59,25 @@ async function bootstrap() {
   app.useGlobalFilters(new HttpExceptionFilter());
   app.useGlobalInterceptors(new LoggingInterceptor());
 
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('MemoFlow API')
-    .setDescription('REST API for MemoFlow — users, documents, AI, connectors')
-    .setVersion('0.0.1')
-    .addBearerAuth()
-    .build();
-  SwaggerModule.setup(
-    'docs',
-    app,
-    SwaggerModule.createDocument(app, swaggerConfig),
-  );
-
   const config = app.get(ConfigService);
+
+  // Swagger UI + the underlying OpenAPI JSON are a discovery surface for the
+  // API's shape (routes, DTOs, auth scheme) — production must not expose it.
+  if (config.get<string>('NODE_ENV') !== 'production') {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('MemoFlow API')
+      .setDescription(
+        'REST API for MemoFlow — users, documents, AI, connectors',
+      )
+      .setVersion('0.0.1')
+      .addBearerAuth()
+      .build();
+    SwaggerModule.setup(
+      'docs',
+      app,
+      SwaggerModule.createDocument(app, swaggerConfig),
+    );
+  }
 
   // Auth is a Bearer token in the Authorization header, not cookies, so this
   // never needs `credentials: true` — and must not set it, since browsers
