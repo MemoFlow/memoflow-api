@@ -437,7 +437,15 @@ describeWithDocker()('RabbitMQ context-engine transport (e2e)', () => {
     // consumes ctx.gather.requests, publishes ctx.gather.result chunks.
     // Same exact URL the app used (built once, above) — never re-derived.
     ceConnection = await amqplib.connect(rabbitmqUrl);
+    // A transient broker socket reset makes amqplib emit an 'error' event on
+    // the connection/channel; with no listener Node rethrows it and fails
+    // whichever test is mid-flight — the observed `connect ECONNRESET` CI
+    // flake. The fake CE is best-effort (the app side uses
+    // amqp-connection-manager, which reconnects on its own), so swallow these
+    // rather than let an unhandled EventEmitter 'error' crash the suite.
+    ceConnection.on('error', () => undefined);
     ceChannel = await ceConnection.createChannel();
+    ceChannel.on('error', () => undefined);
     // Hook budget must exceed container startup (120s, .withStartupTimeout
     // above) + worst-case preflight (15 attempts x (5s connect timeout + 2s
     // delay) = 105s) + PG/Mongo/app boot slack, so a slow-but-healthy runner
