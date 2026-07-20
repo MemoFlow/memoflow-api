@@ -31,6 +31,57 @@ app a real `req.ip` (see `docs/database-schema.md#audit_logs`) — a future slic
 would thread the request IP into the audit-event use-cases before per-IP
 brute-force detection is possible from the audit trail alone.
 
+## Error tracking / observability
+
+Sentry (`@sentry/nestjs`) is wired in but **optional and OFF by default** — same
+convention as `ANTHROPIC_API_KEY`: leave `SENTRY_DSN` unset and `src/instrument.ts`
+never calls `Sentry.init()`, so the app boots identically with zero Sentry config
+(`start:dev`, unit tests, e2e, smoke all unaffected). `SENTRY_DSN` is unset on
+**every** environment today (dev included) — this is a deploy-config gap, not a
+missing feature; see the checklist item below and `docs/ROADMAP.md`.
+
+**What's captured** (only via `Sentry.captureException`, manual call sites — no blanket
+instrumentation beyond BullMQ's built-in integration):
+
+- Unexpected 500s in `HttpExceptionFilter` (`src/shared/filters/http-exception.filter.ts`)
+  — only the `else` branch (non-`HttpException` errors). **4xx `HttpException`s are
+  never reported** — they're expected control flow (validation failures, 404s,
+  409s, etc.), not incidents.
+- Gamification event-handling failures that `GamificationListener`
+  (`src/presentation/gamification/gamification.listener.ts`) deliberately swallows so
+  a gamification bug can never fail the originating documents/sections request —
+  swallowed must not mean invisible.
+- Async job failures that never reach the HTTP filter at all: `PlanningProcessor`'s
+  handled-failure branch (a job that finishes with `status: 'failed'` and returns
+  normally, `src/infrastructure/queue/context/planning.processor.ts`),
+  `GatherTimeoutProcessor`'s gather-timeout branch (also returns normally,
+  `src/infrastructure/queue/context/gather-timeout.processor.ts`), and the RabbitMQ
+  terminal-failure path in `ContextResultsConsumer`
+  (`src/infrastructure/amqp/context-results.consumer.ts`) — captured **once**, at the
+  compare-and-swap winner, so a losing racer (e.g. a timeout racing a slow failure
+  chunk) never double-reports the same job.
+- `PlanningProcessor`'s unhandled-rethrow path is **not** manually captured — it's
+  picked up automatically by `@sentry/nestjs`'s BullMQ `nestIntegration` (wired via
+  `SentryModule.forRoot()` in `src/app.module.ts`), which wraps `process()` and
+  captures anything that propagates out of it. A manual capture there would
+  double-report.
+
+**Per-environment setup:** set `SENTRY_DSN` (and optionally `SENTRY_ENVIRONMENT`,
+which otherwise falls back to `NODE_ENV`) as a secret on each deployed environment
+that should report to Sentry — same "operator-set config" treatment as
+`ANTHROPIC_API_KEY`/`COMPOSIO_*`. One Sentry project is used for all environments,
+distinguished by the `SENTRY_ENVIRONMENT` tag rather than separate projects.
+`SENTRY_TRACES_SAMPLE_RATE` defaults to `0` (errors-only, no performance/tracing
+data) and is bounded to `[0, 1]`; `SENTRY_RELEASE` exists in config but has **no CI
+wiring yet** — release tracking is deliberately deferred.
+
+**PII note:** error payloads (stack traces, request context) may carry user data.
+`@sentry/nestjs` defaults `sendDefaultPii: false` (not overridden here), and this
+slice relies on that plus Sentry's own server-side scrubbing rather than
+hand-redacting every capture site. Manual `captureException` calls only attach
+non-secret identifiers in `extra` (`jobId`, `errorCode`, `userId`, `documentId`) —
+never tokens, passwords, or `COMPOSIO_*`/`ANTHROPIC_API_KEY`-style secrets.
+
 ## Backup & restore
 
 PostgreSQL is primary — see `docs/database-schema.md`. MongoDB holds exactly two
@@ -97,6 +148,10 @@ production), and re-check on every environment's secret rotation:
       **Not yet true for the `development` tier** — Render's managed Postgres
       provisions a single owner role today, so this is currently a gap to close
       before staging/production, not a solved problem to just document.
+- [ ] `SENTRY_DSN` set if this environment should report errors to Sentry — optional
+      (unset keeps Sentry a complete no-op, see "Error tracking / observability"
+      above), but a deliberate choice per environment, not an oversight; currently
+      unset on every environment including `development`.
 
 ## SSRF note (item 23)
 

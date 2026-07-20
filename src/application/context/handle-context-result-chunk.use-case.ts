@@ -48,10 +48,15 @@ export interface HandleContextResultChunkResult {
   outcome: HandleContextResultChunkOutcome;
   job: PlanningJob | null;
   chunk: ContextResultChunk;
-  /** `true` only when this call itself finalized the job (a newly-applied
-   * terminal `completed`/`failed` status chunk) — the caller (the AMQP
-   * consumer, which owns all `EventEmitter2` relaying, mirroring
-   * `PlanningProcessor`) uses this to decide which WebSocket events to emit. */
+  /** `true` only when this call itself finalized the job (won the
+   * `claimForPlanning`/`failIfStillGathering` CAS on a newly-applied
+   * terminal `completed`/`failed` status chunk) — `false` for a CAS loser
+   * (a concurrent finalize already won). The caller (`ContextResultsConsumer`,
+   * which owns all `EventEmitter2` relaying, mirroring `PlanningProcessor`)
+   * uses this both to decide which WebSocket events to emit AND — combined
+   * with `job.status === Failed` — as the exactly-once signal for reporting
+   * the failure to Sentry (this use-case stays framework-pure: no Sentry
+   * import here, that lives in the infra-layer consumer). */
   terminal: boolean;
 }
 

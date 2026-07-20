@@ -202,6 +202,10 @@ Beyond the database connection vars, auth requires:
 | `ANTHROPIC_API_KEY` | no | — | powers AI suggestion generation and the planning-job LLM planner; unset keeps both on their null/stub fallbacks (suggestions endpoint returns 503, planning jobs keep using `StubLlmPlanner`) |
 | `ANTHROPIC_MODEL` | no | `claude-sonnet-5` | Anthropic model id used for both suggestions and planning |
 | `ANTHROPIC_MAX_TOKENS` | no | `4096` | max output tokens per Anthropic call |
+| `SENTRY_DSN` | no | — | error tracking via `@sentry/nestjs`; unset keeps it a complete no-op (mirrors `ANTHROPIC_API_KEY`) — no environment sets this today, see [`docs/security.md`](docs/security.md#error-tracking--observability) |
+| `SENTRY_ENVIRONMENT` | no | `NODE_ENV` | tags captured events by deploy environment; one Sentry project shared across environments |
+| `SENTRY_TRACES_SAMPLE_RATE` | no | `0` | performance-tracing sample rate, `0`–`1`; `0` = errors-only |
+| `SENTRY_RELEASE` | no | — | release tag on captured events; deferred — no CI wiring populates it yet |
 
 See [`.env.example`](.env.example) for the full list (`NODE_ENV`, `PORT`,
 `MONGODB_URI`, `POSTGRES_*`).

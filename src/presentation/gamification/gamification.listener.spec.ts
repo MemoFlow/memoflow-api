@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/nestjs';
 import {
   DOCUMENT_CREATED_EVENT,
   SECTION_CREATED_EVENT,
@@ -5,6 +6,10 @@ import {
 } from '../../domain/documents/document-events';
 import { HandleGamificationEventUseCase } from '../../application/gamification/handle-gamification-event.use-case';
 import { GamificationListener } from './gamification.listener';
+
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(),
+}));
 
 function makeUseCase(): jest.Mocked<
   Pick<HandleGamificationEventUseCase, 'execute'>
@@ -80,5 +85,22 @@ describe('GamificationListener', () => {
     await expect(
       listener.onDocumentCreated({ userId: 'user-1', documentId: 'doc-1' }),
     ).resolves.toBeUndefined();
+  });
+
+  it('reports a swallowed use-case failure to Sentry without rethrowing', async () => {
+    jest.clearAllMocks();
+    const useCase = makeUseCase();
+    const error = new Error('db exploded');
+    useCase.execute.mockRejectedValue(error);
+    const listener = new GamificationListener(
+      useCase as unknown as HandleGamificationEventUseCase,
+    );
+
+    await expect(
+      listener.onDocumentCreated({ userId: 'user-1', documentId: 'doc-1' }),
+    ).resolves.toBeUndefined();
+
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+    expect(Sentry.captureException).toHaveBeenCalledWith(error);
   });
 });

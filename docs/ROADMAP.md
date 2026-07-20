@@ -380,6 +380,21 @@ work already flagged as deferred in the sections above, not a numbered feature:
   slices are
   documented against is [`docs/security.md`](security.md); CI supply-chain hardening
   (dependabot, `npm audit` gate) is tracked separately with the `devops` agent.
+- **Error tracking via Sentry (`@sentry/nestjs`) is now implemented** — optional and
+  OFF by default (unset `SENTRY_DSN` ⇒ complete no-op, mirrors the
+  `ANTHROPIC_API_KEY` convention). Captures unexpected 500s (`HttpExceptionFilter`),
+  swallowed gamification-listener errors, and async job failures that never hit the
+  HTTP filter (the BullMQ planning processor's handled-failure and gather-timeout
+  branches, and the RabbitMQ context-results terminal-failure path — captured once,
+  at the CAS winner); the BullMQ rethrow path is auto-captured by `@sentry/nestjs`'s
+  `nestIntegration`, not double-reported. One Sentry project, environments
+  distinguished by the `SENTRY_ENVIRONMENT` tag; errors-only sampling
+  (`SENTRY_TRACES_SAMPLE_RATE=0`) to start; release tracking (`SENTRY_RELEASE`)
+  deferred — the var exists with no CI wiring yet. See
+  [`docs/security.md`](security.md#error-tracking--observability). **`SENTRY_DSN` is
+  unset on every environment today**, same deploy-config-gap pattern as
+  `ANTHROPIC_API_KEY` and `RABBITMQ_URL` above — set per environment once observability
+  is wanted there.
 
 ## Standing rules for every item
 

@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import * as Sentry from '@sentry/nestjs';
 import type { ChannelWrapper } from 'amqp-connection-manager';
 import type { ConsumeMessage } from 'amqplib';
 import { HandleContextResultChunkUseCase } from '../../application/context/handle-context-result-chunk.use-case';
@@ -172,6 +173,24 @@ export class ContextResultsConsumer implements OnModuleInit {
 
     try {
       const result = await this.handleChunk.execute({ chunk });
+
+      // Async surface: a terminal `failed` write here never rethrows (the
+      // use-case returns normally) and never reaches HttpExceptionFilter,
+      // and this plain amqplib consumer has no @Processor/BullMQ-style
+      // auto-instrumentation — so report it explicitly, exactly once.
+      // `result.terminal` is `true` only for the call that actually WON the
+      // finalize CAS (`claimForPlanning`/`failIfStillGathering` in
+      // `HandleContextResultChunkUseCase`); a losing racer (e.g. a
+      // gather-timeout racing a slow failure chunk) gets `terminal: false`
+      // and is correctly skipped here.
+      if (result.terminal && result.job?.status === JobStatus.Failed) {
+        Sentry.captureException(
+          new Error(result.job.errorMessage ?? 'Context result chunk failed'),
+          {
+            extra: { jobId: result.job.id, errorCode: result.job.errorCode },
+          },
+        );
+      }
 
       if (
         result.outcome === 'unknown-job' ||

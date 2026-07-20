@@ -1,6 +1,7 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import * as Sentry from '@sentry/nestjs';
 import { Job } from 'bullmq';
 import { HandleGatherTimeoutUseCase } from '../../../application/context/handle-gather-timeout.use-case';
 import { GATHER_TIMEOUT_QUEUE_NAME } from './bullmq-gather-timeout.scheduler';
@@ -35,6 +36,23 @@ export class GatherTimeoutProcessor extends WorkerHost {
 
     this.logger.warn(
       `Planning job ${jobId} timed out waiting on context gather`,
+    );
+    // Async surface: `process()` returns normally here (no throw), so
+    // @sentry/nestjs's BullMQ auto-instrumentation — which only captures
+    // errors that propagate out of `process()` — never sees this timeout
+    // failure, and it never reaches HttpExceptionFilter either. No Error
+    // object is in hand (this is a timeout, not a caught exception), so
+    // wrap the recorded reason. Mirrors PlanningProcessor's handled-failure
+    // branch.
+    Sentry.captureException(
+      new Error(planningJob.errorMessage ?? 'Planning job timed out'),
+      {
+        extra: {
+          jobId,
+          userId: planningJob.userId,
+          errorCode: planningJob.errorCode,
+        },
+      },
     );
     this.eventEmitter.emit('planning.failed', {
       jobId: planningJob.id,

@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { MongooseModule } from '@nestjs/mongoose';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { SentryModule } from '@sentry/nestjs/setup';
 import { AiModule } from './ai.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -20,6 +21,9 @@ import { UsersModule } from './users.module';
 
 @Module({
   imports: [
+    // No-op when Sentry.init() never ran (SENTRY_DSN unset in
+    // src/instrument.ts), so this is safe to import unconditionally.
+    SentryModule.forRoot(),
     ConfigModule.forRoot({ validate, isGlobal: true }),
     EventEmitterModule.forRoot(),
     AppThrottlerModule,
