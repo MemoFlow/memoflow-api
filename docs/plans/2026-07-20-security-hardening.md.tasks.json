@@ -5,57 +5,112 @@
     {
       "id": 1,
       "subject": "Slice 1: Security headers (helmet)",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [],
       "branch": "feature/security-headers",
-      "checklist": [46, 27],
-      "description": "**Goal:** Add HTTP security headers.\n**Steps:** npm i helmet; app.use(helmet()) in src/main.ts before routes (minimal defaults, JSON API — no CSP surface). CORS default '*' already shipped (#27); explicit-origin requirement documented in Slice 6 runbook, no code change.\n**Acceptance:** curl -I /health shows x-content-type-options:nosniff, HSTS, x-dns-prefetch-control.\n**Verify:** curl -I http://localhost:3000/health ; npm run lint/build/test green.\n**Reviewers:** code-reviewer, api-reviewer, docs-maintainer."
+      "checklist": [
+        46,
+        27
+      ],
+      "description": "**Goal:** Add HTTP security headers.\n**Steps:** npm i helmet; app.use(helmet()) in src/main.ts before routes (minimal defaults, JSON API — no CSP surface). CORS default '*' already shipped (#27); explicit-origin requirement documented in Slice 6 runbook, no code change.\n**Acceptance:** curl -I /health shows x-content-type-options:nosniff, HSTS, x-dns-prefetch-control.\n**Verify:** curl -I http://localhost:3000/health ; npm run lint/build/test green.\n**Reviewers:** code-reviewer, api-reviewer, docs-maintainer.",
+      "pr": "#28",
+      "merged": true
     },
     {
       "id": 2,
       "subject": "Slice 2: Rate limiting (throttler)",
-      "status": "pending",
-      "blockedBy": [1],
+      "status": "completed",
+      "blockedBy": [
+        1
+      ],
       "branch": "feature/rate-limiting",
-      "checklist": [28],
-      "description": "**Goal:** Rate-limit login/signup/AI to stop brute force + AI abuse.\n**Steps:** npm i @nestjs/throttler (+ @nest-lab/throttler-storage-redis ioredis, back with existing REDIS_* config, in-memory fallback when Redis unset — mirror CONTEXT_GATHERER/LLM_PLANNER presence-of-env factory). app.module.ts: ThrottlerModule.forRootAsync (default 100/60s) + ThrottlerGuard as APP_GUARD. @Throttle tight on auth login/register (~5/min) and AI endpoints (suggestions.controller generate, planning-jobs.controller submit). New optional env THROTTLE_TTL/THROTTLE_LIMIT in env.validation.ts + .env.example.\n**Acceptance:** brute-force POST /auth/login returns 429 after cap; single request still 200/201.\n**Verify:** unit test guard wiring; e2e/manual loop → 429.\n**Reviewers:** code-reviewer, api-reviewer, docs-maintainer. Shares main.ts/app.module.ts with Slices 1,3 → serialize."
+      "checklist": [
+        28
+      ],
+      "description": "**Goal:** Rate-limit login/signup/AI to stop brute force + AI abuse.\n**Steps:** npm i @nestjs/throttler (+ @nest-lab/throttler-storage-redis ioredis, back with existing REDIS_* config, in-memory fallback when Redis unset — mirror CONTEXT_GATHERER/LLM_PLANNER presence-of-env factory). app.module.ts: ThrottlerModule.forRootAsync (default 100/60s) + ThrottlerGuard as APP_GUARD. @Throttle tight on auth login/register (~5/min) and AI endpoints (suggestions.controller generate, planning-jobs.controller submit). New optional env THROTTLE_TTL/THROTTLE_LIMIT in env.validation.ts + .env.example.\n**Acceptance:** brute-force POST /auth/login returns 429 after cap; single request still 200/201.\n**Verify:** unit test guard wiring; e2e/manual loop → 429.\n**Reviewers:** code-reviewer, api-reviewer, docs-maintainer. Shares main.ts/app.module.ts with Slices 1,3 → serialize.",
+      "pr": "#30",
+      "merged": true
     },
     {
       "id": 3,
       "subject": "Slice 3: Secret + exposure hardening",
-      "status": "pending",
-      "blockedBy": [2],
+      "status": "completed",
+      "blockedBy": [
+        2
+      ],
       "branch": "feature/config-hardening",
-      "checklist": [26, 10, 29, 45, 36],
-      "description": "**Goal:** Enforce strong JWT secret, hide Swagger in prod, drop source maps.\n**Steps:** env.validation.ts add @MinLength(32) to JWT_SECRET (keep @IsNotEmpty) + spec test (mirror WS_CORS_ORIGIN/CORS_ORIGIN style) + .env.example 'min 32 chars' comment. main.ts wrap SwaggerModule.setup in if(config.get('NODE_ENV')!=='production'). tsconfig: omit .map from prod build (sourceMap:false in build config or strip dist/**/*.map).\n**Acceptance:** NODE_ENV=production → GET /docs 404; dev → 200; 10-char JWT_SECRET → boot validation error; dist has no .map.\n**Verify:** boot both env values; npm run build inspect dist.\n**Reviewers:** code-reviewer, api-reviewer, docs-maintainer, tooling-reviewer(if scripts). Shares main.ts with Slice 2."
+      "checklist": [
+        26,
+        10,
+        29,
+        45,
+        36
+      ],
+      "description": "**Goal:** Enforce strong JWT secret, hide Swagger in prod, drop source maps.\n**Steps:** env.validation.ts add @MinLength(32) to JWT_SECRET (keep @IsNotEmpty) + spec test (mirror WS_CORS_ORIGIN/CORS_ORIGIN style) + .env.example 'min 32 chars' comment. main.ts wrap SwaggerModule.setup in if(config.get('NODE_ENV')!=='production'). tsconfig: omit .map from prod build (sourceMap:false in build config or strip dist/**/*.map).\n**Acceptance:** NODE_ENV=production → GET /docs 404; dev → 200; 10-char JWT_SECRET → boot validation error; dist has no .map.\n**Verify:** boot both env values; npm run build inspect dist.\n**Reviewers:** code-reviewer, api-reviewer, docs-maintainer, tooling-reviewer(if scripts). Shares main.ts with Slice 2.",
+      "pr": "#33",
+      "merged": true
     },
     {
       "id": 4,
       "subject": "Slice 4: Dependency vulns",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [],
       "branch": "bugfix/dep-vulns",
-      "checklist": [37, 38],
-      "description": "**Goal:** Clear 2 HIGH npm audit findings (multer DoS via @nestjs/platform-express).\n**Steps:** npm audit fix; if needed take minimal semver-compatible @nestjs/platform-express bump. No direct multer use (no upload surface) → low breakage risk. Re-run lint/build/test/e2e.\n**Acceptance:** npm audit --omit=dev reports 0 high/critical; full suite green.\n**Verify:** npm audit --omit=dev.\n**Reviewers:** code-reviewer, api-reviewer, devops. Independent — can run anytime."
+      "checklist": [
+        37,
+        38
+      ],
+      "description": "**Goal:** Clear 2 HIGH npm audit findings (multer DoS via @nestjs/platform-express).\n**Steps:** npm audit fix; if needed take minimal semver-compatible @nestjs/platform-express bump. No direct multer use (no upload surface) → low breakage risk. Re-run lint/build/test/e2e.\n**Acceptance:** npm audit --omit=dev reports 0 high/critical; full suite green.\n**Verify:** npm audit --omit=dev.\n**Reviewers:** code-reviewer, api-reviewer, devops. Independent — can run anytime.",
+      "pr": "#29",
+      "merged": true
     },
     {
       "id": 5,
       "subject": "Slice 5: Security audit log",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [],
       "branch": "feature/audit-log",
-      "checklist": [42, 40, 41],
-      "description": "**Goal:** Persist a security audit trail. PG clean-architecture slice via /new-module audit --db pg (confirm placement w/ db-mentor — relational, not a Mongo collection).\n**Steps:** Update docs/database-schema.md + D2 diagram FIRST: audit_logs (id, user_id nullable FK→users ON DELETE SET NULL, action string, metadata jsonb, ip nullable, created_at; index user_id + created_at). Migration CreateAuditLogs. Domain AuditLog entity + AuditLogRepository interface; application RecordAuditEvent use-case; infra TypeORM entity + repo. Write-only, NO controller (never serialized — 'no public controller' like prompts). Emit via EventEmitter2 from LoginUseCase (success + failure), connector revoke use-case, suggestion accept/reject use-case. Single AuditListener (presentation) sole subscriber, swallows own errors (mirror GamificationListener swallow-and-log).\n**Acceptance:** login writes audit_logs row action='auth.login'; bad password → 'auth.login_failed'; revoke → 'connector.revoked'. Migration up/down clean.\n**Verify:** unit tests use-case+listener; e2e row assertions.\n**Reviewers:** code-reviewer, api-reviewer, db-mentor, docs-maintainer. Largest slice."
+      "checklist": [
+        42,
+        40,
+        41
+      ],
+      "description": "**Goal:** Persist a security audit trail. PG clean-architecture slice via /new-module audit --db pg (confirm placement w/ db-mentor — relational, not a Mongo collection).\n**Steps:** Update docs/database-schema.md + D2 diagram FIRST: audit_logs (id, user_id nullable FK→users ON DELETE SET NULL, action string, metadata jsonb, ip nullable, created_at; index user_id + created_at). Migration CreateAuditLogs. Domain AuditLog entity + AuditLogRepository interface; application RecordAuditEvent use-case; infra TypeORM entity + repo. Write-only, NO controller (never serialized — 'no public controller' like prompts). Emit via EventEmitter2 from LoginUseCase (success + failure), connector revoke use-case, suggestion accept/reject use-case. Single AuditListener (presentation) sole subscriber, swallows own errors (mirror GamificationListener swallow-and-log).\n**Acceptance:** login writes audit_logs row action='auth.login'; bad password → 'auth.login_failed'; revoke → 'connector.revoked'. Migration up/down clean.\n**Verify:** unit tests use-case+listener; e2e row assertions.\n**Reviewers:** code-reviewer, api-reviewer, db-mentor, docs-maintainer. Largest slice.",
+      "pr": "#31",
+      "merged": true
     },
     {
       "id": 6,
       "subject": "Slice 6: Ops runbook + supply-chain CI",
-      "status": "pending",
-      "blockedBy": [2, 5],
+      "status": "in_progress",
+      "blockedBy": [
+        2,
+        5,
+        3
+      ],
       "branch": "docs/security-runbook",
-      "checklist": [43, 44, 23, 39, 7, 41, 27],
-      "description": "**Goal:** Operational security runbook + supply-chain CI.\n**Steps:** docs/security.md (docs-maintainer): monitoring/alerting (5xx rate, auth.login_failed spikes from audit log, throttle 429s, deploy update_failed; Render/Atlas/Upstash/CloudAMQP dashboards); backup/restore (Render Postgres PITR, Atlas M0 posture + restore drill, M0 backup limits); deploy security checklist (explicit CORS_ORIGIN/WS_CORS_ORIGIN per env not '*', 32+ char unique JWT_SECRET per env, all COMPOSIO_*/RABBITMQ_URL preset before first deploy per 2026-07 outage, DB least-privilege role no SUPERUSER/DDL); SSRF note (CONTEXT_ENGINE_URL operator-set never user-supplied); prompt-injection note (verify Anthropic calls keep user content in user role not concatenated into system prompt, LLM output persisted as data never executed — spot-check anthropic-suggestion-generator.ts / anthropic-llm-planner.ts, fold small fix in if violated). .github (devops): dependabot.yml weekly npm; npm audit --audit-level=high step in ci.yml.\n**Acceptance:** runbook covers 43,44,23,39,7,41,27; dependabot + audit CI live.\n**Verify:** actionlint on ci.yml; render runbook.\n**Reviewers:** docs-maintainer, devops, tooling-reviewer. Depends on Slice 5 (references audit log) + Slice 2 (references 429s) → last."
+      "checklist": [
+        43,
+        44,
+        23,
+        39,
+        7,
+        41,
+        27
+      ],
+      "description": "**Goal:** Operational security runbook + supply-chain CI.\n**Steps:** docs/security.md (docs-maintainer): monitoring/alerting (5xx rate, auth.login_failed spikes from audit log, throttle 429s, deploy update_failed; Render/Atlas/Upstash/CloudAMQP dashboards); backup/restore (Render Postgres PITR, Atlas M0 posture + restore drill, M0 backup limits); deploy security checklist (explicit CORS_ORIGIN/WS_CORS_ORIGIN per env not '*', 32+ char unique JWT_SECRET per env, all COMPOSIO_*/RABBITMQ_URL preset before first deploy per 2026-07 outage, DB least-privilege role no SUPERUSER/DDL); SSRF note (CONTEXT_ENGINE_URL operator-set never user-supplied); prompt-injection note (verify Anthropic calls keep user content in user role not concatenated into system prompt, LLM output persisted as data never executed — spot-check anthropic-suggestion-generator.ts / anthropic-llm-planner.ts, fold small fix in if violated). .github (devops): dependabot.yml weekly npm; npm audit --audit-level=high step in ci.yml.\n**Acceptance:** runbook covers 43,44,23,39,7,41,27; dependabot + audit CI live.\n**Verify:** actionlint on ci.yml; render runbook.\n**Reviewers:** docs-maintainer, devops, tooling-reviewer. Depends on Slice 5 (references audit log) + Slice 2 (references 429s) → last.",
+      "pr": "#34 (pending)",
+      "merged": false,
+      "note": "Docs assert Slice 3 controls (JWT MinLength, Swagger prod-gate, source maps) — must merge AFTER #33 so claims are true; rebase on development post-#33."
     }
   ],
-  "lastUpdated": "2026-07-20T00:00:00Z"
+  "lastUpdated": "2026-07-20T11:39:34.890Z",
+  "extraWork": [
+    {
+      "branch": "bugfix/rabbitmq-e2e-flake",
+      "pr": "#32",
+      "summary": "per-test fake-CE connection + retry to fix recurring ECONNRESET flake",
+      "status": "merged"
+    }
+  ]
 }
