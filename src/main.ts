@@ -2,6 +2,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './shared/filters/http-exception.filter';
 import { LoggingInterceptor } from './shared/interceptors/logging.interceptor';
@@ -14,6 +15,26 @@ async function bootstrap() {
   // the exact bytes Composio signed, not a re-serialized JSON.parse/stringify
   // round trip.
   const app = await NestFactory.create(AppModule, { rawBody: true });
+
+  // Sets baseline security headers (X-Content-Type-Options: nosniff,
+  // Strict-Transport-Security, X-Frame-Options, etc.). The Content-Security-
+  // Policy is widened from helmet's default so the Swagger UI served at
+  // `/docs` still renders: swagger-ui ships an inline bootstrap script +
+  // inline styles and loads its validator badge from validator.swagger.io,
+  // all of which helmet's default `default-src 'self'` would block.
+  // Everything else stays at helmet's secure defaults.
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: [`'self'`],
+          scriptSrc: [`'self'`, `'unsafe-inline'`],
+          styleSrc: [`'self'`, `'unsafe-inline'`],
+          imgSrc: [`'self'`, 'data:', 'validator.swagger.io'],
+        },
+      },
+    }),
+  );
 
   // Lets in-process consumers (the BullMQ worker, Redis/Mongo/Postgres
   // connections) drain cleanly on SIGTERM instead of being killed mid-job.
