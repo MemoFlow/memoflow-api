@@ -60,8 +60,11 @@ services:
       - key: REDIS_TLS
         value: "true"
 
-      # Real frontend origin for the WebSocket gateway's CORS check — set
-      # manually in the Render dashboard.
+      # Real frontend origin for CORS — same value for both: the REST API
+      # (CORS_ORIGIN) and the WebSocket gateway (WS_CORS_ORIGIN). Set manually
+      # in the Render dashboard; unset falls back to the code default '*'.
+      - key: CORS_ORIGIN
+        sync: false
       - key: WS_CORS_ORIGIN
         sync: false
 
