@@ -39,10 +39,18 @@ async function registerAndLogin(
     password: 'correct-horse-battery-staple',
     display_name: 'Test User',
   };
-  await request(app.getHttpServer())
+  // Tolerate 409 so this is idempotent across a jest.retryTimes re-run: a
+  // retried test re-invokes its body with the same fixed email, and a second
+  // register would otherwise 409 and fail the retry instead of the transient
+  // broker reset it's meant to absorb.
+  const registerRes = await request(app.getHttpServer())
     .post('/auth/register')
-    .send(payload)
-    .expect(201);
+    .send(payload);
+  if (registerRes.status !== 201 && registerRes.status !== 409) {
+    throw new Error(
+      `register failed for ${email}: ${registerRes.status} ${JSON.stringify(registerRes.body)}`,
+    );
+  }
 
   const loginRes = await request(app.getHttpServer())
     .post('/auth/login')
@@ -310,6 +318,39 @@ async function preflightRabbitMq(
   );
 }
 
+/**
+ * Opens a fake-CE amqplib connection, retrying a transient broker-side
+ * connect reset (`connect ECONNRESET`) the same way `preflightRabbitMq`
+ * does — the raw `amqplib.connect` is otherwise a single unguarded attempt.
+ */
+async function connectFakeCe(
+  url: string,
+  attempts = 10,
+  delayMs = 1_000,
+): Promise<amqplib.ChannelModel> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await amqplib.connect(url, { timeout: 5_000 });
+    } catch (err) {
+      lastErr = err;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  throw new Error(
+    `fake-CE connect failed after ${attempts} attempts: ` +
+      `${lastErr instanceof Error ? lastErr.message : String(lastErr)}`,
+  );
+}
+
+// Retry transient failures in this suite. The rabbitmq:3.13-alpine container
+// intermittently resets connections under CI load (`connect ECONNRESET`) —
+// a broker-side socket reset no client-side error handler can prevent. A
+// retry re-runs the affected test against the same (now-settled) broker; a
+// genuine bug still fails all attempts. `registerAndLogin` tolerates a 409 so
+// the re-run is idempotent. Scoped to this file only (its own Jest worker).
+jest.retryTimes(2, { logErrorsBeforeRetry: true });
+
 // Boots the full AppModule against Testcontainers PostgreSQL + Redis + a
 // real RabbitMQ broker (in-memory Mongo), with RABBITMQ_URL set — the
 // queue-transport path (docs/contracts/context-engine.md). Docker-gated
@@ -432,12 +473,6 @@ describeWithDocker()('RabbitMQ context-engine transport (e2e)', () => {
     // queues + DLQs, both bindings) idempotently — see
     // RabbitContextRequestPublisher/ContextResultsConsumer's onModuleInit.
     await app.init();
-
-    // A second, independent AMQP connection plays the fake context-engine:
-    // consumes ctx.gather.requests, publishes ctx.gather.result chunks.
-    // Same exact URL the app used (built once, above) — never re-derived.
-    ceConnection = await amqplib.connect(rabbitmqUrl);
-    ceChannel = await ceConnection.createChannel();
     // Hook budget must exceed container startup (120s, .withStartupTimeout
     // above) + worst-case preflight (15 attempts x (5s connect timeout + 2s
     // delay) = 105s) + PG/Mongo/app boot slack, so a slow-but-healthy runner
@@ -445,11 +480,34 @@ describeWithDocker()('RabbitMQ context-engine transport (e2e)', () => {
     // timeout. Keep these numbers in sync if either side changes.
   }, 300_000);
 
+  // The fake context-engine's AMQP connection/channel are created FRESH per
+  // test (not once in beforeAll): amqplib permanently closes a channel/
+  // connection after it emits 'error', so a transient reset would otherwise
+  // poison the shared channel for the retry and every later test. A per-test
+  // connection means a jest.retryTimes re-run (which re-runs beforeEach) gets
+  // a clean, live channel. The 'error' handlers swallow transient resets so an
+  // unhandled EventEmitter 'error' can't crash the mid-flight test; the
+  // connect itself is retried via connectFakeCe.
+  // Explicit hook timeouts: connectFakeCe's retry budget (up to ~60s worst
+  // case) far exceeds Jest's default 5000ms hook timeout, so without these the
+  // retry loop would be killed mid-flight in exactly the connect-reset case
+  // it's meant to survive. afterEach gets its own generous budget since
+  // closing an already-broken socket has no internal timeout guard.
+  beforeEach(async () => {
+    ceConnection = await connectFakeCe(rabbitmqUrl);
+    ceConnection.on('error', () => undefined);
+    ceChannel = await ceConnection.createChannel();
+    ceChannel.on('error', () => undefined);
+  }, 90_000);
+
+  afterEach(async () => {
+    await ceChannel?.close().catch(() => undefined);
+    await ceConnection?.close().catch(() => undefined);
+  }, 15_000);
+
   afterAll(async () => {
     // Each teardown step is independent — one failing/hanging step must
     // never prevent the others from at least being attempted.
-    await ceChannel?.close().catch(() => undefined);
-    await ceConnection?.close().catch(() => undefined);
     await app?.close().catch(() => undefined);
     await pg?.container.stop().catch(() => undefined);
     await mongo?.server.stop().catch(() => undefined);
