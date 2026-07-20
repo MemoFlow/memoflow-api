@@ -158,6 +158,20 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
     customised: boolean
   }
 
+  # Write-only internal sink (security-hardening slice 5) — no controller,
+  # never serialized into an API response. Composite index (user_id,
+  # created_at DESC) — IDX_audit_logs_user_created — covers "events for a
+  # user, newest first"; no separate plain user_id index.
+  audit_logs: {
+    shape: sql_table
+    id: uuid {constraint: primary_key}
+    user_id: "uuid (nullable)" {constraint: foreign_key}
+    action: varchar
+    metadata: "jsonb?"
+    ip: "varchar (nullable)"
+    created_at: timestamptz
+  }
+
   documents.user_id -> users.id: cascade
   sections.document_id -> documents.id: cascade
   ai_suggestions.section_id -> sections.id
@@ -171,6 +185,7 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
   template_sections.template_id -> templates.id: cascade
   document_templates.document_id -> documents.id: cascade
   document_templates.template_id -> templates.id: cascade
+  audit_logs.user_id -> users.id: set null
 }
 
 mongo: MongoDB (specialist — Mongoose) {

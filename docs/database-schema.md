@@ -9,8 +9,8 @@ PR as the code change.
 
 - **PostgreSQL is the primary database.** Everything relational lives here: users,
   auth, documents, sections, AI suggestions, prompts, connector connections, gamification,
-  and the template system. Accessed via TypeORM with migrations only
-  (`synchronize: false`, always).
+  the template system, and the security audit log. Accessed via TypeORM with
+  migrations only (`synchronize: false`, always).
 - **MongoDB is the specialist store.** Only two collections:
   `document_versions` (immutable snapshots) and `planning_jobs` (AI context engine
   jobs). Accessed via Mongoose.
@@ -120,6 +120,26 @@ the OAuth flow this table supports.
 | updated_at | timestamptz | |
 
 Unique composite index on **(user_id, provider)** — one connection per user per provider.
+
+#### `audit_logs`
+Write-only internal sink for security-relevant events (security-hardening plan,
+slice 5) — no public controller, `AuditLog` is never serialized into an API
+response. Populated by the single `AuditListener` consuming domain events emitted
+by other features (auth login/login-failed, connector revoke, suggestion review)
+via `EventEmitter2`, same swallow-and-log pattern as `GamificationListener`.
+
+| column | type | notes |
+| --- | --- | --- |
+| id | uuid | PK |
+| user_id | uuid | FK → users, **ON DELETE SET NULL** (nullable — the trail must outlive a deleted user, same pattern as `templates.created_by`; also null for a failed login against an unknown email) |
+| action | varchar | `auth.login` / `auth.login_failed` / `connector.revoked` / `suggestion.reviewed` |
+| metadata | jsonb | small contextual payload, e.g. `{ email }` on a failed login, `{ connectionId, provider }` on revoke, `{ suggestionId, decision }` on review |
+| ip | varchar | nullable — not yet populated (would require threading the request IP through use-case inputs); reserved for a future slice |
+| created_at | timestamptz | |
+
+Composite index **(user_id, created_at DESC)** — `IDX_audit_logs_user_created` —
+covers "events for a user, newest first" (db-mentor's recommendation); no separate
+plain `user_id` index (would be redundant with the composite's leading column).
 
 ### Gamification
 
