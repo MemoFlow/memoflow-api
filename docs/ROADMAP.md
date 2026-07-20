@@ -369,6 +369,13 @@ work already flagged as deferred in the sections above, not a numbered feature:
   returns 503 ("AI not configured") and the planning-job LLM planner stays on
   `StubLlmPlanner` ("(stub plan)") on the deployed dev service. Item 5's code is
   done; this is a deploy-config gap, not a missing feature.
+- **`CORS_ORIGIN` / `WS_CORS_ORIGIN` are wired but not yet active on `development`**
+  — `render.yaml` declares both keys (PR #46) and the Render dashboard has a value
+  set for each, but a live probe of `GET /health` with a non-matching `Origin`
+  still returns `access-control-allow-origin: *` as of 2026-07-20 — the running
+  dev process is still on the `'*'` default. A manual redeploy (and possibly a
+  blueprint sync, since #46 added the keys) is needed before REST/WS CORS actually
+  locks to the frontend origin on `development`.
 - **gRPC and a separate Context-module worker deployment remain explicitly deferred**
   (Context module async backbone section) — only built if a concrete trigger from
   `ARCHITECTURE.md`'s "Service boundaries" appears.
@@ -392,7 +399,8 @@ work already flagged as deferred in the sections above, not a numbered feature:
   (`SENTRY_TRACES_SAMPLE_RATE=0`) to start; release tracking (`SENTRY_RELEASE`)
   deferred — the var exists with no CI wiring yet. See
   [`docs/security.md`](security.md#error-tracking--observability). **`SENTRY_DSN` is
-  unset on every environment today**, same deploy-config-gap pattern as
+  now set on `development`** (shipped PR #44 — error tracking is live there) but
+  still unset on staging/production, same deploy-config-gap pattern as
   `ANTHROPIC_API_KEY` and `RABBITMQ_URL` above — set per environment once observability
   is wanted there.
 

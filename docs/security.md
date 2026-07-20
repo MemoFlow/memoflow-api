@@ -36,9 +36,10 @@ brute-force detection is possible from the audit trail alone.
 Sentry (`@sentry/nestjs`) is wired in but **optional and OFF by default** — same
 convention as `ANTHROPIC_API_KEY`: leave `SENTRY_DSN` unset and `src/instrument.ts`
 never calls `Sentry.init()`, so the app boots identically with zero Sentry config
-(`start:dev`, unit tests, e2e, smoke all unaffected). `SENTRY_DSN` is unset on
-**every** environment today (dev included) — this is a deploy-config gap, not a
-missing feature; see the checklist item below and `docs/ROADMAP.md`.
+(`start:dev`, unit tests, e2e, smoke all unaffected). `SENTRY_DSN` is now **set on
+`development`** (shipped PR #44 — error tracking is live there) but still unset on
+staging/production — a deploy-config gap for those environments, not a missing
+feature; see the checklist item below and `docs/ROADMAP.md`.
 
 **What's captured** (only via `Sentry.captureException`, manual call sites — no blanket
 instrumentation beyond BullMQ's built-in integration):
@@ -151,7 +152,7 @@ production), and re-check on every environment's secret rotation:
 - [ ] `SENTRY_DSN` set if this environment should report errors to Sentry — optional
       (unset keeps Sentry a complete no-op, see "Error tracking / observability"
       above), but a deliberate choice per environment, not an oversight; currently
-      unset on every environment including `development`.
+      set on `development` only — still unset on staging/production.
 
 ## SSRF note (item 23)
 
