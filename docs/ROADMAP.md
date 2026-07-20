@@ -372,6 +372,14 @@ work already flagged as deferred in the sections above, not a numbered feature:
 - **gRPC and a separate Context-module worker deployment remain explicitly deferred**
   (Context module async backbone section) — only built if a concrete trigger from
   `ARCHITECTURE.md`'s "Service boundaries" appears.
+- **Security-hardening plan (helmet, CORS defaults, rate limiting, JWT-secret/Swagger/
+  source-map hardening, audit log, ops runbook)** — not one of the 7 numbered items
+  above; tracked outside this file. Code slices are merged (helmet #28, dependency
+  vulns #29, rate limiting #30, audit log #31, and config hardening — 32-char
+  `JWT_SECRET`, prod Swagger gating, source maps — #33). The operational runbook these
+  slices are
+  documented against is [`docs/security.md`](security.md); CI supply-chain hardening
+  (dependabot, `npm audit` gate) is tracked separately with the `devops` agent.
 
 ## Standing rules for every item
 

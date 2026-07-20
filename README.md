@@ -182,7 +182,7 @@ Beyond the database connection vars, auth requires:
 
 | var | required | default | notes |
 | --- | --- | --- | --- |
-| `JWT_SECRET` | yes | — | signing key for access tokens; must be a long random value outside dev |
+| `JWT_SECRET` | yes | — | signing key for access tokens; enforced at boot to be at least 32 characters (`@MinLength(32)`), and must be a unique random value per environment outside dev |
 | `JWT_EXPIRES_IN` | no | `15m` | access token lifetime |
 | `REDIS_HOST` | yes | — | Redis host for the BullMQ planning queue |
 | `REDIS_PORT` | yes | — | Redis port (`0`–`65535`) |
@@ -312,6 +312,9 @@ as secrets. Staging and production deploy targets are not yet decided.
   bounded async backbone and future extraction triggers).
 - [`docs/database-schema.md`](docs/database-schema.md) — authoritative data design
   (tables, collections, indexes, which database each entity lives in).
+- [`docs/security.md`](docs/security.md) — operational security runbook: monitoring,
+  backup/restore, the per-environment deploy security checklist, and notes on SSRF
+  and prompt-injection posture.
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — feature roadmap with per-item specs and
   current status.
 - [`docs/diagrams/`](docs/diagrams/) — diagrams authored in
