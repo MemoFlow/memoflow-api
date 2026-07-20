@@ -1,4 +1,5 @@
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import * as Sentry from '@sentry/nestjs';
 import { Job } from 'bullmq';
 import { Prompt } from '../../../domain/ai/prompt.entity';
 import { PromptRepository } from '../../../domain/ai/prompt.repository';
@@ -21,6 +22,10 @@ import {
 } from '../../../domain/context/planning-job.repository';
 import { ProcessPlanningJobUseCase } from '../../../application/context/process-planning-job.use-case';
 import { PlanningProcessor } from './planning.processor';
+
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(),
+}));
 
 /**
  * A fake that mirrors the REAL repository's atomic contracts
@@ -261,5 +266,51 @@ describe('PlanningProcessor + ProcessPlanningJobUseCase, wired exactly as produc
     } as Job<{ jobId: string; userId: string }>);
 
     expect(publisher.published).toHaveLength(1);
+  });
+});
+
+describe('PlanningProcessor Sentry capture', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('reports to Sentry exactly once on the non-throwing Failed-return branch', async () => {
+    const failedJob = makeJob({
+      status: JobStatus.Failed,
+      errorCode: 'PROCESSING_FAILED',
+      errorMessage: 'boom',
+    });
+    const useCase = {
+      execute: jest.fn().mockResolvedValue({ processed: true, job: failedJob }),
+    } as unknown as ProcessPlanningJobUseCase;
+    const eventEmitter = new EventEmitter2();
+    const emitSpy = jest.spyOn(eventEmitter, 'emit');
+    const processor = new PlanningProcessor(useCase, eventEmitter);
+
+    await processor.process({
+      data: { jobId: 'job-1', userId: 'user-1' },
+    } as Job<{ jobId: string; userId: string }>);
+
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+    expect(emitSpy).toHaveBeenCalledWith(
+      'planning.failed',
+      expect.objectContaining({ jobId: 'job-1', status: JobStatus.Failed }),
+    );
+  });
+
+  it('does NOT manually capture on the rethrow branch (BullMQ auto-instrumentation already covers it)', async () => {
+    const useCase = {
+      execute: jest.fn().mockRejectedValue(new Error('unexpected')),
+    } as unknown as ProcessPlanningJobUseCase;
+    const eventEmitter = new EventEmitter2();
+    const processor = new PlanningProcessor(useCase, eventEmitter);
+
+    await expect(
+      processor.process({
+        data: { jobId: 'job-1', userId: 'user-1' },
+      } as Job<{ jobId: string; userId: string }>),
+    ).rejects.toThrow('unexpected');
+
+    expect(Sentry.captureException).not.toHaveBeenCalled();
   });
 });

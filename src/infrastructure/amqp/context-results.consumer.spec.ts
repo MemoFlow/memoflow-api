@@ -1,4 +1,5 @@
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import * as Sentry from '@sentry/nestjs';
 import { HandleContextResultChunkUseCase } from '../../application/context/handle-context-result-chunk.use-case';
 import { JobStatus, PlanningJob } from '../../domain/context/planning-job';
 import {
@@ -6,6 +7,10 @@ import {
   parseContextResultChunk,
 } from './context-results.consumer';
 import { RabbitMqConnectionProvider } from './rabbitmq-connection.provider';
+
+jest.mock('@sentry/nestjs', () => ({
+  captureException: jest.fn(),
+}));
 
 function makeChannel() {
   return {
@@ -123,6 +128,10 @@ describe('parseContextResultChunk', () => {
 });
 
 describe('ContextResultsConsumer', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('nacks (no requeue) a malformed (non-JSON) message', async () => {
     const channel = makeChannel();
     const execute = jest.fn();
@@ -290,6 +299,8 @@ describe('ContextResultsConsumer', () => {
       result: { suggestions: ['x'] },
     });
     expect(channel.ack).toHaveBeenCalledWith(msg);
+    // A terminal, applied COMPLETED chunk is not a failure — no report.
+    expect(Sentry.captureException).not.toHaveBeenCalled();
   });
 
   it('relays planning.failed for a terminal, applied failed chunk', async () => {
@@ -337,6 +348,49 @@ describe('ContextResultsConsumer', () => {
       errorCode: 'MCP_UNAVAILABLE',
       errorMessage: 'nope',
     });
+    // `terminal: true` + a Failed job means THIS call won the finalize CAS —
+    // report exactly once.
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+  });
+
+  it('does NOT report to Sentry for a losing CAS racer (terminal: false, job already Failed)', async () => {
+    const channel = makeChannel();
+    const emitSpy = jest.fn();
+    const eventEmitter = { emit: emitSpy } as unknown as EventEmitter2;
+    // A losing racer — e.g. a gather-timeout won the CAS first — comes back
+    // as a `duplicate` outcome with `terminal: false`, even though the job
+    // itself is already `Failed`. This must not double-report.
+    const execute = jest.fn().mockResolvedValue({
+      outcome: 'duplicate',
+      job: makeJob({
+        status: JobStatus.Failed,
+        errorCode: 'CONTEXT_ENGINE_TIMEOUT',
+        errorMessage: 'timed out',
+      }),
+      terminal: false,
+    });
+    const handleChunk = {
+      execute,
+    } as unknown as HandleContextResultChunkUseCase;
+    const consumer = new ContextResultsConsumer(
+      makeConnectionProvider(channel),
+      handleChunk,
+      eventEmitter,
+    );
+
+    const msg = makeMsg({
+      schema_version: 1,
+      job_id: 'job-1',
+      user_id: 'user-1',
+      sequence: 3,
+      type: 'status',
+      status: { phase: 'failed' },
+    });
+    await (consumer as any).onMessage(msg);
+
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+    expect(emitSpy).not.toHaveBeenCalled();
+    expect(channel.ack).toHaveBeenCalledWith(msg);
   });
 
   it('requeues (nack requeue=true) on a transient use-case failure', async () => {

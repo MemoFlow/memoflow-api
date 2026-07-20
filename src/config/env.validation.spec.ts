@@ -268,3 +268,40 @@ describe('env.validation eager COMPOSIO_AUTH_CONFIG_IDS check', () => {
     ).toThrow(/Invalid COMPOSIO_AUTH_CONFIG_IDS entry/);
   });
 });
+
+describe('env.validation SENTRY_*', () => {
+  it('validates with all SENTRY_* vars absent (Sentry disabled by default)', () => {
+    const result = validate(baseConfig());
+    expect(result.SENTRY_DSN).toBeUndefined();
+    expect(result.SENTRY_ENVIRONMENT).toBeUndefined();
+    expect(result.SENTRY_TRACES_SAMPLE_RATE).toBe(0);
+    expect(result.SENTRY_RELEASE).toBeUndefined();
+  });
+
+  it('accepts a valid SENTRY_DSN, SENTRY_ENVIRONMENT, and in-range sample rate', () => {
+    const result = validate(
+      baseConfig({
+        SENTRY_DSN: 'https://public@o0.ingest.sentry.io/0',
+        SENTRY_ENVIRONMENT: 'staging',
+        SENTRY_TRACES_SAMPLE_RATE: '0.5',
+        SENTRY_RELEASE: 'memoflow-api@1.2.3',
+      }),
+    );
+    expect(result.SENTRY_DSN).toBe('https://public@o0.ingest.sentry.io/0');
+    expect(result.SENTRY_ENVIRONMENT).toBe('staging');
+    expect(result.SENTRY_TRACES_SAMPLE_RATE).toBe(0.5);
+    expect(result.SENTRY_RELEASE).toBe('memoflow-api@1.2.3');
+  });
+
+  it('rejects a SENTRY_TRACES_SAMPLE_RATE above 1', () => {
+    expect(() =>
+      validate(baseConfig({ SENTRY_TRACES_SAMPLE_RATE: '1.5' })),
+    ).toThrow(/SENTRY_TRACES_SAMPLE_RATE/);
+  });
+
+  it('rejects a negative SENTRY_TRACES_SAMPLE_RATE', () => {
+    expect(() =>
+      validate(baseConfig({ SENTRY_TRACES_SAMPLE_RATE: '-0.1' })),
+    ).toThrow(/SENTRY_TRACES_SAMPLE_RATE/);
+  });
+});
