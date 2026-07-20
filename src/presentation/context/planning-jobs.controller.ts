@@ -13,6 +13,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { GetPlanningJobUseCase } from '../../application/context/get-planning-job.use-case';
 import { SubmitPlanningJobUseCase } from '../../application/context/submit-planning-job.use-case';
 import { User } from '../../domain/users/user.entity';
@@ -31,6 +32,9 @@ export class PlanningJobsController {
     private readonly getPlanningJobUseCase: GetPlanningJobUseCase,
   ) {}
 
+  // Submitting a planning job enqueues LLM + context-engine work, so cap it
+  // tighter than the global default — 10/min per user IP.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post()
   @HttpCode(202)
   @ApiOperation({ summary: 'Submit a planning job for async processing' })

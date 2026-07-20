@@ -1,6 +1,7 @@
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
@@ -14,7 +15,15 @@ async function bootstrap() {
   // `POST /connectors/webhook` can verify Composio's HMAC signature against
   // the exact bytes Composio signed, not a re-serialized JSON.parse/stringify
   // round trip.
-  const app = await NestFactory.create(AppModule, { rawBody: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true,
+  });
+
+  // Behind Render's reverse proxy: trust the first hop so `req.ip` reflects the
+  // real client IP (from X-Forwarded-For) rather than the proxy's address. The
+  // rate limiter (ThrottlerGuard) keys on `req.ip`, so without this every
+  // client would collapse into one bucket and share a single limit.
+  app.set('trust proxy', 1);
 
   // Sets baseline security headers (X-Content-Type-Options: nosniff,
   // Strict-Transport-Security, X-Frame-Options, etc.). The Content-Security-
