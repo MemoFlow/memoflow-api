@@ -148,6 +148,20 @@ export class EnvironmentVariables {
   )
   REDIS_TLS: boolean = false;
 
+  // Global rate-limit window (milliseconds) and max requests per window —
+  // optional, permissive defaults. The tighter per-route @Throttle on the
+  // auth and AI endpoints sits under these. See
+  // src/shared/throttler/throttler.module.ts.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  THROTTLE_TTL: number = 60_000;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  THROTTLE_LIMIT: number = 100;
+
   // Dev default '*' is convenient locally but unsafe beyond it — staging and
   // production must set this explicitly to the real frontend origin.
   @IsOptional()

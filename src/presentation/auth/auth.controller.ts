@@ -1,5 +1,6 @@
 import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { LoginUserUseCase } from '../../application/auth/login-user.use-case';
 import { RegisterUserUseCase } from '../../application/users/register-user.use-case';
 import { LoginUserDto } from '../users/dto/login-user.dto';
@@ -15,6 +16,10 @@ export class AuthController {
     private readonly loginUserUseCase: LoginUserUseCase,
   ) {}
 
+  // Tight cap on unauthenticated credential endpoints to blunt brute-force /
+  // account-enumeration / signup-spam — 5 requests per minute per client IP,
+  // well under the global default throttle.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('register')
   @ApiOperation({ summary: 'Register a new user' })
   @ApiResponse({ status: 201, type: UserResponseDto })
@@ -28,6 +33,7 @@ export class AuthController {
     return UserResponseDto.fromDomain(user);
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Log in and receive a JWT access token' })

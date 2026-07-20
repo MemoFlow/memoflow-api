@@ -13,6 +13,7 @@ import { DocumentVersionsModule } from './document-versions.module';
 import { DocumentsModule } from './documents.module';
 import { GamificationModule } from './gamification.module';
 import { HealthModule } from './shared/health/health.module';
+import { AppThrottlerModule } from './shared/throttler/throttler.module';
 import { TemplatesModule } from './templates.module';
 import { UsersModule } from './users.module';
 
@@ -20,6 +21,7 @@ import { UsersModule } from './users.module';
   imports: [
     ConfigModule.forRoot({ validate, isGlobal: true }),
     EventEmitterModule.forRoot(),
+    AppThrottlerModule,
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({

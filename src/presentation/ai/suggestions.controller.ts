@@ -14,6 +14,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { GenerateSuggestionUseCase } from '../../application/ai/generate-suggestion.use-case';
 import { ListSuggestionsUseCase } from '../../application/ai/list-suggestions.use-case';
 import { User } from '../../domain/users/user.entity';
@@ -32,6 +33,9 @@ export class SuggestionsController {
     private readonly listSuggestionsUseCase: ListSuggestionsUseCase,
   ) {}
 
+  // Generating a suggestion calls the LLM provider (cost + provider rate
+  // limits), so cap it tighter than the global default — 10/min per user IP.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post()
   @HttpCode(201)
   @ApiOperation({ summary: 'Generate an AI suggestion for a section' })
