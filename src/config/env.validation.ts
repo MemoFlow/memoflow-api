@@ -154,6 +154,13 @@ export class EnvironmentVariables {
   @IsString()
   WS_CORS_ORIGIN: string = '*';
 
+  // REST API CORS. Dev default '*' is convenient locally but unsafe beyond it —
+  // staging and production must set the real frontend origin explicitly
+  // (mirrors WS_CORS_ORIGIN).
+  @IsOptional()
+  @IsString()
+  CORS_ORIGIN: string = '*';
+
   @IsString()
   @IsNotEmpty()
   COMPOSIO_API_KEY: string;

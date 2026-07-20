@@ -42,6 +42,13 @@ async function bootstrap() {
   );
 
   const config = app.get(ConfigService);
+
+  // Auth is a Bearer token in the Authorization header, not cookies, so this
+  // never needs `credentials: true` — and must not set it, since browsers
+  // reject `credentials: true` combined with an `origin: '*'` response
+  // (which is CORS_ORIGIN's dev default). Mirrors WS_CORS_ORIGIN's pattern.
+  app.enableCors({ origin: config.getOrThrow<string>('CORS_ORIGIN') });
+
   await app.listen(config.getOrThrow<number>('PORT'));
 }
 void bootstrap();
