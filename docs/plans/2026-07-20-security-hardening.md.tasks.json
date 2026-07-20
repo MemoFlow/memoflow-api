@@ -82,7 +82,7 @@
     {
       "id": 6,
       "subject": "Slice 6: Ops runbook + supply-chain CI",
-      "status": "in_progress",
+      "status": "completed",
       "blockedBy": [
         2,
         5,
@@ -99,12 +99,12 @@
         27
       ],
       "description": "**Goal:** Operational security runbook + supply-chain CI.\n**Steps:** docs/security.md (docs-maintainer): monitoring/alerting (5xx rate, auth.login_failed spikes from audit log, throttle 429s, deploy update_failed; Render/Atlas/Upstash/CloudAMQP dashboards); backup/restore (Render Postgres PITR, Atlas M0 posture + restore drill, M0 backup limits); deploy security checklist (explicit CORS_ORIGIN/WS_CORS_ORIGIN per env not '*', 32+ char unique JWT_SECRET per env, all COMPOSIO_*/RABBITMQ_URL preset before first deploy per 2026-07 outage, DB least-privilege role no SUPERUSER/DDL); SSRF note (CONTEXT_ENGINE_URL operator-set never user-supplied); prompt-injection note (verify Anthropic calls keep user content in user role not concatenated into system prompt, LLM output persisted as data never executed — spot-check anthropic-suggestion-generator.ts / anthropic-llm-planner.ts, fold small fix in if violated). .github (devops): dependabot.yml weekly npm; npm audit --audit-level=high step in ci.yml.\n**Acceptance:** runbook covers 43,44,23,39,7,41,27; dependabot + audit CI live.\n**Verify:** actionlint on ci.yml; render runbook.\n**Reviewers:** docs-maintainer, devops, tooling-reviewer. Depends on Slice 5 (references audit log) + Slice 2 (references 429s) → last.",
-      "pr": "#34 (pending)",
-      "merged": false,
+      "pr": "#34",
+      "merged": true,
       "note": "Docs assert Slice 3 controls (JWT MinLength, Swagger prod-gate, source maps) — must merge AFTER #33 so claims are true; rebase on development post-#33."
     }
   ],
-  "lastUpdated": "2026-07-20T11:39:34.890Z",
+  "lastUpdated": "2026-07-20T11:52:27.201Z",
   "extraWork": [
     {
       "branch": "bugfix/rabbitmq-e2e-flake",
