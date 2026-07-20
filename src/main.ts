@@ -1,3 +1,7 @@
+// Must be the very first import: @sentry/nestjs's auto-instrumentation
+// needs Sentry.init() to run before AppModule (and the http/pg/mongo/redis
+// libs it pulls in) load.
+import './instrument';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';

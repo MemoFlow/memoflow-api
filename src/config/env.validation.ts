@@ -4,6 +4,7 @@ import {
   IsIn,
   IsInt,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsString,
   Max,
@@ -265,6 +266,35 @@ export class EnvironmentVariables {
   @IsInt()
   @Min(1)
   CONTEXT_GATHER_TIMEOUT_MS: number = 120_000;
+
+  // Error-tracking (Sentry), roadmap-independent infra plumbing. Mirrors the
+  // ANTHROPIC_API_KEY convention: deliberately OPTIONAL, and its absence is
+  // the master switch — `src/instrument.ts` only calls `Sentry.init()` when
+  // SENTRY_DSN is set, so start:dev/unit tests/e2e/smoke all keep working
+  // with zero Sentry config. One Sentry project; SENTRY_ENVIRONMENT (falling
+  // back to NODE_ENV) tags which deploy environment an event came from
+  // rather than splitting into separate projects.
+  @IsOptional()
+  @IsString()
+  SENTRY_DSN?: string;
+
+  @IsOptional()
+  @IsString()
+  SENTRY_ENVIRONMENT?: string;
+
+  // Errors-only for this slice — 0 sends no performance/tracing data.
+  // Bounded to [0, 1] since it's read by the SDK as a sampling probability.
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  SENTRY_TRACES_SAMPLE_RATE: number = 0;
+
+  // Deferred: the var exists so it can be wired up later (e.g. from CI/CD
+  // with the deployed commit SHA), but nothing populates it this slice.
+  @IsOptional()
+  @IsString()
+  SENTRY_RELEASE?: string;
 }
 
 export function validate(
