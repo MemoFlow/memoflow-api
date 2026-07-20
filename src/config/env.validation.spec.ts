@@ -78,6 +78,26 @@ describe('env.validation REDIS_*', () => {
     expect(result.CORS_ORIGIN).toBe('https://app.memoflow.dev');
   });
 
+  it('defaults THROTTLE_TTL and THROTTLE_LIMIT', () => {
+    const result = validate(baseConfig());
+    expect(result.THROTTLE_TTL).toBe(60_000);
+    expect(result.THROTTLE_LIMIT).toBe(100);
+  });
+
+  it('accepts explicit THROTTLE_TTL and THROTTLE_LIMIT', () => {
+    const result = validate(
+      baseConfig({ THROTTLE_TTL: '30000', THROTTLE_LIMIT: '20' }),
+    );
+    expect(result.THROTTLE_TTL).toBe(30_000);
+    expect(result.THROTTLE_LIMIT).toBe(20);
+  });
+
+  it('rejects a THROTTLE_LIMIT below 1', () => {
+    expect(() => validate(baseConfig({ THROTTLE_LIMIT: '0' }))).toThrow(
+      /THROTTLE_LIMIT/,
+    );
+  });
+
   it('rejects an out-of-range REDIS_PORT', () => {
     expect(() => validate(baseConfig({ REDIS_PORT: '70000' }))).toThrow(
       /REDIS_PORT/,
