@@ -37,6 +37,12 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Repo is currently at 0 known vulnerabilities; fail the build on
+      # high/critical findings so it stays that way. Moderate/low are left
+      # to Dependabot (.github/dependabot.yml) rather than blocking PRs.
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
   build:
     name: Build
     needs: lint
