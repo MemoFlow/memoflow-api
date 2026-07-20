@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
+import * as Sentry from '@sentry/nestjs';
 import { HandleGamificationEventUseCase } from '../../application/gamification/handle-gamification-event.use-case';
 import type { GamificationEventPayload } from '../../application/gamification/gamification-event';
 import {
@@ -58,6 +59,9 @@ export class GamificationListener {
       this.logger.error(
         `Gamification handling failed for '${event}' (userId=${payload.userId}, documentId=${payload.documentId}): ${message}`,
       );
+      // Swallowed here so the originating request never fails, but
+      // swallowed must not mean invisible — report it to Sentry.
+      Sentry.captureException(err);
     }
   }
 }

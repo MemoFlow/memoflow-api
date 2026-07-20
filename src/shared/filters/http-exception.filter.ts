@@ -6,6 +6,7 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
+import * as Sentry from '@sentry/nestjs';
 import { Request, Response } from 'express';
 
 interface ErrorBody {
@@ -45,6 +46,11 @@ export class HttpExceptionFilter implements ExceptionFilter {
       this.logger.error(
         exception instanceof Error ? exception.stack : String(exception),
       );
+      // Only unexpected 500s are reported to Sentry — 4xx HttpExceptions
+      // (the `if` branch above) are expected control flow, not incidents.
+      // Sentry.captureException is a module-level singleton, so this works
+      // fine even though the filter is constructed with `new`, not DI.
+      Sentry.captureException(exception);
     }
 
     const payload: ErrorBody = {
