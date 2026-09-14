@@ -4,45 +4,54 @@
     {
       "id": 1,
       "subject": "Switch render.yaml to external Postgres (drop managed DB)",
-      "status": "in_progress",
+      "status": "completed",
       "blockedBy": [],
       "description": "**Goal:** render.yaml no longer references expired managed PG.\n**Files:** render.yaml\n**Steps:** branch bugfix/dev-pg-neon off development; remove `databases:` block; replace `fromDatabase` POSTGRES_* entries with `sync: false` secrets; add `POSTGRES_SSL` value \"true\" literal (Neon TLS-only, same pattern as REDIS_TLS); update header comments.\n**Acceptance Criteria:** yaml valid; reviewers APPROVE; PR to development.\n**Verify:** code-reviewer + api-reviewer APPROVE; /commit\n```json:metadata\n{\"files\": [\"render.yaml\"], \"verifyCommand\": \"git diff development -- render.yaml\", \"acceptanceCriteria\": [\"databases: block removed\", \"POSTGRES_* sync:false\", \"POSTGRES_SSL true literal\"], \"modelTier\": \"mechanical\"}\n```"
     },
     {
       "id": 2,
       "subject": "Provision Neon free Postgres + collect connection values",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [],
       "description": "**Goal:** Replace expired Render free PG with Neon free tier.\n**Files:** none (user dashboard action)\n**Steps:** neon.tech → create project (AWS us-west-2) → paste back POSTGRES_HOST (direct endpoint, NOT -pooler) / PORT / USER / PASSWORD / DB.\n**Acceptance Criteria:** all five values provided.\n**Verify:** TLS connection test succeeds.\n```json:metadata\n{\"files\": [], \"verifyCommand\": \"psql TLS connect select 1\", \"acceptanceCriteria\": [\"Neon project exists\", \"5 connection values provided\"], \"modelTier\": \"mechanical\"}\n```"
     },
     {
       "id": 3,
       "subject": "Resume Atlas M0 cluster + verify Upstash Redis alive",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [],
       "description": "**Goal:** Un-pause idle free-tier dependencies.\n**Files:** none (user dashboard action)\n**Steps:** Atlas → resume paused M0 (data intact). Upstash → confirm Redis DB exists; if deleted, recreate + report new REDIS_HOST/PORT/PASSWORD.\n**Acceptance Criteria:** Atlas active; Upstash present or recreated.\n**Verify:** user confirms dashboard states.\n```json:metadata\n{\"files\": [], \"verifyCommand\": \"user-confirmed dashboard state\", \"acceptanceCriteria\": [\"Atlas M0 resumed\", \"Upstash Redis reachable\"], \"modelTier\": \"mechanical\"}\n```"
     },
     {
       "id": 4,
       "subject": "Update GitHub `development` environment secrets POSTGRES_*",
-      "status": "pending",
-      "blockedBy": [2],
+      "status": "completed",
+      "blockedBy": [
+        2
+      ],
       "description": "**Goal:** CI migration step reaches Neon.\n**Files:** none (gh CLI)\n**Steps:** `gh secret set POSTGRES_HOST -e development` + PORT/USER/PASSWORD/DB. POSTGRES_SSL already \"true\" in deploy-dev.yml.\n**Acceptance Criteria:** 5 secrets updated in development environment.\n**Verify:** `gh secret list -e development` fresh timestamps.\n```json:metadata\n{\"files\": [], \"verifyCommand\": \"gh secret list -e development\", \"acceptanceCriteria\": [\"POSTGRES_HOST/PORT/USER/PASSWORD/DB updated\"], \"modelTier\": \"mechanical\"}\n```"
     },
     {
       "id": 5,
       "subject": "Set Render dashboard POSTGRES_* env vars on memoflow-dev-api",
-      "status": "pending",
-      "blockedBy": [2],
+      "status": "completed",
+      "blockedBy": [
+        2
+      ],
       "description": "**Goal:** Deployed app reaches Neon.\n**Files:** none (user dashboard action)\n**Steps:** Render → memoflow-dev-api → Environment: POSTGRES_HOST/PORT/USER/PASSWORD/DB = Neon values (pooled endpoint OK for app). POSTGRES_SSL=true arrives via render.yaml literal. Optional: set ANTHROPIC_API_KEY.\n**Acceptance Criteria:** env vars saved on service.\n**Verify:** user confirms.\n```json:metadata\n{\"files\": [], \"verifyCommand\": \"user-confirmed Render env vars\", \"acceptanceCriteria\": [\"POSTGRES_* set on memoflow-dev-api\"], \"modelTier\": \"mechanical\"}\n```"
     },
     {
       "id": 6,
       "subject": "Merge PR, deploy, verify health, reseed, sync docs and memory",
       "status": "pending",
-      "blockedBy": [1, 3, 4, 5],
+      "blockedBy": [
+        1,
+        3,
+        4,
+        5
+      ],
       "description": "**Goal:** Dev tier green end-to-end.\n**Files:** docs/ROADMAP.md, memory project_dev_deploy_config_state.md\n**Steps:** merge PR → deploy-dev.yml (migrate empty Neon DB → hook → smoke) → curl /health 200 → optional seed → docs-maintainer ROADMAP item 0 (expiry incident + Neon switch) → memory update.\n**Acceptance Criteria:** deploy green incl. smoke; /health 200; docs+memory updated.\n**Verify:** gh run watch + curl health.\n```json:metadata\n{\"files\": [\"docs/ROADMAP.md\"], \"verifyCommand\": \"curl -sS https://memoflow-dev-api.onrender.com/health\", \"acceptanceCriteria\": [\"deploy green\", \"/health 200\", \"ROADMAP + memory updated\"], \"modelTier\": \"standard\"}\n```"
     }
   ],
-  "lastUpdated": "2026-09-14T12:00:00Z"
+  "lastUpdated": "2026-09-14T13:05:00Z"
 }
