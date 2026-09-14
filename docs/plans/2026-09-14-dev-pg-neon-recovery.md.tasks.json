@@ -43,7 +43,7 @@
     {
       "id": 6,
       "subject": "Merge PR, deploy, verify health, reseed, sync docs and memory",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         1,
         3,
@@ -53,5 +53,5 @@
       "description": "**Goal:** Dev tier green end-to-end.\n**Files:** docs/ROADMAP.md, memory project_dev_deploy_config_state.md\n**Steps:** merge PR → deploy-dev.yml (migrate empty Neon DB → hook → smoke) → curl /health 200 → optional seed → docs-maintainer ROADMAP item 0 (expiry incident + Neon switch) → memory update.\n**Acceptance Criteria:** deploy green incl. smoke; /health 200; docs+memory updated.\n**Verify:** gh run watch + curl health.\n```json:metadata\n{\"files\": [\"docs/ROADMAP.md\"], \"verifyCommand\": \"curl -sS https://memoflow-dev-api.onrender.com/health\", \"acceptanceCriteria\": [\"deploy green\", \"/health 200\", \"ROADMAP + memory updated\"], \"modelTier\": \"standard\"}\n```"
     }
   ],
-  "lastUpdated": "2026-09-14T13:05:00Z"
+  "lastUpdated": "2026-09-14T14:45:00Z"
 }
