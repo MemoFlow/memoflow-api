@@ -36,12 +36,16 @@ Legend: ✅ done · ◐ in progress · ☐ not started
   (ubuntu runners have Docker, so it genuinely runs).
 - ✅ `deploy-dev.yml`: migrate → trigger Render deploy hook → smoke-check, gated by
   the GitHub Environment `development`. Deploy target for dev is **Render**
-  (`render.yaml` blueprint for the web service + managed Postgres); dev MongoDB is
-  external **MongoDB Atlas (free M0 tier)** since Render has no managed MongoDB —
-  its connection string is set manually as the `MONGODB_URI` secret. Now that the
-  BullMQ/WebSocket backbone runs in the deployed dev tier, dev Redis is likewise
-  external — **Upstash free tier**, TLS-only (`REDIS_TLS=true`) — with
-  `REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD` set manually as secrets.
+  (`render.yaml` blueprint for the web service only — Render hosts no datastore for
+  this tier); dev MongoDB is external **MongoDB Atlas (free M0 tier)** since Render
+  has no managed MongoDB — its connection string is set manually as the
+  `MONGODB_URI` secret. Now that the BullMQ/WebSocket backbone runs in the deployed
+  dev tier, dev Redis is likewise external — **Upstash free tier**, TLS-only
+  (`REDIS_TLS=true`) — with `REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD` set manually
+  as secrets. Dev Postgres is external too — **Neon free tier**, TLS-only
+  (`POSTGRES_SSL=true`) — with `POSTGRES_HOST`/`POSTGRES_PORT`/`POSTGRES_USER`/
+  `POSTGRES_PASSWORD`/`POSTGRES_DB` set manually as secrets (see the 2026-09 incident
+  note below for why this replaced Render's own managed Postgres).
 - ✅ `deploy-dev.yml` hardened (PR #25): `jq` parses of Render API responses are now
   guarded so a non-JSON response body can't fail the job after the deploy hook has
   already fired; curl failures still fast-fail; response logging is redacted.
@@ -51,6 +55,16 @@ Legend: ✅ done · ◐ in progress · ☐ not started
   process stayed live) until this was caught and the secrets were set 2026-07-19.
   Deploys have been green since. `RABBITMQ_URL` is also now set on the dev service
   (see the Context module async backbone section below).
+- **Incident, fixed 2026-09-14:** Render's own managed free-tier Postgres for the
+  `development` tier **expired** (Render free-plan databases live ~30 days) sometime
+  around 2026-08→2026-09, silently crash-looping the dev API at boot (TypeORM
+  couldn't connect, so no HTTP listener) for weeks until it was noticed on
+  2026-09-14. Dev Postgres data was lost with the expired database — considered
+  disposable and reseedable via `scripts/seed.ts`. Fix: dropped the managed-Postgres
+  blueprint from `render.yaml` entirely and moved dev Postgres to **Neon free tier**
+  (external, non-expiring, TLS-only), the same external-secret pattern already used
+  for Atlas and Upstash above. Lesson: Render's free-plan Postgres expires after
+  ~30 days — don't use it for anything meant to persist.
 - ☐ Staging and production deploy workflows/targets remain **undecided** — land
   once the user picks hosting for those tiers; don't invent infrastructure. Whenever
   they do land, both services will need `COMPOSIO_*` and `RABBITMQ_URL` set before
@@ -354,8 +368,9 @@ All 7 numbered roadmap items are now ✅ done. What's left is infrastructure/tra
 work already flagged as deferred in the sections above, not a numbered feature:
 
 - **Staging and production deploy targets are undecided** (item 0) — only the `development`
-  tier deploys today (Render + MongoDB Atlas + Upstash Redis). Land staging/production
-  workflows once the user picks hosting for those tiers; don't invent infrastructure.
+  tier deploys today (Render web service + MongoDB Atlas + Upstash Redis + Neon
+  Postgres, all datastores external to Render). Land staging/production workflows
+  once the user picks hosting for those tiers; don't invent infrastructure.
 - **RabbitMQ context-engine transport is live on `development`, verified
   end-to-end 2026-07-20** (see the Context module async backbone section and
   `docs/contracts/context-engine.md`) — `RABBITMQ_URL` is set on the dev Render
