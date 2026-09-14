@@ -10,7 +10,9 @@
 > `ContextEngineHttpClient`/stub path active — no broker required to boot. Staging
 > and production still need their own `RABBITMQ_URL` provisioned before their first
 > deploys.
-> **Audience:** the context-engine (n8n) team and the MemoFlow frontend team.
+> **Audience:** the context-engine team (today an n8n-hosted implementation, planned
+> to become a standalone API service — this contract is the spec that service is
+> built against) and the MemoFlow frontend team.
 > **Machine-readable schemas:** [`context-request.schema.json`](./context-request.schema.json),
 > [`context-result.schema.json`](./context-result.schema.json).
 
