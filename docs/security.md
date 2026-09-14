@@ -20,6 +20,7 @@ security-hardening plan's ops items (43, 44, 23, 39, 7, 41, 27).
 Dashboards in use today (all manual, no alerts configured):
 
 - **Render** — service metrics, request logs, deploy history.
+- **Neon** (Postgres) — connection count, storage, branch/compute activity.
 - **MongoDB Atlas** — cluster metrics (`document_versions`, `planning_jobs`).
 - **Upstash** (Redis) — command throughput, memory, connection count.
 - **CloudAMQP / LavinMQ** — queue depth, consumer count, message rates for
@@ -90,19 +91,23 @@ collections (`document_versions`, `planning_jobs`); both are derived/append-most
 data, not the sole source of truth for anything a user typed into a document (that's
 the PG `sections` table).
 
-**PostgreSQL (Render managed, dev tier today):**
+**PostgreSQL (Neon free tier, dev tier today):**
 
-- Render's managed Postgres includes automatic daily backups and point-in-time
-  recovery (PITR) on paid plans; confirm the plan tier before relying on PITR — the
-  dev database is currently the **free** plan, which has materially weaker backup
-  guarantees than a paid plan. Re-check this before staging/production go live.
+- Dev Postgres moved from a Render-managed free database to **Neon free tier** in
+  2026-09, after the Render one silently **expired** (Render free-plan databases
+  live ~30 days) and crash-looped the dev API for weeks — see `docs/ROADMAP.md`,
+  "0. CI/CD bootstrap", the 2026-09-14 incident note. Neon does not expire, but
+  confirm the current point-in-time-restore retention window for the free plan in
+  the Neon dashboard before relying on it — free-tier retention is shorter than
+  paid, and treat dev Postgres data as **disposable regardless**: it is reseedable
+  via `scripts/seed.ts`, and the 2026-09 incident's data loss makes a full reseed
+  part of its recovery. Re-check backup guarantees before staging/production go live.
 - Restore-drill outline (do this at least once before production, not for the first
   time during an incident):
-  1. Spin up a scratch Render Postgres instance (or restore-in-place if the plan
-     supports it).
-  2. Restore the latest backup / PITR snapshot into it.
-  3. Run `npm run migration:show` against the restored instance to confirm the
-     migration history matches what's expected.
+  1. Create a Neon branch (or restore point) from the desired recovery point.
+  2. Point `POSTGRES_*` at the restored branch's connection details.
+  3. Run `npm run migration:show` against it to confirm the migration history
+     matches what's expected.
   4. Point a throwaway app instance at it and hit `/health` + a read endpoint
      (`GET /users/me` with a known token) to confirm data integrity.
   5. Record how long the drill took — that's your RTO estimate.
@@ -146,9 +151,10 @@ production), and re-check on every environment's secret rotation:
       the schema's DDL (items 7, 41) — migrations (`npm run migration:run`) should run
       under a separate, more-privileged role at deploy time, while the runtime app
       connects with a least-privilege role (read/write DML on its own tables only).
-      **Not yet true for the `development` tier** — Render's managed Postgres
-      provisions a single owner role today, so this is currently a gap to close
-      before staging/production, not a solved problem to just document.
+      **Not yet true for the `development` tier** — Neon (like Render's managed
+      Postgres before it) provisions a single owner role by default today, so this
+      is currently a gap to close before staging/production, not a solved problem
+      to just document.
 - [ ] `SENTRY_DSN` set if this environment should report errors to Sentry — optional
       (unset keeps Sentry a complete no-op, see "Error tracking / observability"
       above), but a deliberate choice per environment, not an oversight; currently

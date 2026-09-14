@@ -302,12 +302,17 @@ If either is unset, `notify-review.yml` soft-skips (a `::warning::`, no failure)
 it never blocks the PR.
 
 The `development` tier deploys to **Render** (see [`render.yaml`](render.yaml) for the
-web service + managed Postgres blueprint). Render has no managed MongoDB, so dev
-MongoDB is an external **MongoDB Atlas M0 (free tier)** instance, with its connection
-string set manually as the `MONGODB_URI` secret. Render also has no managed free
-Redis, so dev Redis is likewise external — **Upstash free tier**, TLS-only
-(`REDIS_TLS=true`) — with `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD` set manually
-as secrets. Staging and production deploy targets are not yet decided.
+web service blueprint) — Render only hosts the web service now; every datastore is
+external. Dev MongoDB is an external **MongoDB Atlas M0 (free tier)** instance, with
+its connection string set manually as the `MONGODB_URI` secret. Dev Redis is
+external — **Upstash free tier**, TLS-only (`REDIS_TLS=true`) — with `REDIS_HOST` /
+`REDIS_PORT` / `REDIS_PASSWORD` set manually as secrets. Dev Postgres is external
+too, as of 2026-09 — **Neon free tier**, TLS-only (`POSTGRES_SSL=true`) — with
+`POSTGRES_HOST` / `POSTGRES_PORT` / `POSTGRES_USER` / `POSTGRES_PASSWORD` /
+`POSTGRES_DB` set manually as secrets; Render's own managed free Postgres was used
+originally but **expired** (Render free-plan databases live ~30 days) and crash-looped
+the dev API for weeks — see [`docs/ROADMAP.md`](docs/ROADMAP.md), "0. CI/CD bootstrap"
+incident note. Staging and production deploy targets are not yet decided.
 
 ## Documentation
 
