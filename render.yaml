@@ -2,8 +2,8 @@
 # production hosts are undecided — do not extend this file to those tiers
 # without a corresponding CLAUDE.md update.
 #
-# This blueprint documents the shape of the dev web service and its managed
-# Postgres for reference / first-time provisioning. The GitHub Actions
+# This blueprint documents the shape of the dev web service for reference /
+# first-time provisioning. The GitHub Actions
 # deploy workflow (.github/workflows/deploy-dev.yml) drives actual deploys
 # via a Render Deploy Hook so migrations run before rollout and a smoke
 # check gates success — it does not rely on Render's git auto-deploy.
@@ -16,11 +16,12 @@
 # offering. The dev Redis (BullMQ queue) is external (Upstash, free tier)
 # and TLS-only; its connection fields are set manually as sync:false
 # secrets below.
-databases:
-  - name: memoflow-dev-postgres
-    databaseName: memoflow_dev
-    region: oregon
-    plan: free
+#
+# Postgres is ALSO external as of 2026-09: the original Render-managed free
+# Postgres expired (free-plan databases live ~30 days) and took the dev tier
+# down. The dev Postgres is now Neon (free tier, non-expiring) and TLS-only;
+# its connection fields are set manually as sync:false secrets below,
+# mirroring the Atlas/Upstash pattern.
 
 services:
   - type: web
@@ -94,24 +95,19 @@ services:
       - key: RABBITMQ_URL
         sync: false
 
-      # Postgres connection fields sourced from the managed database above.
+      # Postgres is external (Neon free tier) — set manually in the Render
+      # dashboard, not derived from a Render-managed database. Neon is
+      # TLS-only, so POSTGRES_SSL is a plain (non-secret) literal, mirroring
+      # REDIS_TLS above.
       - key: POSTGRES_HOST
-        fromDatabase:
-          name: memoflow-dev-postgres
-          property: host
+        sync: false
       - key: POSTGRES_PORT
-        fromDatabase:
-          name: memoflow-dev-postgres
-          property: port
+        sync: false
       - key: POSTGRES_USER
-        fromDatabase:
-          name: memoflow-dev-postgres
-          property: user
+        sync: false
       - key: POSTGRES_PASSWORD
-        fromDatabase:
-          name: memoflow-dev-postgres
-          property: password
+        sync: false
       - key: POSTGRES_DB
-        fromDatabase:
-          name: memoflow-dev-postgres
-          property: database
+        sync: false
+      - key: POSTGRES_SSL
+        value: "true"

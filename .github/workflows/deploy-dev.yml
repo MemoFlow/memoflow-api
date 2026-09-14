@@ -37,9 +37,9 @@ jobs:
         run: npm run build
 
       # Item 0 deploy order: migrate -> deploy -> smoke. Migrations run
-      # from this runner against the Render-managed dev Postgres, before
-      # the new build is rolled out, so the running app version never
-      # sees a schema it doesn't expect.
+      # from this runner against the external dev Postgres (Neon free
+      # tier), before the new build is rolled out, so the running app
+      # version never sees a schema it doesn't expect.
       - name: Run database migrations
         env:
           NODE_ENV: development
@@ -48,13 +48,12 @@ jobs:
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
-          # This runner reaches the Render-managed dev Postgres over its
-          # *external* connection, which requires TLS; parsePostgresSsl()
-          # defaults to false when POSTGRES_SSL is unset, so it must be set
-          # here explicitly. The deployed app itself talks to the same
-          # database over Render's *internal* network (see the
-          # `fromDatabase` host in render.yaml), which does not require SSL
-          # and is configured separately there.
+          # Both this runner and the deployed app reach the external Neon
+          # dev Postgres over the public internet, and Neon is TLS-only;
+          # parsePostgresSsl() defaults to false when POSTGRES_SSL is
+          # unset, so it must be set explicitly in both places — here for
+          # the migration run, and via the POSTGRES_SSL "true" literal in
+          # render.yaml for the app.
           POSTGRES_SSL: "true"
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
