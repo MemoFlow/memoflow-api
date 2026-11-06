@@ -1,5 +1,26 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { AI_NOTICE_VERSION } from '../../../domain/ai/ai-consent';
 import { User } from '../../../domain/users/user.entity';
+
+export class AiConsentDto {
+  @ApiProperty({ type: String, format: 'date-time', nullable: true })
+  accepted_at: Date | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'The notice version consented to',
+  })
+  version: string | null;
+
+  @ApiProperty({ description: 'The current AI notice version' })
+  current_version: string;
+
+  @ApiProperty({
+    description: 'True when consent is missing or for an older notice version',
+  })
+  required: boolean;
+}
 
 /**
  * Response DTO for `users` — never includes `password_hash`.
@@ -38,9 +59,19 @@ export class UserResponseDto {
   })
   disabled_at?: Date | null;
 
+  @ApiProperty({
+    type: AiConsentDto,
+    required: false,
+    description:
+      "AI consent state. Present only in a user's own view, never for another viewer (even an admin)",
+  })
+  ai_consent?: AiConsentDto;
+
   /**
    * `disabled_at` is included only when the viewer is an admin. Omit
    * `viewer` for contexts (e.g. registration) that never expose it.
+   * `ai_consent` is included for the account's own view only: when `viewer`
+   * is omitted (the `/users/me` route) or is the same user.
    */
   static fromDomain(user: User, viewer?: User): UserResponseDto {
     const dto = new UserResponseDto();
@@ -52,6 +83,14 @@ export class UserResponseDto {
     dto.xp = user.xp;
     dto.level = user.level;
     dto.last_active_at = user.lastActiveAt;
+    if (!viewer || viewer.id === user.id) {
+      dto.ai_consent = {
+        accepted_at: user.aiConsentAt,
+        version: user.aiConsentVersion,
+        current_version: AI_NOTICE_VERSION,
+        required: !user.hasCurrentAiConsent,
+      };
+    }
     if (viewer?.isAdmin) {
       dto.disabled_at = user.disabledAt;
     }

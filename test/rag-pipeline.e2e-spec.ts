@@ -11,6 +11,7 @@ import type {
 } from './../src/domain/ai/llm-gateway.port';
 import type { PlanningJobRepository } from './../src/domain/context/planning-job.repository';
 import type { HandleContextResultChunkUseCase } from './../src/application/context/handle-context-result-chunk.use-case';
+import { acceptAiConsent } from './utils/ai-consent';
 import { startMongoMemory, MongoTestEnv } from './utils/mongo-memory';
 import {
   describeWithDocker,
@@ -152,6 +153,7 @@ describeWithDocker()('RAG pipeline (e2e)', () => {
       .send({ email: payload.email, password: payload.password })
       .expect(200);
     const token = login.body.accessToken as string;
+    await acceptAiConsent(app, token);
     const me = await request(app.getHttpServer())
       .get('/users/me')
       .set('Authorization', `Bearer ${token}`)

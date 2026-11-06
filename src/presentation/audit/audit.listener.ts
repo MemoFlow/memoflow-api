@@ -21,6 +21,14 @@ import {
   TEMPLATE_UPDATED_EVENT,
 } from '../../domain/audit/audit-events';
 import {
+  AI_CONSENT_ACCEPTED_EVENT,
+  AI_CONSENT_WITHDRAWN_EVENT,
+} from '../../domain/ai/ai-consent';
+import type {
+  AiConsentAcceptedEventPayload,
+  AiConsentWithdrawnEventPayload,
+} from '../../domain/ai/ai-consent';
+import {
   USER_DISABLED_EVENT,
   USER_ENABLED_EVENT,
 } from '../../domain/users/user-events';
@@ -202,6 +210,22 @@ export class AuditListener {
     await this.safeRecord(USER_ENABLED_EVENT, payload.actorId, {
       targetUserId: payload.userId,
     });
+  }
+
+  @OnEvent(AI_CONSENT_ACCEPTED_EVENT)
+  async onAiConsentAccepted(
+    payload: AiConsentAcceptedEventPayload,
+  ): Promise<void> {
+    await this.safeRecord(AI_CONSENT_ACCEPTED_EVENT, payload.userId, {
+      version: payload.version,
+    });
+  }
+
+  @OnEvent(AI_CONSENT_WITHDRAWN_EVENT)
+  async onAiConsentWithdrawn(
+    payload: AiConsentWithdrawnEventPayload,
+  ): Promise<void> {
+    await this.safeRecord(AI_CONSENT_WITHDRAWN_EVENT, payload.userId, null);
   }
 
   private async recordTemplate(

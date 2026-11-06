@@ -1,3 +1,5 @@
+import { AI_CONSENT_REQUIRED_MESSAGE } from '../ai/ai-consent';
+
 /**
  * Typed planning failures with FIXED messages. They are safe to record on a
  * job (clients read `error_message`); anything else a planning job throws is
@@ -30,5 +32,13 @@ export class JobUserInactiveError extends Error {
   constructor(message = 'The account that submitted this job is not active') {
     super(message);
     this.name = 'JobUserInactiveError';
+  }
+}
+
+/** The job's user withdrew (or never gave) AI consent before the job ran. */
+export class JobConsentRequiredError extends Error {
+  constructor(message = AI_CONSENT_REQUIRED_MESSAGE) {
+    super(message);
+    this.name = 'JobConsentRequiredError';
   }
 }

@@ -144,6 +144,9 @@ export class ProcessPlanningJobUseCase {
       // still records it.
       const prepared = await this.planningPipeline.prepare(claimed, gathered);
       context = prepared.contextUsed;
+      // The user may have withdrawn consent while gathering or retrieving:
+      // check again right before the provider call.
+      await assertJobUserActive(this.userRepository, claimed.userId);
       result = await this.planningPipeline.plan(
         resolvedPrompt,
         claimed,

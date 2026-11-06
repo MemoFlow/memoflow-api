@@ -16,6 +16,7 @@ import {
   userQuotaKey,
   utcDay,
 } from './../src/infrastructure/ai/redis-ai-quota';
+import { acceptAiConsent } from './utils/ai-consent';
 import { startMongoMemory, MongoTestEnv } from './utils/mongo-memory';
 import {
   describeWithDocker,
@@ -133,6 +134,7 @@ describeWithDocker()('AI quota and caching (e2e)', () => {
       .send({ email: payload.email, password: payload.password })
       .expect(200);
     const token = login.body.accessToken as string;
+    await acceptAiConsent(app, token);
     const me = await request(app.getHttpServer())
       .get('/users/me')
       .set('Authorization', `Bearer ${token}`)

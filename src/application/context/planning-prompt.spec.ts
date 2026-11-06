@@ -14,6 +14,7 @@ import type {
   PlanningResult,
 } from '../../domain/context/llm-planner.port';
 import {
+  JobConsentRequiredError,
   JobUserInactiveError,
   PlanningOutputInvalidError,
   PlanningOutputRejectedError,
@@ -23,6 +24,7 @@ import {
   renderPlanningPrompt,
   resolvePlanningPrompt,
   failureErrorCode,
+  isExpectedFailureCode,
   safeFailureMessage,
 } from './planning-prompt';
 import type { GuardedPlanRequest } from './planning-prompt';
@@ -254,5 +256,20 @@ describe('failureErrorCode', () => {
     );
     expect(failureErrorCode(new Error('x'))).toBe('PROCESSING_FAILED');
     expect(failureErrorCode('x')).toBe('PROCESSING_FAILED');
+  });
+});
+
+describe('consent failures', () => {
+  it('maps a missing consent to AI_CONSENT_REQUIRED with a fixed message', () => {
+    const err = new JobConsentRequiredError();
+    expect(failureErrorCode(err)).toBe('AI_CONSENT_REQUIRED');
+    expect(safeFailureMessage(err)).toBe(
+      'AI consent is required. Accept the current AI notice to use AI features.',
+    );
+  });
+
+  it('treats AI_CONSENT_REQUIRED as an expected failure, not an incident', () => {
+    expect(isExpectedFailureCode('AI_CONSENT_REQUIRED')).toBe(true);
+    expect(isExpectedFailureCode('PROCESSING_FAILED')).toBe(false);
   });
 });

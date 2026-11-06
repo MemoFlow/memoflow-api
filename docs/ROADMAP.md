@@ -298,7 +298,15 @@ limits, guardrails, caching and AI data consent.
   60 seconds and cleared on activation. The planning worker re-checks the user (`USER_INACTIVE`,
   `AI_QUOTA_EXCEEDED`, `AI_QUOTA_UNAVAILABLE` error codes) and `connectors` must be the user's active
   providers (400, max 10, unique, up to 64 characters).
-- Slices 6–7 — pending. See the plan.
+- **Slice 6, consent and notice — ✅ done.** `users.ai_consent_at` and `users.ai_consent_version` ship by
+  migration (`AddUserAiConsent`). `POST /users/me/ai-consent` `{ version }` (409 on a stale version) and
+  `DELETE /users/me/ai-consent` (204); `ai_consent` appears on the user's own view. The AI create routes
+  return 403 `AI_CONSENT_REQUIRED` until the current notice (`AI_NOTICE_VERSION`) is accepted, and queued
+  jobs fail with that `error_code` if consent is gone. Audited as `ai.consent_accepted` /
+  `ai.consent_withdrawn`. **Owner actions still open:** legal review of the draft
+  [`docs/ai-data-notice.md`](ai-data-notice.md) (plus a French version), and the frontend consent screen
+  ([guide](integration/frontend-guide.md)); until the frontend ships it, AI is unusable.
+- Slice 7 — pending. See the plan.
 
 ## 6. Gamification (PG) — ✅ done
 

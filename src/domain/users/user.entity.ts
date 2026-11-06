@@ -1,3 +1,4 @@
+import { AI_NOTICE_VERSION } from '../ai/ai-consent';
 import { UserRole } from './user-role';
 
 /**
@@ -19,6 +20,10 @@ export class User {
   emailVerifiedAt: Date | null;
   /** Bumped on password reset/change; JWTs carry it as `tv`. */
   tokenVersion: number;
+  /** When AI consent was given; null if never given or withdrawn. */
+  aiConsentAt: Date | null;
+  /** The AI notice version consented to; null with `aiConsentAt`. */
+  aiConsentVersion: string | null;
 
   constructor(props: {
     id: string;
@@ -32,6 +37,8 @@ export class User {
     disabledAt?: Date | null;
     emailVerifiedAt?: Date | null;
     tokenVersion?: number;
+    aiConsentAt?: Date | null;
+    aiConsentVersion?: string | null;
   }) {
     this.id = props.id;
     this.email = props.email;
@@ -44,6 +51,8 @@ export class User {
     this.disabledAt = props.disabledAt ?? null;
     this.emailVerifiedAt = props.emailVerifiedAt ?? null;
     this.tokenVersion = props.tokenVersion ?? 0;
+    this.aiConsentAt = props.aiConsentAt ?? null;
+    this.aiConsentVersion = props.aiConsentVersion ?? null;
   }
 
   get isAdmin(): boolean {
@@ -52,6 +61,13 @@ export class User {
 
   get isEmailVerified(): boolean {
     return this.emailVerifiedAt !== null;
+  }
+
+  /** True only while consent is recorded for the current notice version. */
+  get hasCurrentAiConsent(): boolean {
+    return (
+      this.aiConsentAt !== null && this.aiConsentVersion === AI_NOTICE_VERSION
+    );
   }
 
   get isDisabled(): boolean {

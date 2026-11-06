@@ -57,6 +57,17 @@ export class UserTypeOrmRepository implements UserRepository {
     await this.repository.update({ id }, { lastActiveAt: new Date() });
   }
 
+  async setAiConsent(
+    id: string,
+    consentAt: Date | null,
+    version: string | null,
+  ): Promise<void> {
+    await this.repository.update(
+      { id },
+      { aiConsentAt: consentAt, aiConsentVersion: version },
+    );
+  }
+
   async setDisabledAt(id: string, disabledAt: Date | null): Promise<void> {
     await this.repository.update({ id }, { disabledAt });
   }
@@ -207,6 +218,8 @@ export class UserTypeOrmRepository implements UserRepository {
       disabledAt: entity.disabledAt,
       emailVerifiedAt: entity.emailVerifiedAt,
       tokenVersion: entity.tokenVersion,
+      aiConsentAt: entity.aiConsentAt,
+      aiConsentVersion: entity.aiConsentVersion,
     });
   }
 }

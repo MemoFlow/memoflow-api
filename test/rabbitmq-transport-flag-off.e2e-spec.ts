@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
+import { acceptAiConsent } from './utils/ai-consent';
 import { startMongoMemory, MongoTestEnv } from './utils/mongo-memory';
 import {
   describeWithDocker,
@@ -34,7 +35,9 @@ async function registerAndLogin(
     .send({ email: payload.email, password: payload.password })
     .expect(200);
 
-  return loginRes.body.accessToken as string;
+  const token = loginRes.body.accessToken as string;
+  await acceptAiConsent(app, token);
+  return token;
 }
 
 async function pollUntilTerminal(
