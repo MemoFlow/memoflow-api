@@ -19,13 +19,14 @@ import { GenerateSuggestionUseCase } from '../../application/ai/generate-suggest
 import { ListSuggestionsUseCase } from '../../application/ai/list-suggestions.use-case';
 import { User } from '../../domain/users/user.entity';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { EmailVerifiedGuard } from '../auth/email-verified.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CreateSuggestionDto } from './dto/create-suggestion.dto';
 import { SuggestionResponseDto } from './dto/suggestion-response.dto';
 
 @ApiTags('ai')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, EmailVerifiedGuard)
 @Controller('sections/:sectionId/suggestions')
 export class SuggestionsController {
   constructor(

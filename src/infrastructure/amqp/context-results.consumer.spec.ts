@@ -16,6 +16,7 @@ function makeChannel() {
   return {
     waitForConnect: jest.fn().mockResolvedValue(undefined),
     consume: jest.fn().mockResolvedValue(undefined),
+    on: jest.fn(),
     ack: jest.fn(),
     nack: jest.fn(),
   };
@@ -427,5 +428,174 @@ describe('ContextResultsConsumer', () => {
 
     expect(channel.ack).not.toHaveBeenCalled();
     expect(channel.nack).not.toHaveBeenCalled();
+  });
+
+  describe('per-job serialization', () => {
+    function deferred() {
+      let resolve!: (v: unknown) => void;
+      const promise = new Promise((r) => {
+        resolve = r;
+      });
+      return { promise, resolve };
+    }
+    const flush = async () => {
+      for (let i = 0; i < 10; i++) await Promise.resolve();
+    };
+    const terminalWire = (jobId: string, sequence: number) => ({
+      schema_version: 1,
+      job_id: jobId,
+      user_id: 'user-1',
+      sequence,
+      type: 'status',
+      status: { phase: 'completed' },
+    });
+    const dataWire = (jobId: string, sequence: number) => ({
+      ...validDataChunkWire,
+      job_id: jobId,
+      sequence,
+    });
+    const okResult = {
+      outcome: 'applied',
+      job: makeJob(),
+      terminal: false,
+    };
+
+    function build(execute: jest.Mock) {
+      const channel = makeChannel();
+      const consumer = new ContextResultsConsumer(
+        makeConnectionProvider(channel),
+        { execute } as unknown as HandleContextResultChunkUseCase,
+        new EventEmitter2(),
+      );
+      return { channel, consumer };
+    }
+
+    it('does not handle the terminal chunk until an in-flight data chunk of the same job completes', async () => {
+      const slow = deferred();
+      const execute = jest
+        .fn()
+        .mockImplementationOnce(() => slow.promise)
+        .mockResolvedValue(okResult);
+      const { consumer, channel } = build(execute);
+
+      const dataMsg = makeMsg(dataWire('job-1', 0));
+      const terminalMsg = makeMsg(terminalWire('job-1', 1));
+      const p1 = (consumer as any).onMessage(dataMsg);
+      const p2 = (consumer as any).onMessage(terminalMsg);
+      await flush();
+
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute.mock.calls[0][0].chunk.sequence).toBe(0);
+
+      slow.resolve(okResult);
+      await Promise.all([p1, p2]);
+
+      expect(execute).toHaveBeenCalledTimes(2);
+      expect(execute.mock.calls[1][0].chunk.sequence).toBe(1);
+      expect(channel.ack).toHaveBeenCalledWith(dataMsg);
+      expect(channel.ack).toHaveBeenCalledWith(terminalMsg);
+    });
+
+    it('does not block chunks of a different job', async () => {
+      const slow = deferred();
+      const execute = jest
+        .fn()
+        .mockImplementationOnce(() => slow.promise)
+        .mockResolvedValue(okResult);
+      const { consumer } = build(execute);
+
+      const p1 = (consumer as any).onMessage(makeMsg(dataWire('job-1', 0)));
+      const p2 = (consumer as any).onMessage(makeMsg(dataWire('job-2', 0)));
+      await flush();
+
+      expect(execute).toHaveBeenCalledTimes(2);
+      slow.resolve(okResult);
+      await Promise.all([p1, p2]);
+    });
+
+    it('keeps processing later messages of a job after one fails, and acks/nacks each as before', async () => {
+      const execute = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('mongo hiccup'))
+        .mockResolvedValue(okResult);
+      const { consumer, channel } = build(execute);
+
+      const m1 = makeMsg(dataWire('job-1', 0));
+      const m2 = makeMsg(dataWire('job-1', 1));
+      await Promise.all([
+        (consumer as any).onMessage(m1),
+        (consumer as any).onMessage(m2),
+      ]);
+
+      expect(channel.nack).toHaveBeenCalledWith(m1, false, true);
+      expect(channel.ack).toHaveBeenCalledWith(m2);
+    });
+
+    it('removes the chain entry once a job drains', async () => {
+      const execute = jest.fn().mockResolvedValue(okResult);
+      const { consumer } = build(execute);
+
+      await Promise.all([
+        (consumer as any).onMessage(makeMsg(dataWire('job-1', 0))),
+        (consumer as any).onMessage(makeMsg(dataWire('job-1', 1))),
+        (consumer as any).onMessage(makeMsg(dataWire('job-2', 0))),
+      ]);
+      await flush();
+
+      expect((consumer as any).jobChains.size).toBe(0);
+    });
+
+    it('nacks a malformed message immediately even while its neighbours are in flight', async () => {
+      const slow = deferred();
+      const execute = jest.fn().mockImplementation(() => slow.promise);
+      const { consumer, channel } = build(execute);
+
+      const p1 = (consumer as any).onMessage(makeMsg(dataWire('job-1', 0)));
+      const bad = makeMsg('not-json{{{', true);
+      await (consumer as any).onMessage(bad);
+
+      expect(channel.nack).toHaveBeenCalledWith(bad, false, false);
+      slow.resolve(okResult);
+      await p1;
+    });
+  });
+
+  describe('onModuleInit', () => {
+    it('does not wait for the broker and registers the consumer', async () => {
+      const channel = makeChannel();
+      channel.waitForConnect.mockReturnValue(new Promise(() => undefined));
+      const consumer = new ContextResultsConsumer(
+        makeConnectionProvider(channel),
+        { execute: jest.fn() } as unknown as HandleContextResultChunkUseCase,
+        new EventEmitter2(),
+      );
+
+      await consumer.onModuleInit();
+
+      expect(channel.waitForConnect).not.toHaveBeenCalled();
+      expect(channel.consume).toHaveBeenCalledWith(
+        'ctx.gather.results',
+        expect.any(Function),
+        { prefetch: 20 },
+      );
+    });
+
+    it('does not reject when consume() fails', async () => {
+      const channel = makeChannel();
+      channel.consume.mockRejectedValue(new Error('boom'));
+      const consumer = new ContextResultsConsumer(
+        makeConnectionProvider(channel),
+        { execute: jest.fn() } as unknown as HandleContextResultChunkUseCase,
+        new EventEmitter2(),
+      );
+
+      const logSpy = jest
+        .spyOn((consumer as any).logger, 'error')
+        .mockImplementation(() => undefined);
+
+      await expect(consumer.onModuleInit()).resolves.toBeUndefined();
+      await new Promise((r) => setImmediate(r));
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('boom'));
+    });
   });
 });

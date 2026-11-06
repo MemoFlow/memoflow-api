@@ -4,7 +4,7 @@ import { UserRole } from '../../domain/users/user-role';
 import { User } from '../../domain/users/user.entity';
 import { JwtStrategy } from './jwt.strategy';
 
-function makeUser(disabledAt: Date | null = null): User {
+function makeUser(disabledAt: Date | null = null, tokenVersion = 0): User {
   return new User({
     id: 'user-1',
     email: 'ada@example.com',
@@ -15,6 +15,7 @@ function makeUser(disabledAt: Date | null = null): User {
     level: 1,
     lastActiveAt: null,
     disabledAt,
+    tokenVersion,
   });
 }
 
@@ -32,6 +33,39 @@ describe('JwtStrategy.validate', () => {
     await expect(
       strategy.validate({ sub: 'user-1', email: 'ada@example.com' }),
     ).resolves.toBe(user);
+  });
+
+  it('treats a token without a version as version 0', async () => {
+    const strategy = new JwtStrategy(config, {
+      execute: jest.fn().mockResolvedValue(makeUser(null, 0)),
+    } as any);
+
+    await expect(
+      strategy.validate({ sub: 'user-1', email: 'ada@example.com' }),
+    ).resolves.toBeDefined();
+  });
+
+  it('accepts a token whose version matches the account', async () => {
+    const strategy = new JwtStrategy(config, {
+      execute: jest.fn().mockResolvedValue(makeUser(null, 2)),
+    } as any);
+
+    await expect(
+      strategy.validate({ sub: 'user-1', email: 'ada@example.com', tv: 2 }),
+    ).resolves.toBeDefined();
+  });
+
+  it('rejects a token whose version differs from the account', async () => {
+    const strategy = new JwtStrategy(config, {
+      execute: jest.fn().mockResolvedValue(makeUser(null, 2)),
+    } as any);
+
+    await expect(
+      strategy.validate({ sub: 'user-1', email: 'ada@example.com', tv: 1 }),
+    ).rejects.toThrow(UnauthorizedException);
+    await expect(
+      strategy.validate({ sub: 'user-1', email: 'ada@example.com' }),
+    ).rejects.toThrow(UnauthorizedException);
   });
 
   it('throws UnauthorizedException for a disabled account', async () => {

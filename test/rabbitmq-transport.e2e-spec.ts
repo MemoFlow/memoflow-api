@@ -9,6 +9,7 @@ import {
 } from '@testcontainers/rabbitmq';
 import {
   CONTEXT_EXCHANGE,
+  CTX_GATHER_RESULTS_QUEUE,
   CTX_GATHER_RESULT_ROUTING_KEY,
   CTX_GATHER_REQUESTS_DLQ,
   CTX_GATHER_REQUESTS_QUEUE,
@@ -39,14 +40,13 @@ async function registerAndLogin(
     password: 'correct-horse-battery-staple',
     display_name: 'Test User',
   };
-  // Tolerate 409 so this is idempotent across a jest.retryTimes re-run: a
-  // retried test re-invokes its body with the same fixed email, and a second
-  // register would otherwise 409 and fail the retry instead of the transient
-  // broker reset it's meant to absorb.
+  // Registering an existing address also answers 202, so this stays
+  // idempotent across a jest.retryTimes re-run: a retried test re-invokes its
+  // body with the same fixed email.
   const registerRes = await request(app.getHttpServer())
     .post('/auth/register')
     .send(payload);
-  if (registerRes.status !== 201 && registerRes.status !== 409) {
+  if (registerRes.status !== 202) {
     throw new Error(
       `register failed for ${email}: ${registerRes.status} ${JSON.stringify(registerRes.body)}`,
     );
@@ -138,6 +138,36 @@ function waitForOneMessage(
         reject(err instanceof Error ? err : new Error(String(err)));
       });
   });
+}
+
+/** App boot no longer waits for the broker, so wait until the API's results
+ * consumer is actually attached (queue asserted AND consumerCount >= 1)
+ * before tests publish. Uses a fresh channel per attempt because checkQueue
+ * on a not-yet-declared queue closes the channel. */
+async function waitForApiConsumerReady(
+  url: string,
+  timeoutMs = 60_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const conn = await amqplib.connect(url);
+    try {
+      const ch = await conn.createChannel();
+      ch.on('error', () => undefined);
+      const q = await ch.checkQueue(CTX_GATHER_RESULTS_QUEUE);
+      if (q.consumerCount >= 1) return;
+    } catch {
+      // queue not declared yet - retry
+    } finally {
+      await conn.close().catch(() => undefined);
+    }
+    if (Date.now() > deadline) {
+      throw new Error(
+        `API results consumer did not attach within ${timeoutMs}ms`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
 }
 
 async function settle(ms = 500): Promise<void> {
@@ -469,10 +499,11 @@ describeWithDocker()('RabbitMQ context-engine transport (e2e)', () => {
         transformOptions: { enableImplicitConversion: true },
       }),
     );
-    // App boot itself asserts the full RabbitMQ topology (exchange, both
-    // queues + DLQs, both bindings) idempotently — see
-    // RabbitContextRequestPublisher/ContextResultsConsumer's onModuleInit.
+    // Boot does NOT wait for the broker (onModuleInit returns immediately;
+    // amqp-connection-manager connects in the background and asserts the
+    // topology in each channel's setup), so wait for readiness explicitly.
     await app.init();
+    await waitForApiConsumerReady(rabbitmqUrl);
     // Hook budget must exceed container startup (120s, .withStartupTimeout
     // above) + worst-case preflight (15 attempts x (5s connect timeout + 2s
     // delay) = 105s) + PG/Mongo/app boot slack, so a slow-but-healthy runner

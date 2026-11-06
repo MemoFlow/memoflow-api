@@ -44,6 +44,46 @@ Authorization: Bearer <accessToken>
 `GET /users/:id` (JWT) is available for your own id or, for admins, any id; otherwise `404`.
 `disabled_at` is only present for admin viewers. A disabled account cannot log in, its existing tokens are rejected (`401`), and its open WebSocket connections are dropped.
 
+`email_verified` (boolean) is on every `UserResponseDto`. Use it to show a "verify your email" banner with a resend button.
+
+### Email flows (forgot / reset / verify)
+Emails link to your frontend, built from the server's `APP_BASE_URL`:
+`<APP_BASE_URL>/reset-password#token=...` and `<APP_BASE_URL>/verify-email#token=...`.
+The token is in the URL **fragment**, so read it from `location.hash` (it never
+reaches server logs) and POST it in the JSON body. Clear the fragment afterwards.
+Three pages are needed:
+
+| page | action |
+| --- | --- |
+| `/forgot-password` | form with an email; `POST /auth/forgot-password` `{ "email" }` -> always `202`, so show a neutral "if the address has an account, we sent an email" message |
+| `/reset-password` | read `token` from the fragment; form with a new password (min 8); `POST /auth/reset-password` `{ "token", "new_password" }` -> `204`, then send the user to login. `400` = invalid, used or expired link (reset links last 1 hour) |
+| `/verify-email` | read `token` from the fragment; `POST /auth/verify-email` `{ "token" }` -> `204`. `400` = invalid, used or expired link (24 hours); offer a resend |
+
+Resend a verification email with `POST /auth/resend-verification` (JWT) -> always
+`202`; nothing is sent if the account is already verified or an email went out in
+the last 5 minutes. Tokens are single-use.
+
+### Change password — `POST /auth/change-password` (JWT) -> `200`
+```json
+// request
+{ "current_password": "...", "new_password": "min-8-chars" }
+// response
+{ "accessToken": "eyJhbGciOi..." }
+```
+`400` if the current password is wrong. All previous tokens stop working, so replace
+the stored token with the new one. Open WebSocket connections are dropped: call
+`io(...)` again with the new token. A completed password reset also invalidates
+existing sessions.
+
+### Email verification gate (`403 Email not verified`)
+When the server runs with `EMAIL_VERIFICATION_REQUIRED=true` (always the case in
+staging and production), unverified accounts get `403` with message
+`Email not verified` on AI suggestion routes (`/sections/:sectionId/suggestions`,
+`/suggestions/*`), `/connectors*` and `/planning-jobs*`. Other routes still work.
+Handle it by prompting the user to verify (and offering resend) rather than treating
+it as a permission error. Check `email_verified` from `GET /users/me` up front to
+avoid the round trip.
+
 ### Admin-only user management
 `POST /users/:id/disable` and `POST /users/:id/enable` (JWT, admin role) → `204`. Non-admins get `403`; disabling your own account is `400`.
 

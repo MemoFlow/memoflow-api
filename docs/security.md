@@ -42,6 +42,8 @@ never calls `Sentry.init()`, so the app boots identically with zero Sentry confi
 staging/production — a deploy-config gap for those environments, not a missing
 feature; see the checklist item below and `docs/ROADMAP.md`.
 
+**What's never sent:** request bodies, cookies, query strings and `authorization`/`cookie` headers are removed from every event (`scrubSentryEvent` in `src/instrument.ts`), and body capture is disabled in the HTTP integration. Passwords and reset or verification tokens travel in request bodies, so they must stay out of error reports.
+
 **What's captured** (only via `Sentry.captureException`, manual call sites — no blanket
 instrumentation beyond BullMQ's built-in integration):
 
@@ -155,6 +157,8 @@ production), and re-check on every environment's secret rotation:
       Postgres before it) provisions a single owner role by default today, so this
       is currently a gap to close before staging/production, not a solved problem
       to just document.
+- [ ] `RESEND_API_KEY`, `EMAIL_FROM` (on a verified sending domain) and `APP_BASE_URL`
+      are set — required at boot in staging/production; see "Email identity".
 - [ ] `SENTRY_DSN` set if this environment should report errors to Sentry — optional
       (unset keeps Sentry a complete no-op, see "Error tracking / observability"
       above), but a deliberate choice per environment, not an oversight; currently
@@ -230,6 +234,41 @@ under `NODE_ENV=test` so e2e suites don't trip it.
   Dropping open sockets is per-process, so running more than one instance would need a
   socket.io adapter; `subscribe` also re-checks the account.
 - Seeded dev credentials (`npm run db:seed`) are for local development only.
+
+## Email identity
+
+Verification and password-reset emails are sent through Resend.
+
+- **Normalization:** email addresses are trimmed and lowercased on register, login and
+  forgot-password, so one mailbox maps to one account.
+- **No enumeration:** `POST /auth/register`, `/auth/forgot-password` and
+  `/auth/resend-verification` always answer `202` with a fixed body; the outcome is
+  only visible in the mailbox. `reset-password` and `verify-email` fail with one
+  generic `400 Invalid or expired token`.
+- **Tokens:** 256-bit random values; only the SHA-256 hash is stored
+  (`auth_tokens`), and a token is single-use. Password-reset tokens expire after
+  1 hour, verification tokens after 24 hours.
+- **Issue limit:** at most one token per type per account every 5 minutes; further
+  requests inside the window send nothing.
+- **Links:** built from `APP_BASE_URL` (configuration only, never request data), with
+  the token in the URL fragment so it stays out of server logs.
+- **Sessions:** a password reset or change bumps the account's token version, so
+  existing JWTs are rejected and open WebSocket connections are dropped;
+  `change-password` returns a fresh token.
+- **Verification gate:** with `EMAIL_VERIFICATION_REQUIRED=true`, unverified accounts
+  get `403 Email not verified` on AI suggestion, connector and planning-job routes.
+
+Mail configuration per tier:
+
+| tier | `RESEND_API_KEY` / `EMAIL_FROM` / `APP_BASE_URL` | `EMAIL_VERIFICATION_REQUIRED` |
+| --- | --- | --- |
+| development / test | optional; with no key nothing is sent | `false` by default |
+| staging / production | all three required; boot fails without them | forced on; boot fails if set to `false` |
+
+Without a verified sending domain, Resend's test sender (`onboarding@resend.dev`)
+delivers only to the Resend account owner's address. Verification therefore stays off
+on development, and a verified sending domain (with `EMAIL_FROM` on it) is required
+before staging or production can send to real users.
 
 ## Related docs
 

@@ -28,6 +28,18 @@ class InMemoryUserRepository implements UserRepository {
     return Promise.reject(new Error('not implemented'));
   }
 
+  markEmailVerified(): Promise<void> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
+  changePassword(): Promise<number> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
+  resetPassword(): Promise<void> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
   findTopByXp(limit: number): Promise<User[]> {
     this.requestedLimits.push(limit);
     return Promise.resolve(

@@ -9,6 +9,7 @@ import {
   PgTestEnv,
 } from './utils/pg-testcontainer';
 import { startRedisContainer, RedisTestEnv } from './utils/redis-testcontainer';
+import { registerUser } from './utils/register-user';
 
 interface PlanningJobBody {
   job_id: string;
@@ -25,10 +26,7 @@ async function registerAndLogin(
     password: 'correct-horse-battery-staple',
     display_name: 'Test User',
   };
-  await request(app.getHttpServer())
-    .post('/auth/register')
-    .send(payload)
-    .expect(201);
+  await registerUser(app, payload);
 
   const loginRes = await request(app.getHttpServer())
     .post('/auth/login')

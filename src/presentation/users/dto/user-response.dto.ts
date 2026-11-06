@@ -17,6 +17,11 @@ export class UserResponseDto {
   @ApiProperty()
   role: string;
 
+  @ApiProperty({
+    description: 'Whether the email address has been verified',
+  })
+  email_verified: boolean;
+
   @ApiProperty()
   xp: number;
 
@@ -43,6 +48,7 @@ export class UserResponseDto {
     dto.email = user.email;
     dto.display_name = user.displayName;
     dto.role = user.role;
+    dto.email_verified = user.isEmailVerified;
     dto.xp = user.xp;
     dto.level = user.level;
     dto.last_active_at = user.lastActiveAt;

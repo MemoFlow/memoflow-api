@@ -51,9 +51,14 @@ via `@nestjs/jwt` and validated by Passport-JWT.
 
 | method | path | auth | notes |
 | --- | --- | --- | --- |
-| `POST` | `/auth/register` | — | creates a user, returns the user (no password hash) |
+| `POST` | `/auth/register` | — | always **202** with the same body, whether or not the address already has an account; the outcome is sent by email. No user is returned — log in separately |
 | `POST` | `/auth/login` | — | returns `{ accessToken }`; updates `last_active_at` |
-| `GET` | `/users/me` | JWT | the authenticated user |
+| `POST` | `/auth/forgot-password` | — | body `{ email }`; always **202**, whether or not the address has an account; emails a reset link |
+| `POST` | `/auth/reset-password` | — | body `{ token, new_password }`; **204**; **400** for an invalid, used or expired token; signs out existing sessions |
+| `POST` | `/auth/change-password` | JWT | body `{ current_password, new_password }`; returns a fresh `{ accessToken }`; **400** if the current password is wrong; signs out other sessions and open sockets |
+| `POST` | `/auth/verify-email` | — | body `{ token }`; **204**; **400** for an invalid, used or expired token |
+| `POST` | `/auth/resend-verification` | JWT | always **202**; sends nothing if already verified or a message was sent in the last 5 minutes |
+| `GET` | `/users/me` | JWT | the authenticated user (includes `email_verified`) |
 | `GET` | `/users/:id` | JWT | fetch a user by id; self or admin only, otherwise **404** |
 | `POST` | `/users/:id/disable` | JWT (admin) | disables an account; returns **204**; **400** for your own account |
 | `POST` | `/users/:id/enable` | JWT (admin) | re-enables an account; returns **204** |
@@ -97,6 +102,14 @@ via `@nestjs/jwt` and validated by Passport-JWT.
 | `GET` | `/leads` | JWT (admin) | paged leads by stored score; filters `tier`, `onboarding_completed`, `marketing_opt_in`; returns `{ items, total, page, limit }` |
 | `GET` | `/leads/stats` | JWT (admin) | aggregate lead counts and answer distributions |
 | `GET` | `/leads/:id` | JWT (admin) | lead detail with score breakdown, onboarding answers and signals |
+
+Email links point at the frontend (`<APP_BASE_URL>/reset-password#token=...`,
+`<APP_BASE_URL>/verify-email#token=...`); the frontend reads the token from the URL
+fragment and POSTs it in the body. When `EMAIL_VERIFICATION_REQUIRED` is on,
+unverified accounts get **403** `Email not verified` on the AI suggestion routes
+(`/sections/:sectionId/suggestions`, `/suggestions/*`), `/connectors*` (connect, list,
+get, disconnect) and `/planning-jobs*`;
+other routes are unaffected. See [`docs/security.md`](docs/security.md#email-identity).
 
 Protected routes require `Authorization: Bearer <accessToken>`. Full request/response
 shapes are in Swagger (`/docs`).
@@ -212,6 +225,10 @@ Beyond the database connection vars, auth requires:
 | `ANTHROPIC_API_KEY` | no | — | powers AI suggestion generation and the planning-job LLM planner; unset keeps both on their null/stub fallbacks (suggestions endpoint returns 503, planning jobs keep using `StubLlmPlanner`) |
 | `ANTHROPIC_MODEL` | no | `claude-sonnet-5` | Anthropic model id used for both suggestions and planning |
 | `ANTHROPIC_MAX_TOKENS` | no | `4096` | max output tokens per Anthropic call |
+| `RESEND_API_KEY` | staging/production | — | Resend API key for transactional email (verification, password reset); unset in development/test sends nothing (a "skipped" line is logged) |
+| `EMAIL_FROM` | staging/production | `onboarding@resend.dev` when only the key is set | From address, e.g. `MemoFlow <no-reply@your-domain>`; must belong to a verified sending domain |
+| `APP_BASE_URL` | staging/production | — | frontend origin that email links are built from (config only, never request data); unset means emails are skipped |
+| `EMAIL_VERIFICATION_REQUIRED` | no | `false` | `true` makes unverified accounts get 403 on gated routes; forced on in staging/production (boot fails if set to `false` there) |
 | `SENTRY_DSN` | no | — | error tracking via `@sentry/nestjs`; unset keeps it a complete no-op (mirrors `ANTHROPIC_API_KEY`) — set on `development` (error tracking live there, PR #44); staging/production still unset, see [`docs/security.md`](docs/security.md#error-tracking--observability) |
 | `SENTRY_ENVIRONMENT` | no | `NODE_ENV` | tags captured events by deploy environment; one Sentry project shared across environments |
 | `SENTRY_TRACES_SAMPLE_RATE` | no | `0` | performance-tracing sample rate, `0`–`1`; `0` = errors-only |

@@ -40,6 +40,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (user.isDisabled) {
       throw new UnauthorizedException('Invalid token');
     }
+    // A token issued before the last password reset/change carries an older
+    // version and is no longer valid.
+    if ((payload.tv ?? 0) !== user.tokenVersion) {
+      throw new UnauthorizedException('Invalid token');
+    }
     return user;
   }
 }

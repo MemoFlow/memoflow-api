@@ -32,7 +32,7 @@ validate that the referenced PG row exists before writing to Mongo. The
 | column | type | notes |
 | --- | --- | --- |
 | id | uuid | PK |
-| email | varchar | unique, **indexed** |
+| email | varchar | unique, **indexed**; stored trimmed and lowercase (`normalizeEmail`), enforced by `CHK_users_email_lowercase` (`email = lower(email)`) |
 | password_hash | varchar | never serialized in API responses |
 | display_name | varchar | |
 | role | varchar | `user` (default) or `admin`, enforced by `CHK_users_role`; promote via `npm run admin:promote` |
@@ -41,6 +41,27 @@ validate that the referenced PG row exists before writing to Mongo. The
 | last_active_at | timestamptz | |
 | disabled_at | timestamptz | nullable; set while the account is disabled (login, JWT and WebSocket auth reject it); exposed only to admin viewers |
 | created_at | timestamptz | default `now()`; accounts older than this column carry the time it was added |
+| email_verified_at | timestamptz | nullable; null until the address is verified (set by email verification or a completed password reset). Existing rows were backfilled to the migration time. Gates AI, connector and planning routes when `EMAIL_VERIFICATION_REQUIRED` is on |
+| token_version | int | NOT NULL, default 0; embedded in the JWT as `tv` and bumped on password reset/change — a token (or WebSocket) whose `tv` differs from this value is rejected |
+
+#### `auth_tokens`
+Single-use, expiring tokens for password reset and email verification. Only the
+SHA-256 hex of the token is stored (the raw value exists only in the emailed link);
+no API response ever includes this table.
+
+| column | type | notes |
+| --- | --- | --- |
+| id | uuid | PK |
+| user_id | uuid | FK → users, **ON DELETE CASCADE**, **indexed** |
+| type | varchar | `password_reset` or `email_verification`, enforced by `CHK_auth_tokens_type` |
+| token_hash | varchar | SHA-256 hex of the raw token, **unique** |
+| expires_at | timestamptz | reset: 1 hour after issue; verification: 24 hours |
+| used_at | timestamptz | nullable; set when consumed (one atomic conditional update) |
+| created_at | timestamptz | |
+
+Composite index **(user_id, type, created_at)** — `IDX_auth_tokens_user_type_created` —
+serves the per-account issue limit (no new token of a type within 5 minutes of the
+previous one).
 
 #### `documents`
 | column | type | notes |
@@ -134,7 +155,7 @@ via `EventEmitter2`, same swallow-and-log pattern as `GamificationListener`.
 | --- | --- | --- |
 | id | uuid | PK |
 | user_id | uuid | FK → users, **ON DELETE SET NULL** (nullable — the trail must outlive a deleted user, same pattern as `templates.created_by`; also null for a failed login against an unknown email) |
-| action | varchar | `auth.login` / `auth.login_failed` / `connector.revoked` / `suggestion.reviewed` |
+| action | varchar | `auth.login` / `auth.login_failed` / `auth.password_reset_requested` / `auth.password_reset_completed` / `auth.password_changed` / `auth.email_verified` / `connector.revoked` / `suggestion.reviewed` |
 | metadata | jsonb | small contextual payload, e.g. `{ email }` on a failed login, `{ connectionId, provider }` on revoke, `{ suggestionId, decision }` on review |
 | ip | varchar | nullable — not yet populated (would require threading the request IP through use-case inputs); reserved for a future slice |
 | created_at | timestamptz | |

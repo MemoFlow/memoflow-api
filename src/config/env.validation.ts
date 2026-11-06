@@ -6,11 +6,15 @@ import {
   IsNotEmpty,
   IsNumber,
   IsOptional,
+  IsUrl,
   IsString,
   Max,
   Min,
   MinLength,
   validateSync,
+  Validate,
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
 } from 'class-validator';
 
 export const NODE_ENVS = [
@@ -77,6 +81,38 @@ export function parseComposioAuthConfigIds(
   }
 
   return map;
+}
+
+/** Blank or whitespace-only values (e.g. `KEY=` in .env) count as unset. */
+export function blankToUndefined(value: unknown): unknown {
+  return typeof value === 'string' && value.trim() === '' ? undefined : value;
+}
+
+/**
+ * APP_BASE_URL is the origin (plus optional path prefix) that email links are
+ * appended to, so it must not carry credentials, a query string or a fragment.
+ */
+@ValidatorConstraint({ name: 'appBaseUrl', async: false })
+export class AppBaseUrlConstraint implements ValidatorConstraintInterface {
+  validate(value: unknown): boolean {
+    if (typeof value !== 'string') return false;
+    if (value.includes('?') || value.includes('#')) return false;
+    try {
+      const url = new URL(value);
+      return url.username === '' && url.password === '';
+    } catch {
+      return false;
+    }
+  }
+
+  defaultMessage(): string {
+    return 'APP_BASE_URL must not contain credentials, a query string or a fragment';
+  }
+}
+
+/** Case-insensitive "true" check for EMAIL_VERIFICATION_REQUIRED. */
+export function parseEmailVerificationRequired(value: unknown): boolean {
+  return String(value).toLowerCase() === 'true';
 }
 
 export class EnvironmentVariables {
@@ -267,6 +303,43 @@ export class EnvironmentVariables {
   @Min(1)
   CONTEXT_GATHER_TIMEOUT_MS: number = 120_000;
 
+  // Transactional email (password reset, email verification) via Resend.
+  // Optional in development/test: with no RESEND_API_KEY the null sender is
+  // used and nothing is sent. Required in staging/production (see validate()).
+  @Transform(({ value }) => blankToUndefined(value))
+  @IsOptional()
+  @IsString()
+  RESEND_API_KEY?: string;
+
+  @Transform(({ value }) => blankToUndefined(value))
+  @IsOptional()
+  @IsString()
+  EMAIL_FROM?: string;
+
+  // Public frontend origin that email links are built from — never taken from
+  // request data.
+  @Transform(({ value }) => blankToUndefined(value))
+  @IsOptional()
+  @Validate(AppBaseUrlConstraint)
+  @IsUrl(
+    {
+      protocols: ['http', 'https'],
+      require_protocol: true,
+      require_tld: false,
+    },
+    { message: 'APP_BASE_URL must be an http(s) URL' },
+  )
+  APP_BASE_URL?: string;
+
+  // When true, unverified accounts get 403 on AI, connector and planning
+  // routes. Default off in development/test; forced on in staging/production.
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ obj }: { obj: Record<string, unknown> }) =>
+    parseEmailVerificationRequired(obj.EMAIL_VERIFICATION_REQUIRED),
+  )
+  EMAIL_VERIFICATION_REQUIRED: boolean = false;
+
   // Error-tracking (Sentry), roadmap-independent infra plumbing. Mirrors the
   // ANTHROPIC_API_KEY convention: deliberately OPTIONAL, and its absence is
   // the master switch — `src/instrument.ts` only calls `Sentry.init()` when
@@ -322,6 +395,31 @@ export function validate(
   // it eagerly here — a malformed map fails app startup instead of surfacing
   // as a 503 on the first `/connectors/:provider/connect` call.
   parseComposioAuthConfigIds(validated.COMPOSIO_AUTH_CONFIG_IDS);
+
+  if (validated.NODE_ENV === 'staging' || validated.NODE_ENV === 'production') {
+    const missing = ['RESEND_API_KEY', 'EMAIL_FROM', 'APP_BASE_URL'].filter(
+      (key) =>
+        !validated[
+          key as 'RESEND_API_KEY' | 'EMAIL_FROM' | 'APP_BASE_URL'
+        ]?.trim(),
+    );
+    if (missing.length > 0) {
+      throw new Error(
+        `Invalid environment configuration:\n- ${missing.join(', ')}: required when NODE_ENV is ${validated.NODE_ENV}`,
+      );
+    }
+    const raw = config.EMAIL_VERIFICATION_REQUIRED;
+    if (
+      raw !== undefined &&
+      blankToUndefined(raw) !== undefined &&
+      !parseEmailVerificationRequired(raw)
+    ) {
+      throw new Error(
+        `Invalid environment configuration:\n- EMAIL_VERIFICATION_REQUIRED: cannot be false when NODE_ENV is ${validated.NODE_ENV}`,
+      );
+    }
+    validated.EMAIL_VERIFICATION_REQUIRED = true;
+  }
 
   return validated;
 }

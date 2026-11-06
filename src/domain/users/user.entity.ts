@@ -15,6 +15,10 @@ export class User {
   lastActiveAt: Date | null;
   /** Set while the account is disabled; `null` for an active account. */
   disabledAt: Date | null;
+  /** Null until the email address is verified. */
+  emailVerifiedAt: Date | null;
+  /** Bumped on password reset/change; JWTs carry it as `tv`. */
+  tokenVersion: number;
 
   constructor(props: {
     id: string;
@@ -26,6 +30,8 @@ export class User {
     level: number;
     lastActiveAt: Date | null;
     disabledAt?: Date | null;
+    emailVerifiedAt?: Date | null;
+    tokenVersion?: number;
   }) {
     this.id = props.id;
     this.email = props.email;
@@ -36,10 +42,16 @@ export class User {
     this.level = props.level;
     this.lastActiveAt = props.lastActiveAt;
     this.disabledAt = props.disabledAt ?? null;
+    this.emailVerifiedAt = props.emailVerifiedAt ?? null;
+    this.tokenVersion = props.tokenVersion ?? 0;
   }
 
   get isAdmin(): boolean {
     return this.role === UserRole.Admin;
+  }
+
+  get isEmailVerified(): boolean {
+    return this.emailVerifiedAt !== null;
   }
 
   get isDisabled(): boolean {

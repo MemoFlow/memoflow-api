@@ -15,6 +15,7 @@ import {
 import { ReviewSuggestionUseCase } from '../../application/ai/review-suggestion.use-case';
 import { User } from '../../domain/users/user.entity';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { EmailVerifiedGuard } from '../auth/email-verified.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ReviewSuggestionDto } from './dto/review-suggestion.dto';
 import { SuggestionResponseDto } from './dto/suggestion-response.dto';
@@ -24,7 +25,7 @@ import { SuggestionResponseDto } from './dto/suggestion-response.dto';
 // suggestion is addressed by its own id, not its section's.
 @ApiTags('ai')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, EmailVerifiedGuard)
 @Controller('suggestions')
 export class SuggestionReviewsController {
   constructor(

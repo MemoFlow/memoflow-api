@@ -73,31 +73,47 @@ describeWithDocker()('Users + Auth (e2e)', () => {
     await mongo?.server.stop();
   });
 
-  it('POST /auth/register creates a user and never returns password_hash', async () => {
+  it('POST /auth/register answers 202 with only a message, and the user can then log in', async () => {
     const res = await request(app.getHttpServer())
       .post('/auth/register')
       .send(registerPayload)
-      .expect(201);
+      .expect(202);
 
-    expect(res.body).toMatchObject({
+    expect(res.body).toEqual({ message: expect.any(String) });
+
+    const loginRes = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({
+        email: registerPayload.email,
+        password: registerPayload.password,
+      })
+      .expect(200);
+    const meRes = await request(app.getHttpServer())
+      .get('/users/me')
+      .set('Authorization', `Bearer ${loginRes.body.accessToken}`)
+      .expect(200);
+    expect(meRes.body).toMatchObject({
       email: registerPayload.email,
       display_name: registerPayload.display_name,
       role: 'user',
       xp: 0,
       level: 1,
+      email_verified: false,
     });
-    expect(res.body.id).toEqual(expect.any(String));
-    expect(res.body).not.toHaveProperty('password_hash');
-    expect(res.body).not.toHaveProperty('passwordHash');
-    expect(res.body).not.toHaveProperty('password');
-    expect(JSON.stringify(res.body)).not.toContain('$2');
+    expect(meRes.body.id).toEqual(expect.any(String));
+    expect(meRes.body).not.toHaveProperty('password_hash');
+    expect(meRes.body).not.toHaveProperty('passwordHash');
+    expect(meRes.body).not.toHaveProperty('password');
+    expect(JSON.stringify(meRes.body)).not.toContain('$2');
   });
 
-  it('POST /auth/register rejects a duplicate email with 409', async () => {
-    await request(app.getHttpServer())
+  it('POST /auth/register answers an already-registered email exactly like a new one', async () => {
+    const res = await request(app.getHttpServer())
       .post('/auth/register')
       .send(registerPayload)
-      .expect(409);
+      .expect(202);
+
+    expect(res.body).toEqual({ message: expect.any(String) });
   });
 
   it('POST /auth/login rejects bad credentials with 401', async () => {

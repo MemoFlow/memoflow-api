@@ -8,6 +8,7 @@ import {
   startPgContainer,
   PgTestEnv,
 } from './utils/pg-testcontainer';
+import { registerUser } from './utils/register-user';
 
 // Booting AppModule requires a live PostgreSQL (TypeORM connects at init),
 // which Testcontainers can only provide when a Docker daemon is present.
@@ -46,10 +47,7 @@ describeWithDocker()('Connectors (e2e)', () => {
       password: 'correct-horse-battery-staple',
       display_name: 'Test User',
     };
-    await request(app.getHttpServer())
-      .post('/auth/register')
-      .send(payload)
-      .expect(201);
+    await registerUser(app, payload);
 
     const loginRes = await request(app.getHttpServer())
       .post('/auth/login')

@@ -112,6 +112,7 @@ async function main(): Promise<void> {
         passwordHash,
         displayName: seedUser.displayName,
         role: seedUser.role,
+        emailVerifiedAt: new Date(),
       }),
     );
     console.log(`[seed] created user ${seedUser.email}`);
@@ -140,7 +141,9 @@ async function main(): Promise<void> {
     console.log(`[seed] created active prompt for "${seedPrompt.featureType}"`);
   }
 
-  const dailyMissionRepository = dataSource.getRepository(DailyMissionOrmEntity);
+  const dailyMissionRepository = dataSource.getRepository(
+    DailyMissionOrmEntity,
+  );
   const today = new Date();
   const todayDateOnly = today.toISOString().slice(0, 10);
   for (const seedMission of SEED_DAILY_MISSIONS) {

@@ -15,8 +15,14 @@ import { JwtPayload } from '../../application/auth/jwt-payload.interface';
 import { GetPlanningJobUseCase } from '../../application/context/get-planning-job.use-case';
 import { GetUserByIdUseCase } from '../../application/users/get-user-by-id.use-case';
 import { JobStatus, PlanningJob } from '../../domain/context/planning-job';
-import { USER_DISABLED_EVENT } from '../../domain/users/user-events';
-import type { UserDisabledEventPayload } from '../../domain/users/user-events';
+import {
+  USER_DISABLED_EVENT,
+  USER_SESSIONS_REVOKED_EVENT,
+} from '../../domain/users/user-events';
+import type {
+  UserDisabledEventPayload,
+  UserSessionsRevokedEventPayload,
+} from '../../domain/users/user-events';
 
 interface PlanningStatusEvent {
   jobId: string;
@@ -125,12 +131,15 @@ export class PlanningGateway implements OnGatewayConnection {
       // to an account (deleted user, forged sub) — treat it as an auth
       // failure, same as an invalid/expired token.
       const user = await this.getUserById.execute(payload.sub);
-      if (user.isDisabled) {
+      if (user.isDisabled || (payload.tv ?? 0) !== user.tokenVersion) {
         client.disconnect(true);
         return;
       }
 
       client.data.userId = payload.sub;
+      // Kept so `subscribe` can re-check the session version without the
+      // token.
+      client.data.tokenVersion = payload.tv ?? 0;
       // Deterministic readiness signal: the client-visible `connect` event
       // fires before this async handshake (verify + room join) completes,
       // so callers that need the join to be in effect (e.g. before
@@ -158,6 +167,15 @@ export class PlanningGateway implements OnGatewayConnection {
    */
   @OnEvent(USER_DISABLED_EVENT)
   handleUserDisabled(payload: UserDisabledEventPayload): void {
+    this.server.in(`user:${payload.userId}`).disconnectSockets(true);
+  }
+
+  /**
+   * Disconnects every live socket of a user whose sessions were revoked by a
+   * password reset or change. Same per-process caveat as above.
+   */
+  @OnEvent(USER_SESSIONS_REVOKED_EVENT)
+  handleUserSessionsRevoked(payload: UserSessionsRevokedEventPayload): void {
     this.server.in(`user:${payload.userId}`).disconnectSockets(true);
   }
 
@@ -192,7 +210,9 @@ export class PlanningGateway implements OnGatewayConnection {
     // is dropped even if the disable event never reached this socket.
     try {
       const user = await this.getUserById.execute(userId);
-      if (user.isDisabled) {
+      const socketVersion =
+        (client.data.tokenVersion as number | undefined) ?? 0;
+      if (user.isDisabled || socketVersion !== user.tokenVersion) {
         client.disconnect(true);
         return;
       }
