@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, QueryFailedError, Repository } from 'typeorm';
+import { EntityManager, IsNull, QueryFailedError, Repository } from 'typeorm';
+import { AuthTokenType } from '../../../domain/auth/auth-token';
 import { UserRole } from '../../../domain/users/user-role';
 import { User } from '../../../domain/users/user.entity';
 import {
@@ -60,6 +61,104 @@ export class UserTypeOrmRepository implements UserRepository {
     await this.repository.update({ id }, { disabledAt });
   }
 
+  async verifyEmailWithToken(
+    tokenHash: string,
+    at: Date,
+  ): Promise<string | null> {
+    return this.repository.manager.transaction(async (manager) => {
+      const userId = await this.lockOwnerAndConsume(
+        manager,
+        tokenHash,
+        AuthTokenType.EmailVerification,
+      );
+      if (!userId) return null;
+      await manager.query(
+        `UPDATE "users" SET "email_verified_at" = COALESCE("email_verified_at", $2) WHERE "id" = $1`,
+        [userId, at],
+      );
+      return userId;
+    });
+  }
+
+  async changePassword(id: string, passwordHash: string): Promise<number> {
+    return this.repository.manager.transaction(async (manager) => {
+      // Lock order everywhere: user row first, then token rows.
+      // TypeORM's Postgres driver returns `[rows, affectedCount]` for UPDATE.
+      const result: [Array<{ token_version: number }>, number] =
+        await manager.query(
+          `UPDATE "users" SET "password_hash" = $2, "token_version" = "token_version" + 1 WHERE "id" = $1 RETURNING "token_version"`,
+          [id, passwordHash],
+        );
+      const rows = result[0];
+      if (rows.length === 0) {
+        throw new Error('User not found');
+      }
+      await manager.query(
+        `UPDATE "auth_tokens" SET "used_at" = now() WHERE "user_id" = $1 AND "used_at" IS NULL`,
+        [id],
+      );
+      return rows[0].token_version;
+    });
+  }
+
+  async resetPasswordWithToken(
+    tokenHash: string,
+    passwordHash: string,
+    at: Date,
+  ): Promise<string | null> {
+    return this.repository.manager.transaction(async (manager) => {
+      const userId = await this.lockOwnerAndConsume(
+        manager,
+        tokenHash,
+        AuthTokenType.PasswordReset,
+      );
+      if (!userId) return null;
+      await manager.query(
+        `UPDATE "users" SET "password_hash" = $2, "token_version" = "token_version" + 1, "email_verified_at" = COALESCE("email_verified_at", $3) WHERE "id" = $1`,
+        [userId, passwordHash, at],
+      );
+      await manager.query(
+        `UPDATE "auth_tokens" SET "used_at" = $2 WHERE "user_id" = $1 AND "used_at" IS NULL`,
+        [userId, at],
+      );
+      return userId;
+    });
+  }
+
+  /**
+   * Finds the token's owner (unlocked read), locks that user row, rejects a
+   * missing or disabled account, then atomically consumes the token. Locking
+   * the user before the token rows matches `changePassword`, so concurrent
+   * flows cannot deadlock. Returns the owner id, or `null` with nothing
+   * changed (the token is not spent unless the final consume succeeds).
+   */
+  private async lockOwnerAndConsume(
+    manager: EntityManager,
+    tokenHash: string,
+    type: AuthTokenType,
+  ): Promise<string | null> {
+    const owners: Array<{ user_id: string }> = await manager.query(
+      `SELECT "user_id" FROM "auth_tokens" WHERE "token_hash" = $1 AND "type" = $2`,
+      [tokenHash, type],
+    );
+    if (owners.length === 0) return null;
+    const userId = owners[0].user_id;
+
+    const users: Array<{ disabled_at: Date | null }> = await manager.query(
+      `SELECT "disabled_at" FROM "users" WHERE "id" = $1 FOR UPDATE`,
+      [userId],
+    );
+    if (users.length === 0 || users[0].disabled_at !== null) return null;
+
+    const result: [Array<{ user_id: string }>, number] = await manager.query(
+      `UPDATE "auth_tokens" SET "used_at" = now()
+       WHERE "token_hash" = $1 AND "type" = $2 AND "used_at" IS NULL AND "expires_at" > now()
+       RETURNING "user_id"`,
+      [tokenHash, type],
+    );
+    return result[0][0]?.user_id ?? null;
+  }
+
   async findTopByXp(limit: number): Promise<User[]> {
     const entities = await this.repository.find({
       where: { disabledAt: IsNull() },
@@ -94,6 +193,8 @@ export class UserTypeOrmRepository implements UserRepository {
       level: entity.level,
       lastActiveAt: entity.lastActiveAt,
       disabledAt: entity.disabledAt,
+      emailVerifiedAt: entity.emailVerifiedAt,
+      tokenVersion: entity.tokenVersion,
     });
   }
 }

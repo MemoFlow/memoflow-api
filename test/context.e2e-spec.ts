@@ -9,6 +9,7 @@ import {
   PgTestEnv,
 } from './utils/pg-testcontainer';
 import { startRedisContainer, RedisTestEnv } from './utils/redis-testcontainer';
+import { registerUser } from './utils/register-user';
 
 // Booting AppModule requires a live PostgreSQL (users/auth) and Redis
 // (BullMQ planning queue), both provided by Testcontainers — gated
@@ -26,10 +27,7 @@ describeWithDocker()('Context / planning jobs (e2e)', () => {
       password: 'correct-horse-battery-staple',
       display_name: 'Test User',
     };
-    await request(app.getHttpServer())
-      .post('/auth/register')
-      .send(payload)
-      .expect(201);
+    await registerUser(app, payload);
 
     const loginRes = await request(app.getHttpServer())
       .post('/auth/login')

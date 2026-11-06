@@ -18,13 +18,14 @@ import { GetPlanningJobUseCase } from '../../application/context/get-planning-jo
 import { SubmitPlanningJobUseCase } from '../../application/context/submit-planning-job.use-case';
 import { User } from '../../domain/users/user.entity';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { EmailVerifiedGuard } from '../auth/email-verified.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PlanningJobResponseDto } from './dto/planning-job-response.dto';
 import { SubmitPlanningJobDto } from './dto/submit-planning-job.dto';
 
 @ApiTags('planning-jobs')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, EmailVerifiedGuard)
 @Controller('planning-jobs')
 export class PlanningJobsController {
   constructor(

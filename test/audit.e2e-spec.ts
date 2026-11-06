@@ -10,6 +10,7 @@ import {
   startPgContainer,
   PgTestEnv,
 } from './utils/pg-testcontainer';
+import { registerUser } from './utils/register-user';
 
 // Booting AppModule requires a live PostgreSQL (TypeORM connects at init),
 // which Testcontainers can only provide when a Docker daemon is present.
@@ -30,10 +31,7 @@ describeWithDocker()('Audit log (e2e)', () => {
       password: 'correct-horse-battery-staple',
       display_name: 'Test User',
     };
-    await request(app.getHttpServer())
-      .post('/auth/register')
-      .send(payload)
-      .expect(201);
+    await registerUser(app, payload);
 
     const loginRes = await request(app.getHttpServer())
       .post('/auth/login')
@@ -157,10 +155,7 @@ describeWithDocker()('Audit log (e2e)', () => {
   it('a successful login writes one audit_logs row with action=auth.login', async () => {
     const email = 'audit-login-ok@example.com';
     const password = 'correct-horse-battery-staple';
-    await request(app.getHttpServer())
-      .post('/auth/register')
-      .send({ email, password, display_name: 'Audit OK' })
-      .expect(201);
+    await registerUser(app, { email, password, display_name: 'Audit OK' });
 
     await request(app.getHttpServer())
       .post('/auth/login')
@@ -184,10 +179,7 @@ describeWithDocker()('Audit log (e2e)', () => {
   it('a bad-password login writes one audit_logs row with action=auth.login_failed', async () => {
     const email = 'audit-login-bad@example.com';
     const password = 'correct-horse-battery-staple';
-    await request(app.getHttpServer())
-      .post('/auth/register')
-      .send({ email, password, display_name: 'Audit Bad' })
-      .expect(201);
+    await registerUser(app, { email, password, display_name: 'Audit Bad' });
 
     await request(app.getHttpServer())
       .post('/auth/login')
