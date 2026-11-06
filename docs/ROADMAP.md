@@ -251,6 +251,19 @@ own `RABBITMQ_URL` provisioned before their first deploys.
 - Depended on items 2 and 4, and on the Context module async backbone above
   (queue/worker/WS foundation); unblocks nothing further on the roadmap.
 
+## AI rework on OpenRouter — ◐ in progress
+
+Plan: [`docs/plans/2026-11-06-ai-rework.md`](plans/2026-11-06-ai-rework.md), with task state in its
+`.tasks.json`. Moves the AI layer from Anthropic to OpenRouter and adds versioned prompts, retrieval,
+limits, guardrails, caching and AI data consent.
+
+- **Slice 0, pipeline reliability — ✅ done.** A set-but-unavailable `RABBITMQ_URL` no longer blocks boot,
+  publishing fails after a bounded timeout, and the results consumer handles chunks per job in delivery
+  order, so a terminal chunk can't finalize before earlier data chunks are saved. Known limits: ordering
+  assumes one API instance consuming results, and a data chunk requeued after a transient failure can
+  still arrive after the terminal chunk.
+- Slices 1–7 — pending. See the plan.
+
 ## 6. Gamification (PG) — ✅ done
 
 - Slice implemented per the `milestones`/`daily_missions`/`mission_progress` tables
