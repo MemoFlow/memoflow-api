@@ -210,6 +210,27 @@ shared store is a future scaling step, and should only be adopted once that stor
 made **fail-open** (a Redis outage must not block requests). Throttling is skipped
 under `NODE_ENV=test` so e2e suites don't trip it.
 
+## Role model
+
+- Two roles, stored in `users.role`: `user` (default for every registration) and `admin`.
+  Registration never grants `admin`.
+- Admins can publish templates; edit, unpublish or delete any template, including
+  system templates; view any user via `GET /users/:id` (including `disabled_at`) and
+  any template's `created_by`; and disable/enable accounts
+  (`POST /users/:id/disable`, `/enable`; an admin can't disable their own account).
+- Non-admins can create, edit and delete their own unpublished templates. They can't
+  publish, or edit a template once it's published, but can delete their own.
+- The first admin is created out-of-band: `ADMIN_EMAIL=<email> npm run admin:promote`
+  promotes an existing user and re-enables the account if it's disabled (needs
+  `POSTGRES_*`; idempotent). Further admins are promoted the same way, and it's also the
+  recovery path if every admin account is disabled.
+- A disabled account (`users.disabled_at` set) is rejected at login, on JWT
+  validation, and on WebSocket connection, and its open sockets are dropped when it's
+  disabled. Disabled accounts are left off the leaderboard. Re-enabling clears the flag.
+  Dropping open sockets is per-process, so running more than one instance would need a
+  socket.io adapter; `subscribe` also re-checks the account.
+- Seeded dev credentials (`npm run db:seed`) are for local development only.
+
 ## Related docs
 
 - [`docs/database-schema.md`](database-schema.md) — `audit_logs` table shape, indexes.

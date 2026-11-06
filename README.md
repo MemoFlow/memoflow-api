@@ -38,7 +38,8 @@ npm run start:dev
 | `npm test` / `npm run test:e2e` | unit / e2e tests (e2e: Testcontainers PostgreSQL + in-memory Mongo — needs Docker) |
 | `npm run lint` / `npm run build` | lint (with autofix) / compile |
 | `npm run db:up` / `db:down` / `db:reset` | local dev databases (`reset` wipes volumes) |
-| `npm run db:seed` | idempotent dev seed (refuses to run against staging/production) — creates two dev users, `admin@memoflow.dev` / `writer@memoflow.dev` (password `dev-password-123`) |
+| `npm run db:seed` | idempotent dev seed (refuses to run against staging/production) — creates two dev users, `admin@memoflow.dev` / `writer@memoflow.dev` (password `dev-password-123`). **Local development only — never use these credentials on a deployed environment.** |
+| `npm run admin:promote` | promotes an existing user to admin: `ADMIN_EMAIL=<email> npm run admin:promote` and re-enables it if disabled (connects with `POSTGRES_*`; idempotent; works under any `NODE_ENV`) |
 | `npm run smoke` | boots the app and polls `/health`; set `SMOKE_BASE_URL` to smoke a deployed environment instead |
 | `npm run migration:generate -- src/infrastructure/persistence/migrations/<Name>` | generate migration from entity diff |
 | `npm run migration:run` / `migration:revert` / `migration:show` | apply / revert / list migrations |
@@ -53,7 +54,9 @@ via `@nestjs/jwt` and validated by Passport-JWT.
 | `POST` | `/auth/register` | — | creates a user, returns the user (no password hash) |
 | `POST` | `/auth/login` | — | returns `{ accessToken }`; updates `last_active_at` |
 | `GET` | `/users/me` | JWT | the authenticated user |
-| `GET` | `/users/:id` | JWT | fetch a user by id |
+| `GET` | `/users/:id` | JWT | fetch a user by id; self or admin only, otherwise **404** |
+| `POST` | `/users/:id/disable` | JWT (admin) | disables an account; returns **204**; **400** for your own account |
+| `POST` | `/users/:id/enable` | JWT (admin) | re-enables an account; returns **204** |
 | `POST` | `/documents` | JWT | creates a document owned by the caller |
 | `GET` | `/documents` | JWT | lists the caller's documents |
 | `GET` | `/documents/:id` | JWT | fetch a document by id, owner-scoped |
@@ -65,11 +68,11 @@ via `@nestjs/jwt` and validated by Passport-JWT.
 | `GET` | `/documents/:documentId/sections/:id` | JWT | fetch a section by id, owner-scoped |
 | `PATCH` | `/documents/:documentId/sections/:id` | JWT | partial update (`title`/`content`/`status`); `order` not settable here |
 | `DELETE` | `/documents/:documentId/sections/:id` | JWT | owner-scoped; returns **204** |
-| `POST` | `/templates` | JWT | creates a template (with its sections) owned by the caller |
+| `POST` | `/templates` | JWT | creates a template (with its sections) owned by the caller; publishing (`is_published: true`) is admin-only (**403** otherwise) |
 | `GET` | `/templates` | JWT | lists templates visible to the caller (published or own); filter by `docType`/`scope` query params |
-| `GET` | `/templates/:id` | JWT | fetch a template by id; visible if published or owned by the caller |
-| `PATCH` | `/templates/:id` | JWT | partial update, owner-scoped; `sections` replaces the template's sections wholesale when provided |
-| `DELETE` | `/templates/:id` | JWT | owner-scoped; returns **204** |
+| `GET` | `/templates/:id` | JWT | fetch a template by id; visible if published or owned by the caller. `created_by` is `null` unless the viewer owns the template or is an admin |
+| `PATCH` | `/templates/:id` | JWT | partial update, owner or admin; non-admins cannot edit a published template (**403**) and cannot publish; `sections` replaces the template's sections wholesale when provided |
+| `DELETE` | `/templates/:id` | JWT | owner or admin; returns **204** |
 | `POST` | `/templates/:id/apply` | JWT | applies a template to a document, appending one section per template section |
 | `POST` | `/documents/:documentId/versions` | JWT | snapshots the document's current sections into a new immutable version |
 | `GET` | `/documents/:documentId/versions` | JWT | lists the document's version metadata (no sections payload), newest first |
@@ -86,7 +89,7 @@ via `@nestjs/jwt` and validated by Passport-JWT.
 | `POST` | `/connectors/webhook` | — | Composio-signed webhook (public); updates a connection's status |
 | `DELETE` | `/connectors/:id` | JWT | owner-scoped; revokes the Composio connection, sets status `revoked`; returns **204** |
 | `GET` | `/gamification/me` | JWT | the caller's `xp`/`level`, awarded milestones, and today's active daily missions with progress/completed |
-| `GET` | `/gamification/leaderboard` | JWT | top users by `xp`; `?limit=` optional (default 10, max 50) |
+| `GET` | `/gamification/leaderboard` | JWT | top users by `xp`; `?limit=` optional (default 10, max 50); entries carry `is_me` (no `user_id`) |
 
 Protected routes require `Authorization: Bearer <accessToken>`. Full request/response
 shapes are in Swagger (`/docs`).

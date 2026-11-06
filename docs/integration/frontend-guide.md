@@ -41,7 +41,19 @@ Authorization: Bearer <accessToken>
 ```
 
 ### Current user — `GET /users/me` (JWT) → `200` `UserResponseDto`
-`GET /users/:id` (JWT) also available.
+`GET /users/:id` (JWT) is available for your own id or, for admins, any id; otherwise `404`.
+`disabled_at` is only present for admin viewers. A disabled account cannot log in, its existing tokens are rejected (`401`), and its open WebSocket connections are dropped.
+
+### Admin-only user management
+`POST /users/:id/disable` and `POST /users/:id/enable` (JWT, admin role) → `204`. Non-admins get `403`; disabling your own account is `400`.
+
+### Templates — role rules
+- Only admins can publish templates (`is_published: true`); other callers get `403`.
+- Non-admins cannot edit a published template (`403`).
+- `created_by` in template responses is `null` unless the viewer owns the template or is an admin.
+
+### Leaderboard — `GET /gamification/leaderboard` (JWT)
+**Breaking change:** entries no longer include `user_id`. Each entry has `is_me` (boolean) to identify the caller's own row; do not rely on user ids to match rows.
 
 ## 3. Uniform error envelope
 
