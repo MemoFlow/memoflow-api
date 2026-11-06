@@ -60,7 +60,9 @@ via `@nestjs/jwt` and validated by Passport-JWT.
 | `POST` | `/auth/change-password` | JWT | body `{ current_password, new_password }`; returns a fresh `{ accessToken }`; **400** if the current password is wrong or the new one is over 72 bytes; signs out other sessions and open sockets |
 | `POST` | `/auth/verify-email` | — | body `{ token }`; **204**; **400** for an invalid, used or expired token |
 | `POST` | `/auth/resend-verification` | JWT | always **202**; sends nothing if already verified or a message was sent in the last 5 minutes |
-| `GET` | `/users/me` | JWT | the authenticated user (includes `email_verified`) |
+| `GET` | `/users/me` | JWT | the authenticated user (includes `email_verified` and `ai_consent`) |
+| `POST` | `/users/me/ai-consent` | JWT | body `{ version }`; accepts the current AI notice (**200** + the user); **409** if `version` isn't the current one |
+| `DELETE` | `/users/me/ai-consent` | JWT | withdraws AI consent; **204**, idempotent |
 | `GET` | `/users/:id` | JWT | fetch a user by id; self or admin only, otherwise **404** |
 | `POST` | `/users/:id/disable` | JWT (admin) | disables an account; returns **204**; **400** for your own account |
 | `POST` | `/users/:id/enable` | JWT (admin) | re-enables an account; returns **204** |
@@ -85,9 +87,9 @@ via `@nestjs/jwt` and validated by Passport-JWT.
 | `GET` | `/documents/:documentId/versions` | JWT | lists the document's version metadata (no sections payload), newest first |
 | `GET` | `/documents/:documentId/versions/:versionId` | JWT | fetch a version's full sections snapshot, owner-scoped |
 | `POST` | `/documents/:documentId/versions/:versionId/restore` | JWT | replaces the document's current sections with the version's snapshot; writes nothing to Mongo |
-| `POST` | `/planning-jobs` | JWT | submits a planning prompt (max 5000 characters, else 400; optionally bound to an owned `documentId`/`sectionId`; optional `connectors` must be your active providers, max 10, unique, up to 64 characters each, else 400; 429 with `Retry-After` when the daily AI limit is spent; 503 if the usage limits are unavailable); returns **202** + `{ job_id, status: "pending" }` |
+| `POST` | `/planning-jobs` | JWT | requires AI consent (else **403** `AI_CONSENT_REQUIRED`); submits a planning prompt (max 5000 characters, else 400; optionally bound to an owned `documentId`/`sectionId`; optional `connectors` must be your active providers, max 10, unique, up to 64 characters each, else 400; 429 with `Retry-After` when the daily AI limit is spent; 503 if the usage limits are unavailable); returns **202** + `{ job_id, status: "pending" }` |
 | `GET` | `/planning-jobs/:id` | JWT | fetch a planning job by id, owner-scoped |
-| `POST` | `/sections/:sectionId/suggestions` | JWT | generates an AI suggestion for a section; 404 if the section isn't owned by the caller or `featureType` isn't a user-invocable type with an active prompt (`suggestion`, `rewrite`, `summarize`, `expand`; `planning` and unknown types get the same 404); 422 if the section text exceeds `AI_MAX_INPUT_CHARS`; 429 with `Retry-After` when the daily AI limit is spent (per user or in total); 502 if the model's reply fails validation or the provider fails; 503 if AI is unavailable (not configured, provider outage, a misconfigured prompt or the usage limits unavailable) |
+| `POST` | `/sections/:sectionId/suggestions` | JWT | requires AI consent (else **403** `AI_CONSENT_REQUIRED`); generates an AI suggestion for a section; 404 if the section isn't owned by the caller or `featureType` isn't a user-invocable type with an active prompt (`suggestion`, `rewrite`, `summarize`, `expand`; `planning` and unknown types get the same 404); 422 if the section text exceeds `AI_MAX_INPUT_CHARS`; 429 with `Retry-After` when the daily AI limit is spent (per user or in total); 502 if the model's reply fails validation or the provider fails; 503 if AI is unavailable (not configured, provider outage, a misconfigured prompt or the usage limits unavailable) |
 | `GET` | `/sections/:sectionId/suggestions` | JWT | lists a section's AI suggestions, newest first |
 | `PATCH` | `/suggestions/:id` | JWT | accepts or rejects a **pending** suggestion; 409 if already reviewed |
 | `GET` | `/admin/prompts` | JWT (admin) | lists prompts, optionally filtered by `feature_type` |
@@ -115,6 +117,10 @@ unverified accounts get **403** `Email not verified` on the AI suggestion routes
 (`/sections/:sectionId/suggestions`, `/suggestions/*`), `/connectors*` (connect, list,
 get, disconnect) and `/planning-jobs*`;
 other routes are unaffected. See [`docs/security.md`](docs/security.md#email-identity).
+
+AI is opt-in: `POST /sections/:sectionId/suggestions` and `POST /planning-jobs` return
+**403** `AI_CONSENT_REQUIRED` until the user accepts the current AI notice. The notice is a
+draft pending legal review: [`docs/ai-data-notice.md`](docs/ai-data-notice.md).
 
 Protected routes require `Authorization: Bearer <accessToken>`. Full request/response
 shapes are in Swagger (`/docs`).

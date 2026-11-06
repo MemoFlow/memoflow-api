@@ -56,11 +56,11 @@
     {
       "id": 7,
       "subject": "Slice 6: Consent and notice",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         6
       ],
-      "description": "**Goal:** AI use requires recorded consent, with a draft notice for legal review.\n**Acceptance Criteria:** users.ai_consent_at by migration; accept endpoint with notice version; AI routes return 403 with a clear code until accepted; docs/ai-data-notice.md marked as needing legal review; frontend guide documents the flow; schema doc updated.\n**Verify:** E2e no-consent 403 and accepted path.\n```json:metadata\n{\"modelTier\": \"standard\", \"verifyCommand\": \"npm run lint && npm run build && npm test && REDIS_HOST=localhost REDIS_PORT=<port> npm run test:e2e\"}\n```"
+      "description": "**Goal:** AI use requires recorded consent, with a draft notice for legal review.\n**Acceptance Criteria:** users.ai_consent_at by migration; accept endpoint with notice version; AI routes return 403 with a clear code until accepted; docs/ai-data-notice.md marked as needing legal review; frontend guide documents the flow; schema doc updated.\n**Verify:** E2e no-consent 403 and accepted path.\n**Note:** Code and docs are done. Owner actions remain: legal review of docs/ai-data-notice.md (plus a French version), and the frontend consent screen; until the frontend ships it, AI is unusable.\n```json:metadata\n{\"modelTier\": \"standard\", \"verifyCommand\": \"npm run lint && npm run build && npm test && REDIS_HOST=localhost REDIS_PORT=<port> npm run test:e2e\"}\n```"
     },
     {
       "id": 8,
@@ -72,5 +72,5 @@
       "description": "**Goal:** Docs reflect the new AI layer, and it is proven live on dev.\n**Acceptance Criteria:** security.md injection posture rewritten; privacy inventory updated for OpenRouter, upstream providers, retrieved content and cached text; ROADMAP and README current; live smoke script gated on OPENROUTER_API_KEY confirms a suggestion, a planning job, a cache hit and quota counters. Needs the user's key in Render.\n**Verify:** Run smoke on dev with non-sensitive data; /health 200 after deploy.\n```json:metadata\n{\"modelTier\": \"mechanical\", \"verifyCommand\": \"npm run lint && npm run build && npm test && REDIS_HOST=localhost REDIS_PORT=<port> npm run test:e2e\"}\n```"
     }
   ],
-  "lastUpdated": "2026-11-06T20:10:03+00:00"
+  "lastUpdated": "2026-11-06T20:43:13+00:00"
 }

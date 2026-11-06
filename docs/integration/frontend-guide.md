@@ -97,6 +97,17 @@ Handle it by prompting the user to verify (and offering resend) rather than trea
 it as a permission error. Check `email_verified` from `GET /users/me` up front to
 avoid the round trip.
 
+### AI consent gate (`403 AI_CONSENT_REQUIRED`)
+**Until the frontend ships this flow, AI is unusable: `POST /sections/:sectionId/suggestions` and `POST /planning-jobs` return `403` for every user, admins included.** The notice text itself is a draft awaiting legal review ([`../ai-data-notice.md`](../ai-data-notice.md)); do not ship the screen with it as final.
+
+1. Read `ai_consent` from `GET /users/me`: `{ accepted_at, version, current_version, required }`. It appears only in the user's own view (`/users/me`, and the response of the accept call), never on `GET /users/:id` for someone else, even for admins.
+2. If `required` is `true` (never accepted, withdrawn, or accepted an older notice), show the AI notice before any AI button works, and disable the AI actions until then. Show the notice for `current_version`; the text is in `docs/ai-data-notice.md` (a French version is still to be written).
+3. On accept, send `POST /users/me/ai-consent` with `{ "version": "<current_version>" }` -> `200` with the updated `UserResponseDto`. Accepting again simply refreshes the timestamp.
+4. `409` means the version you sent is no longer the current one (the notice changed). Re-fetch `GET /users/me`, show the new notice and ask again.
+5. Any AI create call can still return `403` with `error: "AI_CONSENT_REQUIRED"` (consent withdrawn elsewhere, or the notice version bumped). Tell it apart from `Email not verified` by the `error` field, then go back to step 2.
+6. In settings, offer withdrawal: `DELETE /users/me/ai-consent` -> `204` (idempotent). It stops new AI processing; existing suggestions and jobs are kept.
+7. A planning job that was queued when consent was withdrawn ends `failed` with `error_code` `AI_CONSENT_REQUIRED`; see Planning jobs below.
+
 ### Admin-only user management
 `POST /users/:id/disable` and `POST /users/:id/enable` (JWT, admin role) → `204`. Non-admins get `403`; disabling your own account is `400`.
 
@@ -216,7 +227,7 @@ recomputed automatically on any `PATCH` that changes `content`.
 one, extra one, or a duplicate all reject). This is the **only** way a section's
 `order` changes — it's never settable via create or update.
 
-### AI suggestions — `POST /sections/:sectionId/suggestions` (JWT, verified email) → `201`
+### AI suggestions — `POST /sections/:sectionId/suggestions` (JWT, verified email, AI consent) → `201`
 ```json
 // request
 { "featureType": "rewrite" }
@@ -248,7 +259,7 @@ immediately and follow progress over the WebSocket (REST polling is the fallback
 ```
 `400` if `prompt` is longer than 5000 characters, or if `connectors` is not a list of at most 10 unique provider names (up to 64 characters each) that are all your **active** connections. `429` with `Retry-After` (seconds until UTC midnight) when the daily AI limit is spent; it is the same limit as suggestions, shared per user and across the service. `503` if the job couldn't be enqueued or the AI usage limits are unavailable.
 
-A job can also fail later with `error_code` `USER_INACTIVE` (the account was disabled before the job ran), `AI_QUOTA_EXCEEDED` (the daily limit was spent by the time it ran) or `AI_QUOTA_UNAVAILABLE` (limits could not be checked). Show the fixed `error_message`; for `AI_QUOTA_EXCEEDED` offer a retry the next day.
+A job can also fail later with `error_code` `AI_CONSENT_REQUIRED` (the user withdrew consent, or the notice changed, before the job ran: send the user back to the consent screen) or `USER_INACTIVE` (the account was disabled before the job ran), `AI_QUOTA_EXCEEDED` (the daily limit was spent by the time it ran) or `AI_QUOTA_UNAVAILABLE` (limits could not be checked). Show the fixed `error_message`; for `AI_QUOTA_EXCEEDED` offer a retry the next day.
 
 ### Poll — `GET /planning-jobs/:id` (JWT) → `200` `PlanningJobResponseDto`
 `model` is `null` until the job has run, and when no model is known.

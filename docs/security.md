@@ -209,7 +209,8 @@ Each tier needs its own credentials with those restricted permissions, set throu
 Beyond login, logout, password, connector and prompt events, `audit_logs` records:
 `template.created`, `template.updated` (with the names of the changed fields, not their
 values), `template.published`, `template.unpublished`, `template.deleted`,
-`user.disabled`, `user.enabled`, `user.role_changed` and `auth.login_throttled`. For
+`user.disabled`, `user.enabled`, `user.role_changed`, `auth.login_throttled`,
+`ai.consent_accepted` (notice version in metadata) and `ai.consent_withdrawn`. For
 admin actions the acting admin is the row's user and the target account is in
 metadata. Role changes come from `npm run admin:promote`, which records them with no
 acting user. Rows hold ids and field names, never template content.
@@ -292,6 +293,20 @@ unavailable the quota blocks AI use (503 on the routes, `AI_QUOTA_UNAVAILABLE` o
 hold a hash of the user id. Suggestion cache hits use no quota; cache errors fall through to the
 provider. The planning worker re-checks that the user is still active (`USER_INACTIVE`). Planning
 `connectors` must be the user's active providers.
+
+## AI consent
+
+AI use needs recorded consent to a specific notice version (`users.ai_consent_at`,
+`users.ai_consent_version`; draft text in [`ai-data-notice.md`](ai-data-notice.md), version
+`AI_NOTICE_VERSION` in `src/domain/ai/ai-consent.ts`). `AiConsentGuard` on
+`POST /sections/:sectionId/suggestions` and `POST /planning-jobs` returns 403 with
+`error: 'AI_CONSENT_REQUIRED'` when consent is missing or for another version; it reads the
+user `JwtStrategy` loads on each request, so withdrawal takes effect immediately, and it
+applies to admins too. Accepting a version other than the current one is a 409. The
+planning worker re-checks consent before gathering or calling a provider and fails the job
+with `AI_CONSENT_REQUIRED` if it is gone. Accept and withdraw are audited as
+`ai.consent_accepted` (with the version) and `ai.consent_withdrawn`. The consent gate is
+separate from the quota and does not replace the email-verification gate.
 
 ## Rate-limiting note
 
@@ -389,5 +404,6 @@ before staging or production can send to real users.
   transport contract (relevant to the `RABBITMQ_URL` deploy-checklist item above).
 - [README.md](../README.md) — environment variables table, `CORS_ORIGIN` /
   `WS_CORS_ORIGIN` / `JWT_SECRET` defaults.
+- [`docs/ai-data-notice.md`](ai-data-notice.md) — draft AI data notice (needs legal review).
 - [`docs/privacy-data-inventory.md`](privacy-data-inventory.md) — what personal data
   is stored and which third parties receive it (internal fact base, not a notice).
