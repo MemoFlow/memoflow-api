@@ -401,16 +401,47 @@ work already flagged as deferred in the sections above, not a numbered feature:
   `render.yaml` (PR #46) and confirmed active on 2026-09-14. Staging/production are
   set per environment at their first deploys.
 - **Authorization hardening — ◐ in progress**
-  ([plan](plans/2026-11-06-authz-hardening.md)). Phase 2 is merged (PR #63): user roles (`user`/`admin`),
-  admin-only template publishing, owner-scoped user reads, leaderboard `is_me`
-  (replacing `user_id`), account disable/enable, and `npm run admin:promote`. See
-  [`docs/security.md`](security.md#role-model). Phase 3 (email identity: normalized
-  addresses, email verification, forgot/reset/change password, a verification gate on
-  AI, connector and planning routes) is implemented on `feature/email-identity`, not
-  yet merged. Deploy-config gap: `RESEND_API_KEY`, `EMAIL_FROM` and `APP_BASE_URL`
-  must be set per tier (required at boot in staging/production), and a verified
-  sending domain is needed before staging/production; on development verification
-  stays off. See [`docs/security.md`](security.md#email-identity).
+  ([plan](plans/2026-11-06-authz-hardening.md), [task state](plans/2026-11-06-authz-hardening.md.tasks.json)).
+  - ✅ **Phase 2, merged (PR #63):** user roles (`user`/`admin`), admin-only template
+    publishing, owner-scoped user reads, leaderboard `is_me` (replacing `user_id`),
+    account disable/enable, and `npm run admin:promote`. See
+    [`docs/security.md`](security.md#role-model).
+  - ✅ **Phase 3, merged (PR #64):** normalized unique email, email verification,
+    forgot/reset/change password, session invalidation, and a verification gate on AI,
+    connector and planning routes. See [`docs/security.md`](security.md#email-identity).
+  - ◐ **Phase 1, operational cleanup:** shared dev credentials are replaced and an admin is
+    promoted on `development`. Outstanding, owner action: rotate the Neon password in both
+    GitHub and Render; review past Sentry events on `development`; confirm the test
+    verification and reset emails were delivered.
+  - ☐ **Phase 4, limits:** non-AI input size limits, capped `GET /templates` pagination,
+    per-user storage caps, controlled `scope`/`doc_type`, leaderboard integrity. **Needs
+    decisions first:** storage cap numbers, and whether registration stays open. The AI quota
+    (10 per user, 40 total per day) and AI input limits moved to the
+    [AI rework](plans/2026-11-06-ai-rework.md).
+  - ☐ **Phase 5, auth hardening:** logout, sockets ending at token expiry, per-account
+    login throttle, uniform login and register timing, 72-byte password cap, boot checks
+    for unsafe production config.
+  - ☐ **Phase 6, remaining:** audit coverage for template and admin actions, Postgres TLS
+    certificate verification, non-admin template update conditional on `is_published`,
+    per-tier broker credentials, Swagger off on staging, doc-type check on apply,
+    connector reconnect review. Generic provider errors and the `featureType` allowlist moved
+    to the [AI rework](plans/2026-11-06-ai-rework.md).
+  - ☐ **Template content:** the five starter templates (thesis and internship report) are
+    published on `development`, but their section `keyPoints` and `guidance` aren't stored,
+    since the API doesn't have those fields. Add `key_points` (`jsonb`) and `guidance`
+    (`text`) to `template_sections` with a migration, schema doc and DTO update; decide whether
+    apply copies them into the document; then `PATCH` each template, as an admin, from
+    [`plans/2026-11-06-template-content.json`](plans/2026-11-06-template-content.json).
+  - ☐ **Frontend (`memoflow-client`):** forgot, reset and verify pages; handling for
+    403 `Email not verified`; leaderboard types to `is_me`; demo login behind a dev-only
+    flag. See [`docs/integration/frontend-guide.md`](integration/frontend-guide.md).
+  - ☐ **Before staging or production:** a verified sending domain (none exists; on
+    `development` verification stays off and mail reaches only the Resend account owner),
+    `RESEND_API_KEY`/`EMAIL_FROM`/`APP_BASE_URL` per tier (required at boot), a chosen
+    host, and the release workflow described in `CLAUDE.md`, which doesn't exist yet.
+  - **Open:** end-to-end planning job through RabbitMQ and n8n on `development` is not yet
+    confirmed from the API side (transport fixes merged in PR #65). `test/rabbitmq-transport.e2e-spec.ts`
+    also failed CI once with a broker connection reset; act on it only if it recurs.
 - **Onboarding and lead scoring — ◐ merged to `development`, not yet promoted**
   ([plan](plans/2026-11-06-lead-scoring.md), [contract](contracts/lead-scoring.md)).
   Merged in PR #67: onboarding answers with marketing consent,

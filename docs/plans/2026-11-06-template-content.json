@@ -1,0 +1,900 @@
+[
+  {
+    "title": "Mémoire de fin d'études – Master recherche",
+    "docType": "thesis",
+    "scope": "global",
+    "isPublished": true,
+    "sections": [
+      {
+        "title": "Remerciements",
+        "order": 0,
+        "wordCountMin": 50,
+        "wordCountMax": 250,
+        "isRequired": false,
+        "keyPoints": [
+          "Encadrants académique et professionnel",
+          "Équipe de recherche, personnes interrogées, relecteurs",
+          "Proches (une page maximum)"
+        ]
+      },
+      {
+        "title": "Résumé et mots-clés",
+        "order": 1,
+        "wordCountMin": 150,
+        "wordCountMax": 300,
+        "isRequired": true,
+        "keyPoints": [
+          "Contexte et problématique",
+          "Méthodologie employée",
+          "Principaux résultats",
+          "Apports et ouverture",
+          "3 à 5 mots-clés"
+        ]
+      },
+      {
+        "title": "Introduction générale",
+        "order": 2,
+        "wordCountMin": 800,
+        "wordCountMax": 1500,
+        "isRequired": true,
+        "keyPoints": [
+          "Contexte professionnel et constat initial",
+          "Formulation de la problématique",
+          "Méthodologie (outils d'analyse, enquêtes, benchmarks, corpus théorique)",
+          "Annonce du plan"
+        ]
+      },
+      {
+        "title": "État de l'art et cadre théorique",
+        "order": 3,
+        "wordCountMin": 3000,
+        "wordCountMax": 6000,
+        "isRequired": true,
+        "keyPoints": [
+          "Corpus théorique mobilisé",
+          "Revue de la littérature académique",
+          "Définition des concepts clés",
+          "Positionnement du travail par rapport aux recherches existantes"
+        ]
+      },
+      {
+        "title": "Problématique et hypothèses de recherche",
+        "order": 4,
+        "wordCountMin": 500,
+        "wordCountMax": 1200,
+        "isRequired": true,
+        "keyPoints": [
+          "Formulation de la problématique",
+          "Hypothèses formulées",
+          "Enjeux de la question posée"
+        ]
+      },
+      {
+        "title": "Méthodologie de recherche",
+        "order": 5,
+        "wordCountMin": 1500,
+        "wordCountMax": 3000,
+        "isRequired": true,
+        "keyPoints": [
+          "Méthodologie d'enquête (entretiens, questionnaires, audits, benchmark…)",
+          "Population étudiée",
+          "Outils d'analyse et corpus",
+          "Hypothèses testées"
+        ]
+      },
+      {
+        "title": "Présentation des résultats",
+        "order": 6,
+        "wordCountMin": 2500,
+        "wordCountMax": 5000,
+        "isRequired": true,
+        "keyPoints": [
+          "Présentation synthétique des résultats",
+          "Données chiffrées (tableaux, graphiques)",
+          "Analyse des performances"
+        ]
+      },
+      {
+        "title": "Discussion et interprétation des résultats",
+        "order": 7,
+        "wordCountMin": 2000,
+        "wordCountMax": 4000,
+        "isRequired": true,
+        "keyPoints": [
+          "Interprétation critique",
+          "Mise en perspective avec la littérature / recherches académiques",
+          "Validation ou infirmation des hypothèses"
+        ]
+      },
+      {
+        "title": "Limites et perspectives de recherche",
+        "order": 8,
+        "wordCountMin": 500,
+        "wordCountMax": 1200,
+        "isRequired": false,
+        "keyPoints": [
+          "Limites de l'enquête",
+          "Limites du travail",
+          "Ouverture vers une perspective plus large ou actuelle"
+        ]
+      },
+      {
+        "title": "Conclusion générale",
+        "order": 9,
+        "wordCountMin": 600,
+        "wordCountMax": 1200,
+        "isRequired": true,
+        "keyPoints": [
+          "Rappel synthétique de la problématique",
+          "Résumé des principaux constats",
+          "Apports des préconisations",
+          "Limites du travail",
+          "Ouverture vers une perspective plus large ou actuelle"
+        ]
+      },
+      {
+        "title": "Bibliographie",
+        "order": 10,
+        "wordCountMin": 300,
+        "wordCountMax": 3000,
+        "isRequired": true,
+        "keyPoints": [
+          "Normes de citation cohérentes",
+          "Sources académiques en priorité",
+          "Toutes les sources citées dans le texte"
+        ]
+      },
+      {
+        "title": "Annexes",
+        "order": 11,
+        "wordCountMin": 0,
+        "wordCountMax": 5000,
+        "isRequired": false,
+        "keyPoints": [
+          "Guides d'entretien et questionnaires",
+          "Données brutes et tableaux détaillés",
+          "Retranscriptions"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "Mémoire professionnel – Étude de cas en entreprise",
+    "docType": "thesis",
+    "scope": "global",
+    "isPublished": true,
+    "sections": [
+      {
+        "title": "Remerciements",
+        "order": 0,
+        "wordCountMin": 50,
+        "wordCountMax": 250,
+        "isRequired": false,
+        "keyPoints": [
+          "Tuteur école et tuteur entreprise",
+          "Équipe et collaborateurs ayant participé à l'étude",
+          "Interlocuteurs interrogés"
+        ]
+      },
+      {
+        "title": "Résumé exécutif",
+        "order": 1,
+        "wordCountMin": 150,
+        "wordCountMax": 350,
+        "isRequired": true,
+        "keyPoints": [
+          "Problématique",
+          "Méthodologie",
+          "Constats clés",
+          "Préconisations principales"
+        ]
+      },
+      {
+        "title": "Introduction",
+        "order": 2,
+        "wordCountMin": 1000,
+        "wordCountMax": 2000,
+        "isRequired": true,
+        "keyPoints": [
+          "Présentation de l'entreprise",
+          "Présentation du poste / des missions",
+          "Contexte professionnel et constat initial",
+          "Formulation de la problématique",
+          "Méthodologie (outils d'analyse, enquêtes, benchmarks, corpus théorique)"
+        ]
+      },
+      {
+        "title": "Contexte organisationnel et stratégique",
+        "order": 3,
+        "wordCountMin": 800,
+        "wordCountMax": 1800,
+        "isRequired": true,
+        "keyPoints": [
+          "Secteur d'activité",
+          "Positionnement de l'entreprise",
+          "Organisation interne liée au sujet"
+        ],
+        "guidance": "Partie analytique et neutre : décrire et constater, sans préconiser."
+      },
+      {
+        "title": "Description du fonctionnement actuel",
+        "order": 4,
+        "wordCountMin": 800,
+        "wordCountMax": 1800,
+        "isRequired": true,
+        "keyPoints": [
+          "Processus, outils, méthodes",
+          "Organisation opérationnelle",
+          "Acteurs impliqués"
+        ],
+        "guidance": "Partie analytique et neutre : décrire et constater, sans préconiser."
+      },
+      {
+        "title": "Diagnostic factuel",
+        "order": 5,
+        "wordCountMin": 1000,
+        "wordCountMax": 2200,
+        "isRequired": true,
+        "keyPoints": [
+          "Données chiffrées",
+          "Analyse des performances",
+          "Forces / limites observées",
+          "Comparaison éventuelle avec le marché"
+        ],
+        "guidance": "Partie analytique et neutre : décrire et constater, sans préconiser."
+      },
+      {
+        "title": "Identification des enjeux majeurs",
+        "order": 6,
+        "wordCountMin": 1000,
+        "wordCountMax": 2200,
+        "isRequired": true,
+        "keyPoints": [
+          "Enjeux stratégiques",
+          "Enjeux techniques / opérationnels",
+          "Enjeux humains / organisationnels",
+          "Enjeux économiques",
+          "Enjeux environnementaux et d'accessibilité"
+        ]
+      },
+      {
+        "title": "Démarche d'analyse et méthodologie d'enquête",
+        "order": 7,
+        "wordCountMin": 800,
+        "wordCountMax": 1800,
+        "isRequired": true,
+        "keyPoints": [
+          "Méthodologie d'enquête (entretiens, questionnaires, audits, benchmark…)",
+          "Population étudiée",
+          "Hypothèses formulées"
+        ]
+      },
+      {
+        "title": "Analyse des résultats",
+        "order": 8,
+        "wordCountMin": 1800,
+        "wordCountMax": 3500,
+        "isRequired": true,
+        "keyPoints": [
+          "Présentation synthétique des résultats",
+          "Interprétation critique",
+          "Mise en perspective avec la littérature / recherches académiques",
+          "Limites de l'enquête"
+        ],
+        "guidance": "Terminer la partie par une question d'ouverture qui annonce les préconisations (ex. : dans quelle mesure une transformation peut-elle répondre à ces enjeux ?)."
+      },
+      {
+        "title": "Synthèse des constats clés",
+        "order": 9,
+        "wordCountMin": 500,
+        "wordCountMax": 1200,
+        "isRequired": true,
+        "keyPoints": [
+          "Problèmes prioritaires",
+          "Opportunités identifiées",
+          "Axes d'amélioration structurants"
+        ]
+      },
+      {
+        "title": "Préconisation 1",
+        "order": 10,
+        "wordCountMin": 1000,
+        "wordCountMax": 2200,
+        "isRequired": true,
+        "keyPoints": [
+          "Description",
+          "Mise en œuvre",
+          "Impacts attendus",
+          "Indicateurs de performance"
+        ],
+        "guidance": "Préconisation toujours argumentée (appuyée sur les constats), jamais une liste d'idées en vrac."
+      },
+      {
+        "title": "Préconisation 2",
+        "order": 11,
+        "wordCountMin": 1000,
+        "wordCountMax": 2200,
+        "isRequired": true,
+        "keyPoints": [
+          "Description",
+          "Plan d'action",
+          "Impacts environnementaux / accessibilité",
+          "Budget / faisabilité"
+        ],
+        "guidance": "Préconisation toujours argumentée (appuyée sur les constats), jamais une liste d'idées en vrac."
+      },
+      {
+        "title": "Préconisations 3 et 4 (optionnelles)",
+        "order": 12,
+        "wordCountMin": 600,
+        "wordCountMax": 2400,
+        "isRequired": false,
+        "keyPoints": [
+          "Description",
+          "Plan d'action ou mise en œuvre",
+          "Impacts attendus",
+          "Budget / faisabilité"
+        ],
+        "guidance": "2 à 4 préconisations maximum au total ; préconisation toujours argumentée (appuyée sur les constats), jamais une liste d'idées en vrac."
+      },
+      {
+        "title": "Conclusion",
+        "order": 13,
+        "wordCountMin": 600,
+        "wordCountMax": 1200,
+        "isRequired": true,
+        "keyPoints": [
+          "Rappel synthétique de la problématique",
+          "Résumé des principaux constats",
+          "Apports des préconisations",
+          "Limites du travail",
+          "Position personnelle",
+          "Ouverture vers une perspective plus large ou actuelle"
+        ]
+      },
+      {
+        "title": "Bibliographie et webographie",
+        "order": 14,
+        "wordCountMin": 200,
+        "wordCountMax": 2000,
+        "isRequired": true,
+        "keyPoints": [
+          "Sources académiques et professionnelles",
+          "Benchmarks et études de marché",
+          "Normes de citation cohérentes"
+        ]
+      },
+      {
+        "title": "Annexes",
+        "order": 15,
+        "wordCountMin": 0,
+        "wordCountMax": 4000,
+        "isRequired": false,
+        "keyPoints": [
+          "Guides d'entretien et questionnaires",
+          "Données brutes et tableaux détaillés",
+          "Documents internes (organigramme, processus)"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "Rapport de stage – Standard (Licence / BTS / BUT)",
+    "docType": "internship_report",
+    "scope": "global",
+    "isPublished": true,
+    "sections": [
+      {
+        "title": "Remerciements",
+        "order": 0,
+        "wordCountMin": 50,
+        "wordCountMax": 200,
+        "isRequired": false,
+        "keyPoints": [
+          "Tuteur entreprise et tuteur école",
+          "Équipe d'accueil",
+          "Personnes ayant aidé pendant le stage"
+        ]
+      },
+      {
+        "title": "Introduction",
+        "order": 1,
+        "wordCountMin": 200,
+        "wordCountMax": 400,
+        "isRequired": true,
+        "keyPoints": [
+          "Contexte du stage et objectifs",
+          "Présentation succincte du poste / des missions",
+          "Annonce du plan"
+        ]
+      },
+      {
+        "title": "Présentation de l'organisme d'accueil",
+        "order": 2,
+        "wordCountMin": 500,
+        "wordCountMax": 1000,
+        "isRequired": true,
+        "keyPoints": [
+          "Secteur d'activité",
+          "Positionnement de l'entreprise",
+          "Organisation interne liée au sujet",
+          "Équipe d'accueil"
+        ],
+        "guidance": "Partie analytique et neutre : décrire et constater, sans préconiser."
+      },
+      {
+        "title": "Présentation du stage et des missions confiées",
+        "order": 3,
+        "wordCountMin": 400,
+        "wordCountMax": 900,
+        "isRequired": true,
+        "keyPoints": [
+          "Présentation du poste / des missions",
+          "Contexte professionnel et constat initial",
+          "Acteurs impliqués",
+          "Processus, outils, méthodes utilisés"
+        ],
+        "guidance": "Partie analytique et neutre : décrire et constater, sans préconiser."
+      },
+      {
+        "title": "Déroulement des missions et réalisations",
+        "order": 4,
+        "wordCountMin": 1200,
+        "wordCountMax": 2500,
+        "isRequired": true,
+        "keyPoints": [
+          "Missions réalisées (ordre chronologique ou thématique)",
+          "Processus, outils, méthodes mis en œuvre",
+          "Résultats obtenus (données chiffrées si possible)"
+        ]
+      },
+      {
+        "title": "Difficultés rencontrées et analyse critique",
+        "order": 5,
+        "wordCountMin": 300,
+        "wordCountMax": 800,
+        "isRequired": true,
+        "keyPoints": [
+          "Forces / limites observées",
+          "Difficultés rencontrées et solutions apportées",
+          "Limites du travail réalisé"
+        ],
+        "guidance": "Toute piste d'amélioration est argumentée, jamais une liste d'idées en vrac."
+      },
+      {
+        "title": "Bilan des compétences acquises",
+        "order": 6,
+        "wordCountMin": 300,
+        "wordCountMax": 700,
+        "isRequired": true,
+        "keyPoints": [
+          "Compétences techniques acquises",
+          "Compétences transversales",
+          "Lien avec le projet professionnel"
+        ]
+      },
+      {
+        "title": "Conclusion",
+        "order": 7,
+        "wordCountMin": 200,
+        "wordCountMax": 400,
+        "isRequired": true,
+        "keyPoints": [
+          "Rappel synthétique du contexte et des missions",
+          "Résumé des principaux apports",
+          "Limites du travail",
+          "Ouverture vers une perspective plus large ou actuelle"
+        ]
+      },
+      {
+        "title": "Glossaire",
+        "order": 8,
+        "wordCountMin": 50,
+        "wordCountMax": 500,
+        "isRequired": false,
+        "keyPoints": [
+          "Sigles",
+          "Termes métier"
+        ]
+      },
+      {
+        "title": "Annexes",
+        "order": 9,
+        "wordCountMin": 0,
+        "wordCountMax": 2000,
+        "isRequired": false,
+        "keyPoints": [
+          "Organigramme",
+          "Livrables produits",
+          "Plannings, captures, documents de travail"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "Rapport de stage – Informatique et ingénierie",
+    "docType": "internship_report",
+    "scope": "global",
+    "isPublished": true,
+    "sections": [
+      {
+        "title": "Remerciements",
+        "order": 0,
+        "wordCountMin": 50,
+        "wordCountMax": 200,
+        "isRequired": false,
+        "keyPoints": [
+          "Tuteur entreprise et tuteur école",
+          "Équipe technique",
+          "Personnes interrogées"
+        ]
+      },
+      {
+        "title": "Résumé et abstract",
+        "order": 1,
+        "wordCountMin": 150,
+        "wordCountMax": 300,
+        "isRequired": true,
+        "keyPoints": [
+          "Contexte et problématique",
+          "Solution mise en œuvre",
+          "Résultats clés",
+          "Version anglaise (abstract)"
+        ]
+      },
+      {
+        "title": "Introduction",
+        "order": 2,
+        "wordCountMin": 300,
+        "wordCountMax": 600,
+        "isRequired": true,
+        "keyPoints": [
+          "Présentation de l'entreprise (contexte, secteur, enjeux)",
+          "Présentation du poste et des missions",
+          "Constat terrain (volumétrie, incidents, coûts…)",
+          "Problématique",
+          "Méthodologie : analyse technique (logs, monitoring, métriques), entretiens internes, benchmark, revue académique"
+        ]
+      },
+      {
+        "title": "Présentation de l'entreprise et de l'équipe",
+        "order": 3,
+        "wordCountMin": 400,
+        "wordCountMax": 900,
+        "isRequired": true,
+        "keyPoints": [
+          "Secteur d'activité et positionnement de l'entreprise",
+          "Organisation interne liée au sujet",
+          "Acteurs impliqués (DevOps, PO, CTO…)"
+        ]
+      },
+      {
+        "title": "Contexte du projet et cahier des charges",
+        "order": 4,
+        "wordCountMin": 600,
+        "wordCountMax": 1400,
+        "isRequired": true,
+        "keyPoints": [
+          "Contexte professionnel et constat initial",
+          "Objectifs et périmètre",
+          "Contraintes techniques, budgétaires et réglementaires",
+          "Formulation de la problématique"
+        ]
+      },
+      {
+        "title": "Analyse de l'existant et état de l'art technique",
+        "order": 5,
+        "wordCountMin": 800,
+        "wordCountMax": 1800,
+        "isRequired": true,
+        "keyPoints": [
+          "Architecture actuelle et stack technique",
+          "Organisation des flux de données",
+          "Évolution des volumes, latence, blocages, problèmes de performance",
+          "Limites du modèle actuel",
+          "Benchmark des solutions et revue académique / technique"
+        ],
+        "guidance": "Partie analytique et neutre : décrire et constater, sans préconiser."
+      },
+      {
+        "title": "Enjeux techniques, économiques et responsables",
+        "order": 6,
+        "wordCountMin": 500,
+        "wordCountMax": 1400,
+        "isRequired": false,
+        "keyPoints": [
+          "Enjeux de performance : scalabilité, maintenabilité, résilience",
+          "Enjeux économiques (FinOps) : optimisation des coûts, arbitrages techniques, ROI des optimisations",
+          "Enjeux environnementaux et réglementaires : empreinte carbone, accessibilité des données, RGPD et gouvernance"
+        ]
+      },
+      {
+        "title": "Conception et architecture de la solution",
+        "order": 7,
+        "wordCountMin": 1000,
+        "wordCountMax": 2200,
+        "isRequired": true,
+        "keyPoints": [
+          "Choix d'architecture argumentés et alternatives écartées",
+          "Stratégie proposée (règles, politiques, automatisation)",
+          "Prise en compte des enjeux de performance, de coûts et d'impact environnemental"
+        ],
+        "guidance": "Préconisation toujours argumentée (appuyée sur les constats), jamais une liste d'idées en vrac."
+      },
+      {
+        "title": "Réalisation et implémentation",
+        "order": 8,
+        "wordCountMin": 1500,
+        "wordCountMax": 3000,
+        "isRequired": true,
+        "keyPoints": [
+          "Mise en œuvre (migration, indexation, automatisation…)",
+          "Plan d'action et étapes",
+          "Monitoring continu"
+        ]
+      },
+      {
+        "title": "Tests, validation et déploiement",
+        "order": 9,
+        "wordCountMin": 600,
+        "wordCountMax": 1400,
+        "isRequired": true,
+        "keyPoints": [
+          "Indicateurs de performance (KPI avant / après)",
+          "Impacts attendus et mesurés",
+          "Monitoring continu"
+        ]
+      },
+      {
+        "title": "Gestion de projet et organisation du travail",
+        "order": 10,
+        "wordCountMin": 400,
+        "wordCountMax": 1000,
+        "isRequired": false,
+        "keyPoints": [
+          "Organisation, méthode et planning",
+          "Acteurs impliqués",
+          "Budget / faisabilité"
+        ]
+      },
+      {
+        "title": "Résultats et bilan technique",
+        "order": 11,
+        "wordCountMin": 500,
+        "wordCountMax": 1200,
+        "isRequired": true,
+        "keyPoints": [
+          "Présentation synthétique des résultats",
+          "Interprétation critique",
+          "Limites du travail"
+        ]
+      },
+      {
+        "title": "Bilan personnel et compétences acquises",
+        "order": 12,
+        "wordCountMin": 300,
+        "wordCountMax": 700,
+        "isRequired": true,
+        "keyPoints": [
+          "Compétences techniques et transversales",
+          "Position personnelle",
+          "Lien avec le projet professionnel"
+        ]
+      },
+      {
+        "title": "Conclusion et perspectives",
+        "order": 13,
+        "wordCountMin": 300,
+        "wordCountMax": 700,
+        "isRequired": true,
+        "keyPoints": [
+          "Synthèse état des lieux / enjeux / solutions",
+          "Limites du travail",
+          "Ouverture vers une perspective plus large ou actuelle (ex. : IA et volumétrie exponentielle)"
+        ]
+      },
+      {
+        "title": "Glossaire",
+        "order": 14,
+        "wordCountMin": 50,
+        "wordCountMax": 600,
+        "isRequired": false,
+        "keyPoints": [
+          "Sigles techniques",
+          "Termes métier"
+        ]
+      },
+      {
+        "title": "Bibliographie et sources",
+        "order": 15,
+        "wordCountMin": 100,
+        "wordCountMax": 1000,
+        "isRequired": true,
+        "keyPoints": [
+          "Documentation technique",
+          "Articles et études académiques",
+          "Benchmarks consultés"
+        ]
+      },
+      {
+        "title": "Annexes",
+        "order": 16,
+        "wordCountMin": 0,
+        "wordCountMax": 3000,
+        "isRequired": false,
+        "keyPoints": [
+          "Schémas d'architecture",
+          "Extraits de code ou de configuration",
+          "Captures de monitoring"
+        ]
+      }
+    ]
+  },
+  {
+    "title": "Rapport de stage – Gestion, commerce et marketing",
+    "docType": "internship_report",
+    "scope": "global",
+    "isPublished": true,
+    "sections": [
+      {
+        "title": "Remerciements",
+        "order": 0,
+        "wordCountMin": 50,
+        "wordCountMax": 200,
+        "isRequired": false,
+        "keyPoints": [
+          "Tuteur entreprise et tuteur école",
+          "Équipe d'accueil",
+          "Personnes interrogées"
+        ]
+      },
+      {
+        "title": "Résumé exécutif",
+        "order": 1,
+        "wordCountMin": 150,
+        "wordCountMax": 300,
+        "isRequired": true,
+        "keyPoints": [
+          "Contexte et problématique",
+          "Missions et méthodologie",
+          "Constats clés",
+          "Recommandations principales"
+        ]
+      },
+      {
+        "title": "Introduction",
+        "order": 2,
+        "wordCountMin": 300,
+        "wordCountMax": 600,
+        "isRequired": true,
+        "keyPoints": [
+          "Présentation de l'entreprise",
+          "Présentation du poste / des missions",
+          "Contexte professionnel et constat initial",
+          "Formulation de la problématique",
+          "Méthodologie (outils d'analyse, enquêtes, benchmarks, corpus théorique)"
+        ]
+      },
+      {
+        "title": "Présentation de l'entreprise",
+        "order": 3,
+        "wordCountMin": 600,
+        "wordCountMax": 1200,
+        "isRequired": true,
+        "keyPoints": [
+          "Secteur d'activité",
+          "Positionnement de l'entreprise",
+          "Organisation interne liée au sujet",
+          "Acteurs impliqués"
+        ],
+        "guidance": "Partie analytique et neutre : décrire et constater, sans préconiser."
+      },
+      {
+        "title": "Analyse stratégique du secteur et de l'entreprise",
+        "order": 4,
+        "wordCountMin": 800,
+        "wordCountMax": 1800,
+        "isRequired": true,
+        "keyPoints": [
+          "Données chiffrées",
+          "Analyse des performances",
+          "Forces / limites observées",
+          "Comparaison éventuelle avec le marché",
+          "Enjeux stratégiques, économiques et humains / organisationnels",
+          "Outils d'analyse (SWOT, PESTEL, 5 forces de Porter…)"
+        ],
+        "guidance": "Partie analytique et neutre : décrire et constater, sans préconiser."
+      },
+      {
+        "title": "Missions confiées et méthodologie",
+        "order": 5,
+        "wordCountMin": 500,
+        "wordCountMax": 1200,
+        "isRequired": true,
+        "keyPoints": [
+          "Présentation du poste / des missions",
+          "Méthodologie d'enquête (entretiens, questionnaires, audits, benchmark…)",
+          "Population étudiée",
+          "Outils d'analyse"
+        ]
+      },
+      {
+        "title": "Réalisations et résultats obtenus",
+        "order": 6,
+        "wordCountMin": 1200,
+        "wordCountMax": 2500,
+        "isRequired": true,
+        "keyPoints": [
+          "Présentation synthétique des résultats",
+          "Données chiffrées et indicateurs de performance",
+          "Processus, outils, méthodes mis en place"
+        ]
+      },
+      {
+        "title": "Analyse critique et recommandations",
+        "order": 7,
+        "wordCountMin": 600,
+        "wordCountMax": 1400,
+        "isRequired": true,
+        "keyPoints": [
+          "Synthèse des constats clés : problèmes prioritaires, opportunités identifiées",
+          "Recommandations (description, mise en œuvre, impacts attendus)",
+          "Indicateurs de performance",
+          "Budget / faisabilité",
+          "Limites de l'enquête"
+        ],
+        "guidance": "2 à 4 recommandations maximum ; chacune argumentée, jamais une liste d'idées en vrac."
+      },
+      {
+        "title": "Bilan personnel et professionnel",
+        "order": 8,
+        "wordCountMin": 300,
+        "wordCountMax": 700,
+        "isRequired": true,
+        "keyPoints": [
+          "Compétences acquises",
+          "Position personnelle",
+          "Lien avec le projet professionnel"
+        ]
+      },
+      {
+        "title": "Conclusion",
+        "order": 9,
+        "wordCountMin": 250,
+        "wordCountMax": 500,
+        "isRequired": true,
+        "keyPoints": [
+          "Rappel synthétique de la problématique",
+          "Résumé des principaux constats",
+          "Apports des préconisations",
+          "Limites du travail",
+          "Ouverture vers une perspective plus large ou actuelle"
+        ]
+      },
+      {
+        "title": "Sources et bibliographie",
+        "order": 10,
+        "wordCountMin": 100,
+        "wordCountMax": 800,
+        "isRequired": true,
+        "keyPoints": [
+          "Sources internes et externes",
+          "Études de marché et articles",
+          "Normes de citation cohérentes"
+        ]
+      },
+      {
+        "title": "Annexes",
+        "order": 11,
+        "wordCountMin": 0,
+        "wordCountMax": 2500,
+        "isRequired": false,
+        "keyPoints": [
+          "Questionnaires et guides d'entretien",
+          "Tableaux de données",
+          "Organigramme"
+        ]
+      }
+    ]
+  }
+]
