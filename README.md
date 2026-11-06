@@ -324,6 +324,8 @@ incident note. Staging and production deploy targets are not yet decided.
 - [`docs/security.md`](docs/security.md) — operational security runbook: monitoring,
   backup/restore, the per-environment deploy security checklist, and notes on SSRF
   and prompt-injection posture.
+- [`docs/privacy-data-inventory.md`](docs/privacy-data-inventory.md) — internal
+  inventory of stored personal data and third-party recipients (not a privacy notice).
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — feature roadmap with per-item specs and
   current status.
 - [`docs/diagrams/`](docs/diagrams/) — diagrams authored in

@@ -218,3 +218,5 @@ under `NODE_ENV=test` so e2e suites don't trip it.
   transport contract (relevant to the `RABBITMQ_URL` deploy-checklist item above).
 - [README.md](../README.md) — environment variables table, `CORS_ORIGIN` /
   `WS_CORS_ORIGIN` / `JWT_SECRET` defaults.
+- [`docs/privacy-data-inventory.md`](privacy-data-inventory.md) — what personal data
+  is stored and which third parties receive it (internal fact base, not a notice).
