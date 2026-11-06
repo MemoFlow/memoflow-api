@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memoflow.dev/contracts/context-request.schema.json",
+  "title": "ContextGatherRequest",
+  "description": "Message published by the MemoFlow API to the RabbitMQ queue `ctx.gather.requests`. Consumed by the context engine (an n8n workflow) to gather connector context for a planning job. Correlated to the response via `job_id`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "job_id",
+    "user_id",
+    "prompt",
+    "connectors",
+    "requested_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Contract version. Additive-only changes within v1."
+    },
+    "job_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "planning_jobs._id — the correlation key used on both hops. The CE MUST echo it in every result chunk."
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "PG users.id that owns the planning job."
+    },
+    "prompt": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The user's planning prompt."
+    },
+    "connectors": {
+      "type": "array",
+      "description": "The user's active, selected connectors. An empty array means no connector context was requested/available.",
+      "items": { "$ref": "#/$defs/connectorRef" }
+    },
+    "requested_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 UTC timestamp when the API published the request."
+    }
+  },
+  "$defs": {
+    "connectorRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "mcp_url", "composio_account_id"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["trello", "notion", "github"],
+          "description": "Connector provider — the MemoFlow ConnectorProvider allowlist."
+        },
+        "mcp_url": {
+          "type": ["string", "null"],
+          "description": "Null by design. The context engine resolves the live MCP server itself from `provider` + `composio_account_id` (it holds its own Composio credentials)."
+        },
+        "composio_account_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Composio connected-account id for this user+provider. Not a secret on its own; the CE uses it with its Composio credentials to reach the MCP."
+        }
+      }
+    }
+  }
+}

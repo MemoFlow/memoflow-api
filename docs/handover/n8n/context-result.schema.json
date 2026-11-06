@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://memoflow.dev/contracts/context-result.schema.json",
+  "title": "ContextGatherResultChunk",
+  "description": "One result chunk published by the context engine to the RabbitMQ queue `ctx.gather.results`. The API consumes chunks ordered by `sequence`, relays each `data` chunk to the frontend over the existing WebSocket, and completes or fails the planning job on the terminal `status` chunk (`phase` = completed | failed).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "job_id", "user_id", "sequence", "type"],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Contract version. Additive-only changes within v1."
+    },
+    "job_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "planning_jobs._id — MUST match the originating request's job_id."
+    },
+    "user_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "PG users.id that owns the planning job (echoed from the request)."
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "0-based, monotonically increasing per job. The API treats chunks as idempotent by (job_id, sequence)."
+    },
+    "type": {
+      "type": "string",
+      "enum": ["data", "status"],
+      "description": "`data` carries a gathered-context chunk; `status` carries a lifecycle signal. The stream ends with a `status` chunk of phase `completed` or `failed`."
+    },
+    "data": { "$ref": "#/$defs/data" },
+    "status": { "$ref": "#/$defs/status" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "data" } }, "required": ["type"] },
+      "then": { "required": ["data"] }
+    },
+    {
+      "if": { "properties": { "type": { "const": "status" } }, "required": ["type"] },
+      "then": { "required": ["status"] }
+    }
+  ],
+  "$defs": {
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "content"],
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": ["trello", "notion", "github"],
+          "description": "Which connector this context chunk was gathered from."
+        },
+        "content": {
+          "type": "string",
+          "description": "The gathered context payload — a JSON string or text blob. Opaque to the API; consumed by the LLM planner (roadmap item 5)."
+        },
+        "token_estimate": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Optional estimate of the token cost of this chunk, for budgeting."
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase"],
+      "properties": {
+        "phase": {
+          "type": "string",
+          "enum": ["started", "gathering", "completed", "failed"],
+          "description": "Lifecycle phase. `completed` and `failed` are terminal — no further chunks follow for this job_id."
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable detail (progress note, or failure reason)."
+        },
+        "error_code": {
+          "type": "string",
+          "description": "Machine-readable failure code. Set when phase = failed."
+        }
+      }
+    }
+  }
+}
