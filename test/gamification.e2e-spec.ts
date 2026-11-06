@@ -340,7 +340,7 @@ describeWithDocker()('Gamification (e2e)', () => {
       .expect(200);
 
     const entries = res.body as {
-      user_id: string;
+      is_me: boolean;
       display_name: string;
       xp: number;
       level: number;
@@ -352,6 +352,8 @@ describeWithDocker()('Gamification (e2e)', () => {
       expect(entry).not.toHaveProperty('email');
       expect(entry).not.toHaveProperty('password_hash');
       expect(entry).not.toHaveProperty('passwordHash');
+      expect(entry).not.toHaveProperty('user_id');
+      expect(typeof entry.is_me).toBe('boolean');
     }
     // Non-increasing xp ordering across the whole page.
     for (let i = 1; i < entries.length; i += 1) {

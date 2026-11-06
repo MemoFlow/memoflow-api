@@ -3,7 +3,7 @@ import { LeaderboardEntry } from '../../../application/gamification/get-leaderbo
 
 export class LeaderboardEntryResponseDto {
   @ApiProperty()
-  user_id: string;
+  is_me: boolean;
 
   @ApiProperty()
   display_name: string;
@@ -16,7 +16,7 @@ export class LeaderboardEntryResponseDto {
 
   static fromEntry(entry: LeaderboardEntry): LeaderboardEntryResponseDto {
     const dto = new LeaderboardEntryResponseDto();
-    dto.user_id = entry.userId;
+    dto.is_me = entry.isMe;
     dto.display_name = entry.displayName;
     dto.xp = entry.xp;
     dto.level = entry.level;

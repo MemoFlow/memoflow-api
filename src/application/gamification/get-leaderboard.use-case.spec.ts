@@ -1,3 +1,4 @@
+import { UserRole } from '../../domain/users/user-role';
 import { User } from '../../domain/users/user.entity';
 import { UserRepository } from '../../domain/users/user.repository';
 import { GetLeaderboardUseCase } from './get-leaderboard.use-case';
@@ -23,6 +24,10 @@ class InMemoryUserRepository implements UserRepository {
     return Promise.reject(new Error('not implemented'));
   }
 
+  setDisabledAt(): Promise<void> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
   findTopByXp(limit: number): Promise<User[]> {
     this.requestedLimits.push(limit);
     return Promise.resolve(
@@ -37,7 +42,7 @@ function makeUser(overrides: Partial<User> = {}): User {
     email: 'user@example.com',
     passwordHash: 'hash',
     displayName: 'Test User',
-    role: 'user',
+    role: UserRole.User,
     xp: 0,
     level: 1,
     lastActiveAt: null,
@@ -46,15 +51,15 @@ function makeUser(overrides: Partial<User> = {}): User {
 }
 
 describe('GetLeaderboardUseCase', () => {
-  it('projects only non-sensitive fields (never email or passwordHash)', async () => {
+  it('projects only non-sensitive fields (never email, passwordHash or user id)', async () => {
     const user = makeUser({ id: 'user-1', xp: 200, level: 3 });
     const repository = new InMemoryUserRepository([user]);
     const useCase = new GetLeaderboardUseCase(repository);
 
-    const result = await useCase.execute();
+    const result = await useCase.execute('user-1');
 
     expect(result).toEqual([
-      { userId: 'user-1', displayName: 'Test User', xp: 200, level: 3 },
+      { isMe: true, displayName: 'Test User', xp: 200, level: 3 },
     ]);
   });
 
@@ -62,7 +67,7 @@ describe('GetLeaderboardUseCase', () => {
     const repository = new InMemoryUserRepository([]);
     const useCase = new GetLeaderboardUseCase(repository);
 
-    await useCase.execute();
+    await useCase.execute('viewer');
 
     expect(repository.requestedLimits).toEqual([10]);
   });
@@ -71,7 +76,7 @@ describe('GetLeaderboardUseCase', () => {
     const repository = new InMemoryUserRepository([]);
     const useCase = new GetLeaderboardUseCase(repository);
 
-    await useCase.execute(500);
+    await useCase.execute('viewer', 500);
 
     expect(repository.requestedLimits).toEqual([50]);
   });
@@ -80,8 +85,20 @@ describe('GetLeaderboardUseCase', () => {
     const repository = new InMemoryUserRepository([]);
     const useCase = new GetLeaderboardUseCase(repository);
 
-    await useCase.execute(0);
+    await useCase.execute('viewer', 0);
 
     expect(repository.requestedLimits).toEqual([1]);
+  });
+
+  it('flags only the requesting user as isMe', async () => {
+    const repository = new InMemoryUserRepository([
+      makeUser({ id: 'user-1', xp: 200 }),
+      makeUser({ id: 'user-2', xp: 100, displayName: 'Other' }),
+    ]);
+    const useCase = new GetLeaderboardUseCase(repository);
+
+    const result = await useCase.execute('user-2');
+
+    expect(result.map((entry) => entry.isMe)).toEqual([false, true]);
   });
 });
