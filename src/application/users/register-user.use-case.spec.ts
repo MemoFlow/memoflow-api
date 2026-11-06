@@ -9,6 +9,15 @@ import { UserRole } from '../../domain/users/user-role';
 import { FakeUserRepository, makeUser } from '../auth/testing-fakes';
 import { RegisterUserUseCase } from './register-user.use-case';
 
+// Wraps the real bcrypt.hash so calls can be counted without faking it.
+jest.mock('bcrypt', () => {
+  const actual = jest.requireActual<typeof import('bcrypt')>('bcrypt');
+  return {
+    ...actual,
+    hash: jest.fn(actual.hash as (...a: unknown[]) => Promise<string>),
+  };
+});
+
 describe('RegisterUserUseCase', () => {
   const input = {
     email: 'ada@example.com',
@@ -20,6 +29,7 @@ describe('RegisterUserUseCase', () => {
   let useCase: RegisterUserUseCase;
 
   beforeEach(() => {
+    (bcrypt.hash as unknown as jest.Mock).mockClear();
     repository = new FakeUserRepository();
     emit = jest.fn();
     useCase = new RegisterUserUseCase(repository, {
@@ -39,6 +49,27 @@ describe('RegisterUserUseCase', () => {
     expect(emit).toHaveBeenCalledWith(AUTH_VERIFICATION_REQUESTED_EVENT, {
       userId: user.id,
     });
+  });
+
+  it('hashes the password before looking the address up, for new and existing addresses alike', async () => {
+    const hash = bcrypt.hash as unknown as jest.Mock;
+    const order: string[] = [];
+    hash.mockImplementationOnce(() => {
+      order.push('hash');
+      return Promise.resolve('h');
+    });
+    jest.spyOn(repository, 'findByEmail').mockImplementation(() => {
+      order.push('lookup');
+      return Promise.resolve(null);
+    });
+    await useCase.execute(input);
+    expect(order).toEqual(['hash', 'lookup']);
+
+    jest.restoreAllMocks();
+    repository.users.push(makeUser());
+    hash.mockClear();
+    await useCase.execute(input);
+    expect(hash).toHaveBeenCalledTimes(1);
   });
 
   it('stores the address trimmed and lowercased', async () => {

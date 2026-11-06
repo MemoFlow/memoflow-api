@@ -134,11 +134,14 @@ production), and re-check on every environment's secret rotation:
 
 - [ ] `CORS_ORIGIN` set to the real frontend origin — **never `*`** outside `development`
       (item 27). `*` is the documented dev-only default; see the README env-vars table.
-- [ ] `WS_CORS_ORIGIN` set to the real frontend origin — same rule, same default (item 27).
+      Boot fails on staging and production if it is `*` or blank.
+- [ ] `WS_CORS_ORIGIN` set to the real frontend origin — same rule, same default, same
+      boot failure (item 27).
 - [ ] `JWT_SECRET` is a unique, random value **at least 32 characters**, different per
       environment (item 26) — enforced at boot by `@MinLength(32)` on
       `EnvironmentVariables.JWT_SECRET` (`src/config/env.validation.ts`); a shorter
-      value fails validation and the app won't start.
+      value fails validation and the app won't start. On staging and production, boot
+      also fails if it equals the `.env.example` placeholder.
 - [ ] All `COMPOSIO_*` vars (`COMPOSIO_API_KEY`, `COMPOSIO_AUTH_CONFIG_IDS`,
       `COMPOSIO_WEBHOOK_SECRET`) and `RABBITMQ_URL` are set **before** the environment's
       first deploy, not added reactively after. The **2026-07 dev outage** is the
@@ -255,6 +258,23 @@ Verification and password-reset emails are sent through Resend.
   `change-password` returns a fresh token.
 - **Verification gate:** with `EMAIL_VERIFICATION_REQUIRED=true`, unverified accounts
   get `403 Email not verified` on AI suggestion, connector and planning-job routes.
+
+## Session and login hardening
+
+- **Logout:** `POST /auth/logout` (JWT) bumps the account's token version, so every
+  access token issued so far stops working, not just the caller's. Open WebSocket
+  connections are closed. Audited as `auth.logout`.
+- **Socket lifetime:** a WebSocket is disconnected when its JWT expires; the client
+  reconnects with a fresh token. A token without an `exp` claim is refused.
+- **Login throttle:** besides the per-IP limit, `POST /auth/login` allows 10 attempts per
+  normalized email per 15 minutes, then answers `429` with `Retry-After`. A successful
+  login or password reset clears the count. The counter lives in Redis under a hashed key, so no address
+  is stored there.
+- **Login timing:** an unknown email costs the same password check as a wrong password.
+- **Password length:** bcrypt ignores input past 72 bytes, so register, reset and
+  change-password reject longer passwords with `400`. The limit counts bytes, not
+  characters. Login doesn't enforce it, so existing accounts can still sign in.
+- **Boot checks:** see the deploy checklist for the refused CORS and `JWT_SECRET` values.
 
 Mail configuration per tier:
 

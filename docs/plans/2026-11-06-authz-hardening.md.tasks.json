@@ -36,7 +36,7 @@
     {
       "id": 5,
       "subject": "Phase 5: Auth hardening",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         3
       ],
@@ -56,8 +56,8 @@
       "subject": "Template content: key points and guidance",
       "status": "pending",
       "blockedBy": [],
-      "description": "**Goal:** Store section keyPoints and guidance for the starter templates.\n**Acceptance Criteria:** template_sections gains key_points (jsonb) and guidance (text), both nullable, with migration and schema doc; the fields carried through every layer: domain TemplateSection and TemplateSectionData, TemplateSectionInput and toTemplateSectionData, ORM entity and toDomain mapping, request DTO with class-validator and Swagger, response DTO as snake_case key_points and guidance; unit and e2e tests proving a round trip. The ValidationPipe whitelist strips unknown fields without an error, so a PATCH sent before deploy reports success and loses the content. A decision on whether apply copies them into the document (if so: document section column, migration and schema doc). After the deploy to development, each of the five templates PATCHed as an admin from docs/plans/2026-11-06-template-content.json, then read back and compared. PATCH replaces sections wholesale, so section ids change.\n**Verify:** npm run lint && npm run build && npm test && npm run test:e2e\n```json:metadata\n{\"modelTier\": \"standard\", \"verifyCommand\": \"npm run lint && npm run build && npm test && npm run test:e2e\", \"acceptanceCriteria\": [\"Fields stored and returned\", \"All five templates match the JSON\"]}\n```"
+      "description": "**Goal:** Store section keyPoints and guidance for the starter templates.\n**Acceptance Criteria:** template_sections gains key_points (jsonb) and guidance (text), both nullable, with migration and schema doc; the fields carried through every layer: domain TemplateSection and TemplateSectionData, TemplateSectionInput and toTemplateSectionData, ORM entity and toDomain mapping, request DTO with class-validator and Swagger, response DTO as snake_case key_points and guidance; unit and e2e tests proving a round trip. The ValidationPipe whitelist strips unknown fields without an error, so a PATCH sent before deploy reports success and loses the content. Decided 2026-11-06: apply does not copy them into the document; they stay on the template for the frontend to show as guidance. After the deploy to development, each of the five templates PATCHed as an admin from docs/plans/2026-11-06-template-content.json, then read back and compared. PATCH replaces sections wholesale, so section ids change.\n**Verify:** npm run lint && npm run build && npm test && npm run test:e2e\n```json:metadata\n{\"modelTier\": \"standard\", \"verifyCommand\": \"npm run lint && npm run build && npm test && npm run test:e2e\", \"acceptanceCriteria\": [\"Fields stored and returned\", \"All five templates match the JSON\"]}\n```"
     }
   ],
-  "lastUpdated": "2026-11-06T17:00:00Z"
+  "lastUpdated": "2026-11-06T18:00:00Z"
 }

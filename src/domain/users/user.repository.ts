@@ -16,6 +16,11 @@ export interface UserRepository {
   /** Sets `disabledAt` (or clears it when `null`). */
   setDisabledAt(id: string, disabledAt: Date | null): Promise<void>;
   /**
+   * Increments `token_version`, invalidating every access token issued so
+   * far (logout everywhere); returns the new version.
+   */
+  revokeSessions(id: string): Promise<number>;
+  /**
    * In one transaction: consumes the unused, unexpired email-verification
    * token with this hash and sets `emailVerifiedAt` if null. Returns the
    * user id, or `null` (nothing changed) when no token matched.

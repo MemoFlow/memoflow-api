@@ -21,6 +21,7 @@ export const AUTH_PASSWORD_RESET_REQUESTED_EVENT =
 export const AUTH_PASSWORD_RESET_COMPLETED_EVENT =
   'auth.password_reset_completed';
 export const AUTH_PASSWORD_CHANGED_EVENT = 'auth.password_changed';
+export const AUTH_LOGOUT_EVENT = 'auth.logout';
 export const AUTH_EMAIL_VERIFIED_EVENT = 'auth.email_verified';
 export const CONNECTOR_REVOKED_EVENT = 'connector.revoked';
 export const SUGGESTION_REVIEWED_EVENT = 'suggestion.reviewed';

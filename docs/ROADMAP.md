@@ -426,9 +426,10 @@ work already flagged as deferred in the sections above, not a numbered feature:
     decisions first:** storage cap numbers, and whether registration stays open. The AI quota
     (10 per user, 40 total per day) and AI input limits moved to the
     [AI rework](plans/2026-11-06-ai-rework.md).
-  - ☐ **Phase 5, auth hardening:** logout, sockets ending at token expiry, per-account
-    login throttle, uniform login and register timing, 72-byte password cap, boot checks
-    for unsafe production config.
+  - ✅ **Phase 5, auth hardening:** `POST /auth/logout`, sockets ending at token expiry, per-account login throttle (10 per
+    15 minutes), uniform login and register timing, 72-byte password
+    cap, boot checks for unsafe `CORS_ORIGIN`, `WS_CORS_ORIGIN` and `JWT_SECRET` on
+    staging/production. See [`docs/security.md`](security.md#session-and-login-hardening).
   - ☐ **Phase 6, remaining:** audit coverage for template and admin actions, Postgres TLS
     certificate verification, non-admin template update conditional on `is_published`,
     per-tier broker credentials, Swagger off on staging, doc-type check on apply,
@@ -437,8 +438,8 @@ work already flagged as deferred in the sections above, not a numbered feature:
   - ☐ **Template content:** the five starter templates (thesis and internship report) are
     published on `development`, but their section `keyPoints` and `guidance` aren't stored,
     since the API doesn't have those fields. Add `key_points` (`jsonb`) and `guidance`
-    (`text`) to `template_sections` with a migration, schema doc and DTO update; decide whether
-    apply copies them into the document; then `PATCH` each template, as an admin, from
+    (`text`) to `template_sections` with a migration, schema doc and DTO update. Apply doesn't
+    copy them into the document. Then `PATCH` each template, as an admin, from
     [`plans/2026-11-06-template-content.json`](plans/2026-11-06-template-content.json).
   - ☐ **Frontend (`memoflow-client`):** forgot, reset and verify pages; handling for
     403 `Email not verified`; leaderboard types to `is_me`; demo login behind a dev-only

@@ -51,11 +51,12 @@ via `@nestjs/jwt` and validated by Passport-JWT.
 
 | method | path | auth | notes |
 | --- | --- | --- | --- |
-| `POST` | `/auth/register` | — | always **202** with the same body, whether or not the address already has an account; the outcome is sent by email. No user is returned — log in separately |
-| `POST` | `/auth/login` | — | returns `{ accessToken }`; updates `last_active_at` |
+| `POST` | `/auth/register` | — | always **202** with the same body, whether or not the address already has an account; the outcome is sent by email. No user is returned — log in separately; **400** for a password over 72 bytes |
+| `POST` | `/auth/login` | — | returns `{ accessToken }`; updates `last_active_at`; **429** with a `Retry-After` header after 10 attempts per email in 15 minutes (a successful login resets the count) |
+| `POST` | `/auth/logout` | JWT | **204**; ends all of the user's sessions and closes their sockets |
 | `POST` | `/auth/forgot-password` | — | body `{ email }`; always **202**, whether or not the address has an account; emails a reset link |
-| `POST` | `/auth/reset-password` | — | body `{ token, new_password }`; **204**; **400** for an invalid, used or expired token; signs out existing sessions |
-| `POST` | `/auth/change-password` | JWT | body `{ current_password, new_password }`; returns a fresh `{ accessToken }`; **400** if the current password is wrong; signs out other sessions and open sockets |
+| `POST` | `/auth/reset-password` | — | body `{ token, new_password }`; **204**; **400** for an invalid, used or expired token or a password over 72 bytes; signs out existing sessions |
+| `POST` | `/auth/change-password` | JWT | body `{ current_password, new_password }`; returns a fresh `{ accessToken }`; **400** if the current password is wrong or the new one is over 72 bytes; signs out other sessions and open sockets |
 | `POST` | `/auth/verify-email` | — | body `{ token }`; **204**; **400** for an invalid, used or expired token |
 | `POST` | `/auth/resend-verification` | JWT | always **202**; sends nothing if already verified or a message was sent in the last 5 minutes |
 | `GET` | `/users/me` | JWT | the authenticated user (includes `email_verified`) |
@@ -205,14 +206,14 @@ Beyond the database connection vars, auth requires:
 
 | var | required | default | notes |
 | --- | --- | --- | --- |
-| `JWT_SECRET` | yes | — | signing key for access tokens; enforced at boot to be at least 32 characters (`@MinLength(32)`), and must be a unique random value per environment outside dev |
+| `JWT_SECRET` | yes | — | signing key for access tokens; enforced at boot to be at least 32 characters (`@MinLength(32)`), and must be a unique random value per environment outside dev; boot fails on staging/production if it equals the `.env.example` placeholder |
 | `JWT_EXPIRES_IN` | no | `15m` | access token lifetime |
 | `REDIS_HOST` | yes | — | Redis host for the BullMQ planning queue |
 | `REDIS_PORT` | yes | — | Redis port (`0`–`65535`) |
 | `REDIS_PASSWORD` | no | — | Redis auth password, if required |
 | `REDIS_TLS` | no | `false` | set `true` for managed TLS-only Redis (e.g. Upstash); local docker Redis stays `false` — mirrors `POSTGRES_SSL` |
-| `CORS_ORIGIN` | no | `*` | frontend origin allowed for cross-origin REST API requests; `*` is dev-only — must be set explicitly in staging/production, never `*` |
-| `WS_CORS_ORIGIN` | no | `*` | frontend origin allowed to open the planning WebSocket; `*` is dev-only — must be set explicitly in staging/production, never `*` |
+| `CORS_ORIGIN` | no | `*` | frontend origin allowed for cross-origin REST API requests; `*` is dev-only — boot fails on staging/production if it is `*` or blank |
+| `WS_CORS_ORIGIN` | no | `*` | frontend origin allowed to open the planning WebSocket; `*` is dev-only — boot fails on staging/production if it is `*` or blank |
 | `COMPOSIO_API_KEY` | yes | — | authenticates this API to Composio (the OAuth vault + MCP host for connectors) |
 | `COMPOSIO_BASE_URL` | no | — | override the Composio API base URL (defaults to Composio's hosted endpoint) |
 | `COMPOSIO_AUTH_CONFIG_IDS` | yes | — | comma-separated `provider:authConfigId` map, e.g. `trello:ac_...,notion:ac_...` |

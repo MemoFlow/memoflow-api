@@ -80,6 +80,18 @@ export class UserTypeOrmRepository implements UserRepository {
     });
   }
 
+  async revokeSessions(id: string): Promise<number> {
+    const result: [Array<{ token_version: number }>, number] =
+      await this.repository.manager.query(
+        `UPDATE "users" SET "token_version" = "token_version" + 1 WHERE "id" = $1 RETURNING "token_version"`,
+        [id],
+      );
+    if (result[0].length === 0) {
+      throw new Error('User not found');
+    }
+    return result[0][0].token_version;
+  }
+
   async changePassword(id: string, passwordHash: string): Promise<number> {
     return this.repository.manager.transaction(async (manager) => {
       // Lock order everywhere: user row first, then token rows.

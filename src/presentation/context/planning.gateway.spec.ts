@@ -4,6 +4,11 @@ import { UserRole } from '../../domain/users/user-role';
 import { User } from '../../domain/users/user.entity';
 import { PlanningGateway } from './planning.gateway';
 
+/** A valid token expiry (seconds since epoch) one hour from now. */
+function futureExp(): number {
+  return Math.floor(Date.now() / 1000) + 3600;
+}
+
 function makeJob(overrides: Partial<PlanningJob> = {}): PlanningJob {
   return new PlanningJob({
     id: 'job-1',
@@ -69,6 +74,7 @@ describe('PlanningGateway', () => {
       join: jest.fn().mockResolvedValue(undefined),
       disconnect: jest.fn(),
       emit: jest.fn(),
+      id: 'sock-1',
     };
   }
 
@@ -77,6 +83,7 @@ describe('PlanningGateway', () => {
       const client = makeClient();
       client.handshake.auth.token = 'valid-token';
       jwtService.verifyAsync.mockResolvedValue({
+        exp: futureExp(),
         sub: 'user-1',
         email: 'a@b.com',
       });
@@ -113,7 +120,10 @@ describe('PlanningGateway', () => {
     it('joins the owner room before checking the account, and only then emits ready', async () => {
       const client = makeClient();
       client.handshake.auth.token = 'valid-token';
-      jwtService.verifyAsync.mockResolvedValue({ sub: 'user-1' });
+      jwtService.verifyAsync.mockResolvedValue({
+        exp: futureExp(),
+        sub: 'user-1',
+      });
       const order: string[] = [];
       client.join.mockImplementation(() => {
         order.push('join');
@@ -147,7 +157,10 @@ describe('PlanningGateway', () => {
     it('disconnects when the account is disabled', async () => {
       const client = makeClient();
       client.handshake.auth.token = 'valid-token';
-      jwtService.verifyAsync.mockResolvedValue({ sub: 'user-1' });
+      jwtService.verifyAsync.mockResolvedValue({
+        exp: futureExp(),
+        sub: 'user-1',
+      });
       getUserById.execute.mockResolvedValue(
         new User({
           id: 'user-1',
@@ -171,7 +184,10 @@ describe('PlanningGateway', () => {
     it('logs a warning (without the token) for a non-auth failure and still disconnects', async () => {
       const client = makeClient();
       client.handshake.auth.token = 'secret-token-value';
-      jwtService.verifyAsync.mockResolvedValue({ sub: 'user-1' });
+      jwtService.verifyAsync.mockResolvedValue({
+        exp: futureExp(),
+        sub: 'user-1',
+      });
       getUserById.execute.mockRejectedValue(new Error('db down'));
       const warn = jest
         .spyOn(Logger.prototype, 'warn')
@@ -206,6 +222,7 @@ describe('PlanningGateway', () => {
       const client = makeClient();
       client.handshake.auth.token = 'valid-token';
       jwtService.verifyAsync.mockResolvedValue({
+        exp: futureExp(),
         sub: 'ghost-user',
         email: 'a@b.com',
       });
@@ -224,7 +241,11 @@ describe('PlanningGateway', () => {
     it('disconnects at handshake when the token version is stale', async () => {
       const client = makeClient();
       client.handshake.auth.token = 'valid-token';
-      jwtService.verifyAsync.mockResolvedValue({ sub: 'user-1', tv: 0 });
+      jwtService.verifyAsync.mockResolvedValue({
+        exp: futureExp(),
+        sub: 'user-1',
+        tv: 0,
+      });
       getUserById.execute.mockResolvedValue(makeUser(null, 1));
 
       await gateway.handleConnection(client as any);
@@ -236,7 +257,10 @@ describe('PlanningGateway', () => {
     it('treats a missing tv as 0 and keeps the version on the socket', async () => {
       const client = makeClient();
       client.handshake.auth.token = 'valid-token';
-      jwtService.verifyAsync.mockResolvedValue({ sub: 'user-1' });
+      jwtService.verifyAsync.mockResolvedValue({
+        exp: futureExp(),
+        sub: 'user-1',
+      });
       getUserById.execute.mockResolvedValue(makeUser(null, 0));
 
       await gateway.handleConnection(client as any);
@@ -266,6 +290,113 @@ describe('PlanningGateway', () => {
 
       expect(inRoom).toHaveBeenCalledWith('user:user-1');
       expect(disconnectSockets).toHaveBeenCalledWith(true);
+    });
+  });
+
+  describe('token expiry', () => {
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    function connect(exp: number | undefined, id = 'sock-1') {
+      const client = { ...makeClient(), id };
+      client.handshake.auth.token = 'valid';
+      jwtService.verifyAsync.mockResolvedValue({ sub: 'user-1', exp });
+      return { client, done: gateway.handleConnection(client as any) };
+    }
+
+    it('disconnects the socket when the token expires', async () => {
+      jest.useFakeTimers({ now: new Date('2026-01-01T00:00:00Z') });
+      const nowSec = Date.now() / 1000;
+      const { client, done } = connect(nowSec + 60);
+      await done;
+
+      jest.advanceTimersByTime(59_000);
+      expect(client.disconnect).not.toHaveBeenCalled();
+      jest.advanceTimersByTime(1_500);
+      expect(client.disconnect).toHaveBeenCalledWith(true);
+    });
+
+    it('disconnects immediately when the token is already past exp', async () => {
+      jest.useFakeTimers({ now: new Date('2026-01-01T00:00:00Z') });
+      const { client, done } = connect(Date.now() / 1000 - 1);
+      await done;
+
+      expect(client.disconnect).toHaveBeenCalledWith(true);
+      expect(jest.getTimerCount()).toBe(0);
+    });
+
+    it('disconnects a token with no exp (never issued by this API)', async () => {
+      jest.useFakeTimers();
+      const { client, done } = connect(undefined);
+      await done;
+
+      expect(client.disconnect).toHaveBeenCalledWith(true);
+      expect(client.emit).not.toHaveBeenCalledWith('ready');
+      expect(jest.getTimerCount()).toBe(0);
+    });
+
+    it('clears the timer when the client disconnects first', async () => {
+      jest.useFakeTimers();
+      const { client, done } = connect(Date.now() / 1000 + 60);
+      await done;
+      expect(jest.getTimerCount()).toBe(1);
+
+      gateway.handleDisconnect(client as any);
+
+      expect(jest.getTimerCount()).toBe(0);
+    });
+
+    it('does not arm a timer for a socket that disconnected during the handshake', async () => {
+      jest.useFakeTimers();
+      const { client, done } = connect(Date.now() / 1000 + 60);
+      (client as any).disconnected = true;
+      await done;
+
+      expect(jest.getTimerCount()).toBe(0);
+    });
+
+    it('clamps to the setTimeout maximum and re-arms until the real deadline', async () => {
+      jest.useFakeTimers({ now: new Date('2026-01-01T00:00:00Z') });
+      const setTimeoutSpy = jest.spyOn(global, 'setTimeout');
+      const thirtyDays = 30 * 24 * 3600;
+      const { client, done } = connect(Date.now() / 1000 + thirtyDays);
+      await done;
+
+      expect(setTimeoutSpy.mock.calls[0][1]).toBe(2_147_483_647);
+      jest.advanceTimersByTime(2_147_483_647);
+      expect(client.disconnect).not.toHaveBeenCalled();
+      expect(jest.getTimerCount()).toBe(1);
+      jest.advanceTimersByTime(thirtyDays * 1000);
+      expect(client.disconnect).toHaveBeenCalledWith(true);
+    });
+
+    it('unrefs the timer so it cannot hold the process open', async () => {
+      const unref = jest.fn();
+      const realSetTimeout = global.setTimeout;
+      jest
+        .spyOn(global, 'setTimeout')
+        .mockImplementation((fn: () => void, ms: number) => {
+          const t = realSetTimeout(fn, ms);
+          t.unref();
+          return Object.assign(t, { unref });
+        });
+      const { done } = connect(Math.floor(Date.now() / 1000) + 60);
+      await done;
+
+      expect(unref).toHaveBeenCalled();
+      gateway.onModuleDestroy();
+    });
+
+    it('leaves no timers behind on module destroy', async () => {
+      jest.useFakeTimers();
+      await connect(Date.now() / 1000 + 60, 'a').done;
+      await connect(Date.now() / 1000 + 60, 'b').done;
+      expect(jest.getTimerCount()).toBe(2);
+
+      gateway.onModuleDestroy();
+
+      expect(jest.getTimerCount()).toBe(0);
     });
   });
 

@@ -1,6 +1,7 @@
 import {
   AUTH_LOGIN_EVENT,
   AUTH_LOGIN_FAILED_EVENT,
+  AUTH_LOGOUT_EVENT,
   CONNECTOR_REVOKED_EVENT,
   SUGGESTION_REVIEWED_EVENT,
 } from '../../domain/audit/audit-events';
@@ -45,6 +46,23 @@ describe('AuditListener', () => {
       action: AUTH_LOGIN_FAILED_EVENT,
       userId: null,
       metadata: { email: 'nobody@example.com' },
+      ip: null,
+    });
+  });
+
+  it('maps auth.logout to the right action/userId with no metadata', async () => {
+    const useCase = makeUseCase();
+    useCase.execute.mockResolvedValue(undefined as never);
+    const listener = new AuditListener(
+      useCase as unknown as RecordAuditEventUseCase,
+    );
+
+    await listener.onAuthLogout({ userId: 'user-1' });
+
+    expect(useCase.execute).toHaveBeenCalledWith({
+      action: AUTH_LOGOUT_EVENT,
+      userId: 'user-1',
+      metadata: null,
       ip: null,
     });
   });

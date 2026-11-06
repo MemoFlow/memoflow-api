@@ -8,6 +8,7 @@ import { ForgotPasswordUseCase } from './application/auth/forgot-password.use-ca
 import { LoginUserUseCase } from './application/auth/login-user.use-case';
 import { AUTH_MAIL_CONFIG } from './application/auth/auth-mail-config.token';
 import type { AuthMailConfig } from './application/auth/auth-mail-config.token';
+import { LogoutUserUseCase } from './application/auth/logout-user.use-case';
 import { ResendVerificationUseCase } from './application/auth/resend-verification.use-case';
 import { ResetPasswordUseCase } from './application/auth/reset-password.use-case';
 import { SendPasswordResetEmailUseCase } from './application/auth/send-password-reset-email.use-case';
@@ -19,8 +20,10 @@ import { GetUserProfileUseCase } from './application/users/get-user-profile.use-
 import { GetUserByIdUseCase } from './application/users/get-user-by-id.use-case';
 import { RegisterUserUseCase } from './application/users/register-user.use-case';
 import { AUTH_TOKEN_REPOSITORY } from './domain/auth/auth-token.repository';
+import { LOGIN_ATTEMPT_LIMITER } from './domain/auth/login-attempt-limiter.port';
 import { EmailModule } from './email.module';
 import { USER_REPOSITORY } from './domain/users/user.repository';
+import { RedisLoginAttemptLimiter } from './infrastructure/auth/redis-login-attempt-limiter';
 import { AuthTokenOrmEntity } from './infrastructure/persistence/auth/auth-token.orm-entity';
 import { AuthTokenTypeOrmRepository } from './infrastructure/persistence/auth/auth-token.typeorm.repository';
 import { UserOrmEntity } from './infrastructure/persistence/users/user.orm-entity';
@@ -59,6 +62,7 @@ import { UsersController } from './presentation/users/users.controller';
   providers: [
     { provide: USER_REPOSITORY, useClass: UserTypeOrmRepository },
     { provide: AUTH_TOKEN_REPOSITORY, useClass: AuthTokenTypeOrmRepository },
+    { provide: LOGIN_ATTEMPT_LIMITER, useClass: RedisLoginAttemptLimiter },
     {
       provide: AUTH_MAIL_CONFIG,
       inject: [ConfigService],
@@ -70,6 +74,7 @@ import { UsersController } from './presentation/users/users.controller';
     ForgotPasswordUseCase,
     ResetPasswordUseCase,
     ChangePasswordUseCase,
+    LogoutUserUseCase,
     VerifyEmailUseCase,
     ResendVerificationUseCase,
     SendVerificationEmailUseCase,
