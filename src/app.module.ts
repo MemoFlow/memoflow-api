@@ -14,6 +14,7 @@ import { ContextModule } from './context.module';
 import { DocumentVersionsModule } from './document-versions.module';
 import { DocumentsModule } from './documents.module';
 import { GamificationModule } from './gamification.module';
+import { LeadsModule } from './leads.module';
 import { HealthModule } from './shared/health/health.module';
 import { AppThrottlerModule } from './shared/throttler/throttler.module';
 import { TemplatesModule } from './templates.module';
@@ -61,6 +62,7 @@ import { UsersModule } from './users.module';
     DocumentVersionsModule,
     TemplatesModule,
     GamificationModule,
+    LeadsModule,
     AuditModule,
   ],
   controllers: [AppController],
