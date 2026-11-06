@@ -184,7 +184,7 @@ the next started:
 
 Item 5 (AI layer) built on this complete async backbone (submit → queue →
 worker → push). Item 7's context-gatherer is real when `CONTEXT_ENGINE_URL` is set
-(stub fallback otherwise); the LLM planner is likewise real when `ANTHROPIC_API_KEY`
+(stub fallback otherwise); the LLM planner is likewise real when `OPENROUTER_API_KEY`
 is set (stub fallback otherwise) — see item 5 below.
 
 **External context-engine transport — live on `development`, verified end-to-end
@@ -226,18 +226,20 @@ own `RABBITMQ_URL` provisioned before their first deploys.
   `PATCH /suggestions/:id` (accept/reject a **pending** suggestion; 409 if already
   reviewed). Ownership is derived transitively through the section's document, same
   404-never-leaks-existence convention as items 2–4.
-- Provider: Anthropic (`claude-sonnet-5` by default) via the `@anthropic-ai/sdk`
-  client, wired behind two ports — `SuggestionGenerator` (suggestions) and
-  `LlmPlanner` (planning jobs) — both **optional**: `ANTHROPIC_API_KEY` unset keeps
+- Provider: OpenRouter (`openrouter/free` by default) via the `LlmGateway` port and
+  its single `OpenRouterGateway` adapter (native `fetch`; moved off Anthropic in AI
+  rework slice 1), wired behind two ports — `SuggestionGenerator` (suggestions) and
+  `LlmPlanner` (planning jobs) — both **optional**: `OPENROUTER_API_KEY` unset keeps
   `AiModule`'s `SUGGESTION_GENERATOR` on `NullSuggestionGenerator` (suggestions
   endpoint returns 503 "AI not configured") and `ContextModule`'s `LLM_PLANNER` on
   the existing `StubLlmPlanner` (echoes the prompt) — mirrors the item 7
   `CONTEXT_GATHERER` factory convention, so `start:dev`/smoke/e2e/tests keep working
   with no AI provider configured. New optional env vars in `env.validation.ts` +
-  `.env.example`: `ANTHROPIC_API_KEY` (unset = both fallbacks), `ANTHROPIC_MODEL`
-  (default `claude-sonnet-5`), `ANTHROPIC_MAX_TOKENS` (default `4096`).
-  `AiModule` exports its `AnthropicClientProvider` so `ContextModule` shares one
-  Anthropic client instance rather than constructing a second.
+  `.env.example`: `OPENROUTER_API_KEY` (unset = both fallbacks), `OPENROUTER_MODEL`
+  (default `openrouter/free`), `OPENROUTER_FALLBACK_MODELS`, `OPENROUTER_MAX_TOKENS`
+  (default `4096`), `OPENROUTER_TIMEOUT_MS` (default `60000`), `OPENROUTER_BASE_URL`.
+  `AiModule` exports `LLM_GATEWAY` so `ContextModule` shares one gateway instance
+  rather than constructing a second. Provider 5xx and timeouts surface as 503.
 - Seed: `scripts/seed.ts` now seeds one active prompt per feature type —
   `suggestion` (v1, substitutes `{{content}}`) and `planning` (v1) — idempotent,
   dev/test only.
@@ -262,7 +264,13 @@ limits, guardrails, caching and AI data consent.
   order, so a terminal chunk can't finalize before earlier data chunks are saved. Known limits: ordering
   assumes one API instance consuming results, and a data chunk requeued after a transient failure can
   still arrive after the terminal chunk.
-- Slices 1–7 — pending. See the plan.
+- **Slice 1, gateway and OpenRouter swap — ✅ done.** `@anthropic-ai/sdk`, its adapters and `ANTHROPIC_*`
+  are removed. All LLM calls go through the `LlmGateway` port (`src/domain/ai/llm-gateway.port.ts`) and one
+  adapter (`src/infrastructure/ai/openrouter.gateway.ts`, native `fetch`). New env vars: `OPENROUTER_API_KEY`
+  (optional; unset keeps the null generator and stub planner), `OPENROUTER_MODEL` (default `openrouter/free`),
+  `OPENROUTER_FALLBACK_MODELS`, `OPENROUTER_MAX_TOKENS`, `OPENROUTER_TIMEOUT_MS`, `OPENROUTER_BASE_URL`.
+  Provider 5xx and timeouts now surface as 503 rather than 502.
+- Slices 2–7 — pending. See the plan.
 
 ## 6. Gamification (PG) — ✅ done
 
@@ -370,7 +378,7 @@ context-engine push).
   `CONTEXT_ENGINE_URL`, `CONTEXT_ENGINE_API_KEY` (Bearer auth when set),
   `CONTEXT_ENGINE_TIMEOUT_MS` (default `10000`ms fetch-abort timeout so a hung
   context engine fails the job fast, not silently). No PG schema change. The LLM
-  planner was stubbed at the time this branch landed — real Anthropic-backed
+  planner was stubbed at the time this branch landed — real LLM-backed
   planning arrived with item 5 above.
 
 ---
@@ -393,7 +401,7 @@ work already flagged as deferred in the sections above, not a numbered feature:
   `RABBITMQ_URL` is unset — still every environment other than `development`.
   Outstanding: provisioning `RABBITMQ_URL` for staging/production before their
   first deploys.
-- **`ANTHROPIC_API_KEY` is unset on `development`** — the AI suggestion endpoint
+- **`OPENROUTER_API_KEY` is unset on `development`** — the AI suggestion endpoint
   returns 503 ("AI not configured") and the planning-job LLM planner stays on
   `StubLlmPlanner` ("(stub plan)") on the deployed dev service. Item 5's code is
   done; this is a deploy-config gap, not a missing feature.
@@ -433,7 +441,7 @@ work already flagged as deferred in the sections above, not a numbered feature:
   (dependabot, `npm audit` gate) is tracked separately with the `devops` agent.
 - **Error tracking via Sentry (`@sentry/nestjs`) is now implemented** — optional and
   OFF by default (unset `SENTRY_DSN` ⇒ complete no-op, mirrors the
-  `ANTHROPIC_API_KEY` convention). Captures unexpected 500s (`HttpExceptionFilter`),
+  `OPENROUTER_API_KEY` convention). Captures unexpected 500s (`HttpExceptionFilter`),
   swallowed gamification-listener errors, and async job failures that never hit the
   HTTP filter (the BullMQ planning processor's handled-failure and gather-timeout
   branches, and the RabbitMQ context-results terminal-failure path — captured once,
@@ -445,7 +453,7 @@ work already flagged as deferred in the sections above, not a numbered feature:
   [`docs/security.md`](security.md#error-tracking--observability). **`SENTRY_DSN` is
   now set on `development`** (shipped PR #44 — error tracking is live there) but
   still unset on staging/production, same deploy-config-gap pattern as
-  `ANTHROPIC_API_KEY` and `RABBITMQ_URL` above — set per environment once observability
+  `OPENROUTER_API_KEY` and `RABBITMQ_URL` above — set per environment once observability
   is wanted there.
 
 ## Standing rules for every item
