@@ -1,5 +1,7 @@
-import { NotFoundException } from '@nestjs/common';
+import { Logger, NotFoundException } from '@nestjs/common';
 import { JobStatus, PlanningJob } from '../../domain/context/planning-job';
+import { UserRole } from '../../domain/users/user-role';
+import { User } from '../../domain/users/user.entity';
 import { PlanningGateway } from './planning.gateway';
 
 function makeJob(overrides: Partial<PlanningJob> = {}): PlanningJob {
@@ -21,6 +23,20 @@ function makeJob(overrides: Partial<PlanningJob> = {}): PlanningJob {
   });
 }
 
+function makeUser(disabledAt: Date | null = null): User {
+  return new User({
+    id: 'user-1',
+    email: 'a@b.com',
+    passwordHash: 'hash',
+    displayName: 'A',
+    role: UserRole.User,
+    xp: 0,
+    level: 1,
+    lastActiveAt: null,
+    disabledAt,
+  });
+}
+
 describe('PlanningGateway', () => {
   let jwtService: { verifyAsync: jest.Mock };
   let configService: { getOrThrow: jest.Mock };
@@ -28,10 +44,14 @@ describe('PlanningGateway', () => {
   let getPlanningJob: { execute: jest.Mock };
   let gateway: PlanningGateway;
 
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   beforeEach(() => {
     jwtService = { verifyAsync: jest.fn() };
     configService = { getOrThrow: jest.fn().mockReturnValue('test-secret') };
-    getUserById = { execute: jest.fn() };
+    getUserById = { execute: jest.fn().mockResolvedValue(makeUser()) };
     getPlanningJob = { execute: jest.fn() };
     gateway = new PlanningGateway(
       jwtService as any,
@@ -89,6 +109,98 @@ describe('PlanningGateway', () => {
       expect(client.join).not.toHaveBeenCalled();
     });
 
+    it('joins the owner room before checking the account, and only then emits ready', async () => {
+      const client = makeClient();
+      client.handshake.auth.token = 'valid-token';
+      jwtService.verifyAsync.mockResolvedValue({ sub: 'user-1' });
+      const order: string[] = [];
+      client.join.mockImplementation(() => {
+        order.push('join');
+        return Promise.resolve();
+      });
+      getUserById.execute.mockImplementation(() => {
+        order.push('check');
+        return Promise.resolve(makeUser());
+      });
+      client.emit.mockImplementation((event: string) => {
+        order.push(`emit:${event}`);
+      });
+
+      await gateway.handleConnection(client as any);
+
+      expect(order).toEqual(['join', 'check', 'emit:ready']);
+    });
+
+    it('does not join any room when token verification fails', async () => {
+      const client = makeClient();
+      client.handshake.auth.token = 'bad';
+      jwtService.verifyAsync.mockRejectedValue(new Error('invalid'));
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+
+      await gateway.handleConnection(client as any);
+
+      expect(client.join).not.toHaveBeenCalled();
+      expect(client.disconnect).toHaveBeenCalledWith(true);
+    });
+
+    it('disconnects when the account is disabled', async () => {
+      const client = makeClient();
+      client.handshake.auth.token = 'valid-token';
+      jwtService.verifyAsync.mockResolvedValue({ sub: 'user-1' });
+      getUserById.execute.mockResolvedValue(
+        new User({
+          id: 'user-1',
+          email: 'a@b.com',
+          passwordHash: 'hash',
+          displayName: 'A',
+          role: UserRole.User,
+          xp: 0,
+          level: 1,
+          lastActiveAt: null,
+          disabledAt: new Date(),
+        }),
+      );
+
+      await gateway.handleConnection(client as any);
+
+      expect(client.disconnect).toHaveBeenCalledWith(true);
+      expect(client.emit).not.toHaveBeenCalledWith('ready');
+    });
+
+    it('logs a warning (without the token) for a non-auth failure and still disconnects', async () => {
+      const client = makeClient();
+      client.handshake.auth.token = 'secret-token-value';
+      jwtService.verifyAsync.mockResolvedValue({ sub: 'user-1' });
+      getUserById.execute.mockRejectedValue(new Error('db down'));
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+
+      await gateway.handleConnection(client as any);
+
+      expect(client.disconnect).toHaveBeenCalledWith(true);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0][0])).not.toContain('secret-token-value');
+      warn.mockRestore();
+    });
+
+    it('does not log for an invalid token', async () => {
+      const client = makeClient();
+      client.handshake.auth.token = 'bad';
+      const err = new Error('invalid signature');
+      err.name = 'JsonWebTokenError';
+      jwtService.verifyAsync.mockRejectedValue(err);
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+
+      await gateway.handleConnection(client as any);
+
+      expect(client.disconnect).toHaveBeenCalledWith(true);
+      expect(warn).not.toHaveBeenCalled();
+      warn.mockRestore();
+    });
+
     it('disconnects when the token is valid but the user no longer exists', async () => {
       const client = makeClient();
       client.handshake.auth.token = 'valid-token';
@@ -103,11 +215,60 @@ describe('PlanningGateway', () => {
       await gateway.handleConnection(client as any);
 
       expect(client.disconnect).toHaveBeenCalledWith(true);
-      expect(client.join).not.toHaveBeenCalled();
+      expect(client.emit).not.toHaveBeenCalledWith('ready');
+    });
+  });
+
+  describe('handleUserDisabled', () => {
+    it("disconnects every socket in the user's room", () => {
+      const disconnectSockets = jest.fn();
+      const inRoom = jest.fn().mockReturnValue({ disconnectSockets });
+      gateway.server = { in: inRoom } as any;
+
+      gateway.handleUserDisabled({ userId: 'user-1' });
+
+      expect(inRoom).toHaveBeenCalledWith('user:user-1');
+      expect(disconnectSockets).toHaveBeenCalledWith(true);
     });
   });
 
   describe('handleSubscribe', () => {
+    it('disconnects without serving the job when the account is now disabled', async () => {
+      const client = makeClient();
+      client.data.userId = 'user-1';
+      getUserById.execute.mockResolvedValue(makeUser(new Date()));
+
+      await gateway.handleSubscribe(client as any, { jobId: 'job-1' });
+
+      expect(client.disconnect).toHaveBeenCalledWith(true);
+      expect(getPlanningJob.execute).not.toHaveBeenCalled();
+    });
+
+    it('fails closed (disconnects and rethrows) when the account re-check errors', async () => {
+      const client = makeClient();
+      client.data.userId = 'user-1';
+      const boom = new Error('db down');
+      getUserById.execute.mockRejectedValue(boom);
+
+      await expect(
+        gateway.handleSubscribe(client as any, { jobId: 'job-1' }),
+      ).rejects.toBe(boom);
+
+      expect(client.disconnect).toHaveBeenCalledWith(true);
+      expect(getPlanningJob.execute).not.toHaveBeenCalled();
+    });
+
+    it('disconnects without serving the job when the user no longer exists', async () => {
+      const client = makeClient();
+      client.data.userId = 'user-1';
+      getUserById.execute.mockRejectedValue(new NotFoundException());
+
+      await gateway.handleSubscribe(client as any, { jobId: 'job-1' });
+
+      expect(client.disconnect).toHaveBeenCalledWith(true);
+      expect(getPlanningJob.execute).not.toHaveBeenCalled();
+    });
+
     it('emits the mapped current-state event for the caller own job', async () => {
       const client = makeClient();
       client.data.userId = 'user-1';

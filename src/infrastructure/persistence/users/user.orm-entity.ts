@@ -1,6 +1,7 @@
-import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
+import { Check, Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity('users')
+@Check('CHK_users_role', `"role" IN ('user', 'admin')`)
 export class UserOrmEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -32,4 +33,7 @@ export class UserOrmEntity {
     default: () => 'now()',
   })
   lastActiveAt: Date;
+
+  @Column({ type: 'timestamptz', name: 'disabled_at', nullable: true })
+  disabledAt: Date | null;
 }

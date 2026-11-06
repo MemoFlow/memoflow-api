@@ -6,6 +6,7 @@ import {
   AUTH_LOGIN_EVENT,
   AUTH_LOGIN_FAILED_EVENT,
 } from '../../domain/audit/audit-events';
+import { UserRole } from '../../domain/users/user-role';
 import { User } from '../../domain/users/user.entity';
 import { UserRepository } from '../../domain/users/user.repository';
 import { LoginUserUseCase } from './login-user.use-case';
@@ -36,6 +37,10 @@ class InMemoryUserRepository implements UserRepository {
     return Promise.resolve();
   }
 
+  setDisabledAt(): Promise<void> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
   findTopByXp(): Promise<User[]> {
     return Promise.reject(new Error('not implemented'));
   }
@@ -54,7 +59,7 @@ describe('LoginUserUseCase', () => {
       email: 'ada@example.com',
       passwordHash: await bcrypt.hash('correct-password', 10),
       displayName: 'Ada Lovelace',
-      role: 'user',
+      role: UserRole.User,
       xp: 0,
       level: 1,
       lastActiveAt: null,
@@ -116,6 +121,23 @@ describe('LoginUserUseCase', () => {
     await expect(
       useCase.execute({ email: 'ada@example.com', password: 'wrong' }),
     ).rejects.toThrow(UnauthorizedException);
+
+    expect(repository.updatedLastActiveAtIds).toEqual([]);
+    expect(eventEmitter.emit).toHaveBeenCalledWith(AUTH_LOGIN_FAILED_EVENT, {
+      userId: 'user-1',
+      email: 'ada@example.com',
+    });
+  });
+
+  it('rejects a disabled account with the same error, even with the correct password, and emits auth.login_failed', async () => {
+    user.disabledAt = new Date();
+
+    await expect(
+      useCase.execute({
+        email: 'ada@example.com',
+        password: 'correct-password',
+      }),
+    ).rejects.toThrow(new UnauthorizedException('Invalid email or password'));
 
     expect(repository.updatedLastActiveAtIds).toEqual([]);
     expect(eventEmitter.emit).toHaveBeenCalledWith(AUTH_LOGIN_FAILED_EVENT, {

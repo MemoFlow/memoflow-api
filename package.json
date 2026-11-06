@@ -30,6 +30,7 @@
     "db:down": "./scripts/db.sh down",
     "db:reset": "./scripts/db.sh reset",
     "db:seed": "./scripts/db.sh seed",
+    "admin:promote": "ts-node scripts/promote-admin.ts",
     "smoke": "./scripts/smoke.sh",
     "release": "./scripts/release.sh",
     "release:dry": "./scripts/release.sh --dry-run",

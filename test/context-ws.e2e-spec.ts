@@ -10,6 +10,7 @@ import {
   startPgContainer,
   PgTestEnv,
 } from './utils/pg-testcontainer';
+import { promoteToAdmin } from './utils/promote-admin';
 import { startRedisContainer, RedisTestEnv } from './utils/redis-testcontainer';
 
 // Same Docker-availability gate as `context.e2e-spec.ts` — this suite boots
@@ -257,6 +258,28 @@ describeWithDocker()('Context / planning-job WebSocket push (e2e)', () => {
     await waitForDisconnect(socket);
     expect(socket.connected).toBe(false);
   }, 15_000);
+
+  it('drops an already-connected socket when its account is disabled', async () => {
+    const adminToken = await registerAndLogin('ws-disable-admin@example.com');
+    await promoteToAdmin(pg.env, 'ws-disable-admin@example.com');
+    const userToken = await registerAndLogin('ws-disable-target@example.com');
+    const me = await request(app.getHttpServer())
+      .get('/users/me')
+      .set('Authorization', `Bearer ${userToken}`)
+      .expect(200);
+
+    const socket = await connectClient(userToken);
+    await waitForReady(socket);
+    expect(socket.connected).toBe(true);
+
+    await request(app.getHttpServer())
+      .post(`/users/${me.body.id as string}/disable`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(204);
+
+    await waitForDisconnect(socket);
+    expect(socket.connected).toBe(false);
+  }, 20_000);
 
   it('disconnects a socket presenting an invalid/garbage JWT', async () => {
     const socket = await connectClient('not-a-real-jwt');

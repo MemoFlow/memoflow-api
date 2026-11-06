@@ -1,6 +1,7 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { IsNull, QueryFailedError, Repository } from 'typeorm';
+import { UserRole } from '../../../domain/users/user-role';
 import { User } from '../../../domain/users/user.entity';
 import {
   CreateUserData,
@@ -10,6 +11,8 @@ import { UserOrmEntity } from './user.orm-entity';
 
 @Injectable()
 export class UserTypeOrmRepository implements UserRepository {
+  private readonly logger = new Logger(UserTypeOrmRepository.name);
+
   constructor(
     @InjectRepository(UserOrmEntity)
     private readonly repository: Repository<UserOrmEntity>,
@@ -53,12 +56,31 @@ export class UserTypeOrmRepository implements UserRepository {
     await this.repository.update({ id }, { lastActiveAt: new Date() });
   }
 
+  async setDisabledAt(id: string, disabledAt: Date | null): Promise<void> {
+    await this.repository.update({ id }, { disabledAt });
+  }
+
   async findTopByXp(limit: number): Promise<User[]> {
     const entities = await this.repository.find({
+      where: { disabledAt: IsNull() },
       order: { xp: 'DESC' },
       take: limit,
     });
     return entities.map((entity) => this.toDomain(entity));
+  }
+
+  /**
+   * Narrows the stored varchar to `UserRole` once, here. An unrecognised
+   * value fails closed to the least-privileged role.
+   */
+  private toRole(entity: UserOrmEntity): UserRole {
+    if (entity.role === (UserRole.Admin as string)) return UserRole.Admin;
+    if (entity.role !== (UserRole.User as string)) {
+      this.logger.warn(
+        `Unknown role "${entity.role}" for user ${entity.id}; treating as "${UserRole.User}"`,
+      );
+    }
+    return UserRole.User;
   }
 
   private toDomain(entity: UserOrmEntity): User {
@@ -67,10 +89,11 @@ export class UserTypeOrmRepository implements UserRepository {
       email: entity.email,
       passwordHash: entity.passwordHash,
       displayName: entity.displayName,
-      role: entity.role,
+      role: this.toRole(entity),
       xp: entity.xp,
       level: entity.level,
       lastActiveAt: entity.lastActiveAt,
+      disabledAt: entity.disabledAt,
     });
   }
 }

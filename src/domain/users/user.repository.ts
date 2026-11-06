@@ -13,6 +13,11 @@ export interface UserRepository {
   findByEmail(email: string): Promise<User | null>;
   create(data: CreateUserData): Promise<User>;
   updateLastActiveAt(id: string): Promise<void>;
-  /** Top `limit` users by `xp` descending, for the leaderboard. */
+  /** Sets `disabledAt` (or clears it when `null`). */
+  setDisabledAt(id: string, disabledAt: Date | null): Promise<void>;
+  /**
+   * Top `limit` enabled (not disabled) users by `xp` descending, for the
+   * leaderboard.
+   */
   findTopByXp(limit: number): Promise<User[]>;
 }

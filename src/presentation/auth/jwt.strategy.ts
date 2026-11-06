@@ -24,8 +24,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload): Promise<User> {
+    let user: User;
     try {
-      return await this.getUserById.execute(payload.sub);
+      user = await this.getUserById.execute(payload.sub);
     } catch (err) {
       // A missing user means the token no longer maps to an account (deleted
       // user, forged sub) — that is an auth failure. Anything else (e.g. a DB
@@ -36,5 +37,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       }
       throw err;
     }
+    if (user.isDisabled) {
+      throw new UnauthorizedException('Invalid token');
+    }
+    return user;
   }
 }
