@@ -172,8 +172,8 @@ Two context-gathering transports exist, selected by `RABBITMQ_URL`:
 A submitted job can optionally be bound to an owned `documentId`/`sectionId` — the
 use-case validates the caller owns the document (and that a given section belongs to
 it) before writing either into Mongo, 404ing uniformly on any mismatch. The
-LLM-planner port is likewise real when `ANTHROPIC_API_KEY` is set (Anthropic
-`claude-sonnet-5` by default), recording the active `planning` prompt's version and
+LLM-planner port is likewise real when `OPENROUTER_API_KEY` is set (model
+`openrouter/free` by default), recording the active `planning` prompt's version and
 the context used on the job once it runs; unset keeps the built-in `StubLlmPlanner`
 (echoes the prompt back).
 
@@ -222,14 +222,17 @@ Beyond the database connection vars, auth requires:
 | `CONTEXT_ENGINE_TIMEOUT_MS` | no | `10000` | aborts the context-engine POST after this many ms, failing the planning job fast instead of hanging |
 | `RABBITMQ_URL` | no | — | `amqp://`/`amqps://` broker URL; unset keeps the legacy synchronous `ContextEngineHttpClient`/stub gather path (`CONTEXT_ENGINE_URL` above); set to switch planning jobs onto the async RabbitMQ transport (`docs/contracts/context-engine.md`) |
 | `CONTEXT_GATHER_TIMEOUT_MS` | no | `120000` | only meaningful when `RABBITMQ_URL` is set — fails a job stuck in `gathering` past this many ms with `error_code: CONTEXT_ENGINE_TIMEOUT` |
-| `ANTHROPIC_API_KEY` | no | — | powers AI suggestion generation and the planning-job LLM planner; unset keeps both on their null/stub fallbacks (suggestions endpoint returns 503, planning jobs keep using `StubLlmPlanner`) |
-| `ANTHROPIC_MODEL` | no | `claude-sonnet-5` | Anthropic model id used for both suggestions and planning |
-| `ANTHROPIC_MAX_TOKENS` | no | `4096` | max output tokens per Anthropic call |
+| `OPENROUTER_API_KEY` | no | — | powers AI suggestion generation and the planning-job LLM planner via OpenRouter; unset keeps both on their null/stub fallbacks (suggestions endpoint returns 503, planning jobs keep using `StubLlmPlanner`) |
+| `OPENROUTER_MODEL` | no | `openrouter/free` | OpenRouter model id used for both suggestions and planning |
+| `OPENROUTER_FALLBACK_MODELS` | no | — | comma-separated model ids tried after `OPENROUTER_MODEL` |
+| `OPENROUTER_MAX_TOKENS` | no | `4096` | max output tokens per LLM call |
+| `OPENROUTER_TIMEOUT_MS` | no | `60000` | aborts an LLM request after this many ms |
+| `OPENROUTER_BASE_URL` | no | `https://openrouter.ai/api/v1` | OpenRouter API base URL (operator config; overridable for tests) |
 | `RESEND_API_KEY` | staging/production | — | Resend API key for transactional email (verification, password reset); unset in development/test sends nothing (a "skipped" line is logged) |
 | `EMAIL_FROM` | staging/production | `onboarding@resend.dev` when only the key is set | From address, e.g. `MemoFlow <no-reply@your-domain>`; must belong to a verified sending domain |
 | `APP_BASE_URL` | staging/production | — | frontend origin that email links are built from (config only, never request data); unset means emails are skipped |
 | `EMAIL_VERIFICATION_REQUIRED` | no | `false` | `true` makes unverified accounts get 403 on gated routes; forced on in staging/production (boot fails if set to `false` there) |
-| `SENTRY_DSN` | no | — | error tracking via `@sentry/nestjs`; unset keeps it a complete no-op (mirrors `ANTHROPIC_API_KEY`) — set on `development` (error tracking live there, PR #44); staging/production still unset, see [`docs/security.md`](docs/security.md#error-tracking--observability) |
+| `SENTRY_DSN` | no | — | error tracking via `@sentry/nestjs`; unset keeps it a complete no-op (mirrors `OPENROUTER_API_KEY`) — set on `development` (error tracking live there, PR #44); staging/production still unset, see [`docs/security.md`](docs/security.md#error-tracking--observability) |
 | `SENTRY_ENVIRONMENT` | no | `NODE_ENV` | tags captured events by deploy environment; one Sentry project shared across environments |
 | `SENTRY_TRACES_SAMPLE_RATE` | no | `0` | performance-tracing sample rate, `0`–`1`; `0` = errors-only |
 | `SENTRY_RELEASE` | no | — | release tag on captured events; deferred — no CI wiring populates it yet |

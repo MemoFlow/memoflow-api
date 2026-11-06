@@ -30,14 +30,14 @@ import {
   GATHER_TIMEOUT_SCHEDULER,
   GatherTimeoutScheduler,
 } from './domain/context/gather-timeout-scheduler.port';
+import { LLM_GATEWAY, LlmGateway } from './domain/ai/llm-gateway.port';
 import { LLM_PLANNER, LlmPlanner } from './domain/context/llm-planner.port';
 import { PLANNING_JOB_REPOSITORY } from './domain/context/planning-job.repository';
-import { AnthropicLlmPlanner } from './infrastructure/context/anthropic-llm-planner';
+import { GatewayLlmPlanner } from './infrastructure/context/gateway-llm-planner';
 import { ConnectorContextGatherer } from './infrastructure/context/connector-context-gatherer';
 import { ContextEngineHttpClient } from './infrastructure/context/context-engine.http-client';
 import { StubContextGatherer } from './infrastructure/context/stub-context-gatherer';
 import { StubLlmPlanner } from './infrastructure/context/stub-llm-planner';
-import { AnthropicClientProvider } from './infrastructure/ai/anthropic.client';
 import { ContextResultsConsumer } from './infrastructure/amqp/context-results.consumer';
 import { RabbitContextRequestPublisher } from './infrastructure/amqp/rabbit-context-request.publisher';
 import { RabbitMqConnectionProvider } from './infrastructure/amqp/rabbitmq-connection.provider';
@@ -76,17 +76,17 @@ export function contextGathererFactory(
 }
 
 /**
- * Roadmap item 5 (AI layer) — picks the real, Anthropic-backed planner once
- * `ANTHROPIC_API_KEY` is configured, and falls back to `StubLlmPlanner`
+ * Roadmap item 5 (AI layer) — picks the real, gateway-backed planner once
+ * `OPENROUTER_API_KEY` is configured, and falls back to `StubLlmPlanner`
  * otherwise (echoes the prompt back), mirroring `contextGathererFactory`
  * above. Exported for a direct unit test.
  */
 export function llmPlannerFactory(
   config: ConfigService,
-  clientProvider: AnthropicClientProvider,
+  gateway: LlmGateway,
 ): LlmPlanner {
-  return config.get<string>('ANTHROPIC_API_KEY')
-    ? new AnthropicLlmPlanner(clientProvider)
+  return config.get<string>('OPENROUTER_API_KEY')
+    ? new GatewayLlmPlanner(gateway)
     : new StubLlmPlanner();
 }
 
@@ -146,9 +146,8 @@ export function contextResultsConsumerFactory(
 /**
  * Branch: feature/connector-context-engine (roadmap item 7, branch 3) — wires
  * `contextGathererFactory` above as the `CONTEXT_GATHERER` provider. Imports
- * `AiModule` to reuse its exported `AnthropicClientProvider` for
- * `llmPlannerFactory` (roadmap item 5) — a single shared Anthropic client
- * rather than a second instance — and `DocumentsModule` so
+ * `AiModule` to reuse its exported `LLM_GATEWAY` for
+ * `llmPlannerFactory` (roadmap item 5) — a single shared OpenRouter adapter — and `DocumentsModule` so
  * `SubmitPlanningJobUseCase` can validate an optional `documentId`/
  * `sectionId` binding against `DOCUMENT_REPOSITORY`/`SECTION_REPOSITORY`
  * before writing it into Mongo (also roadmap item 5).
@@ -199,7 +198,7 @@ export function contextResultsConsumerFactory(
     },
     {
       provide: LLM_PLANNER,
-      inject: [ConfigService, AnthropicClientProvider],
+      inject: [ConfigService, LLM_GATEWAY],
       useFactory: llmPlannerFactory,
     },
     {

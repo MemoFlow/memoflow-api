@@ -37,7 +37,7 @@ export function scrubSentryEvent<T extends Sentry.Event>(event: T): T {
   return event;
 }
 
-// Optional, OFF by default (mirrors the ANTHROPIC_API_KEY convention):
+// Optional, OFF by default (mirrors the OPENROUTER_API_KEY convention):
 // SENTRY_DSN unset means Sentry is a complete no-op and the app boots
 // identically — this is what keeps start:dev, unit tests, e2e
 // (Testcontainers), and smoke working with zero Sentry config. Reads

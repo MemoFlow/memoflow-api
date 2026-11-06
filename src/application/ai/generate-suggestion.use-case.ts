@@ -15,6 +15,7 @@ import {
   SuggestionGenerationRefusedError,
   SuggestionGenerationTruncatedError,
   SuggestionGeneratorRateLimitedError,
+  SUGGESTION_GENERATOR_NOT_CONFIGURED_MESSAGE,
   SuggestionGeneratorUnavailableError,
 } from '../../domain/ai/suggestion-generation.errors';
 import { SUGGESTION_GENERATOR } from '../../domain/ai/suggestion-generator.port';
@@ -109,7 +110,11 @@ export class GenerateSuggestionUseCase {
 
   private mapGenerationError(err: unknown): Error {
     if (err instanceof SuggestionGeneratorUnavailableError) {
-      return new ServiceUnavailableException('AI not configured');
+      return new ServiceUnavailableException(
+        err.message === SUGGESTION_GENERATOR_NOT_CONFIGURED_MESSAGE
+          ? 'AI not configured'
+          : err.message,
+      );
     }
     if (err instanceof SuggestionGenerationRefusedError) {
       return new UnprocessableEntityException(err.message);

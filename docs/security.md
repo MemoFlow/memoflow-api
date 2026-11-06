@@ -35,7 +35,7 @@ brute-force detection is possible from the audit trail alone.
 ## Error tracking / observability
 
 Sentry (`@sentry/nestjs`) is wired in but **optional and OFF by default** — same
-convention as `ANTHROPIC_API_KEY`: leave `SENTRY_DSN` unset and `src/instrument.ts`
+convention as `OPENROUTER_API_KEY`: leave `SENTRY_DSN` unset and `src/instrument.ts`
 never calls `Sentry.init()`, so the app boots identically with zero Sentry config
 (`start:dev`, unit tests, e2e, smoke all unaffected). `SENTRY_DSN` is now **set on
 `development`** (shipped PR #44 — error tracking is live there) but still unset on
@@ -73,7 +73,7 @@ instrumentation beyond BullMQ's built-in integration):
 **Per-environment setup:** set `SENTRY_DSN` (and optionally `SENTRY_ENVIRONMENT`,
 which otherwise falls back to `NODE_ENV`) as a secret on each deployed environment
 that should report to Sentry — same "operator-set config" treatment as
-`ANTHROPIC_API_KEY`/`COMPOSIO_*`. One Sentry project is used for all environments,
+`OPENROUTER_API_KEY`/`COMPOSIO_*`. One Sentry project is used for all environments,
 distinguished by the `SENTRY_ENVIRONMENT` tag rather than separate projects.
 `SENTRY_TRACES_SAMPLE_RATE` defaults to `0` (errors-only, no performance/tracing
 data) and is bounded to `[0, 1]`; `SENTRY_RELEASE` exists in config but has **no CI
@@ -84,7 +84,7 @@ wiring yet** — release tracking is deliberately deferred.
 slice relies on that plus Sentry's own server-side scrubbing rather than
 hand-redacting every capture site. Manual `captureException` calls only attach
 non-secret identifiers in `extra` (`jobId`, `errorCode`, `userId`, `documentId`) —
-never tokens, passwords, or `COMPOSIO_*`/`ANTHROPIC_API_KEY`-style secrets.
+never tokens, passwords, or `COMPOSIO_*`/`OPENROUTER_API_KEY`-style secrets.
 
 ## Backup & restore
 
@@ -177,28 +177,26 @@ otherwise) needs an allowlist, not just validation.
 
 ## Prompt-injection posture (item 39)
 
-Spot-checked `src/infrastructure/ai/anthropic-suggestion-generator.ts` and
-`src/infrastructure/context/anthropic-llm-planner.ts` (the only two call sites that
-send content to the Anthropic API).
+Spot-checked `src/infrastructure/ai/gateway-suggestion-generator.ts` and
+`src/infrastructure/context/gateway-llm-planner.ts`, which send content to the model
+only through `OpenRouterGateway` (`src/infrastructure/ai/openrouter.gateway.ts`).
+Slices 3 and 7 of the AI rework revisit this section.
 
-**Result: pass.**
+**Result: provisional.** Item 39 passed the original provider adapters. The gateway code
+that replaced them hasn't had that review yet; slices 3 and 7 do it.
 
-- Both call sites build a single `messages: [{ role: 'user', content: ... }]` array —
-  neither uses the SDK's `system` parameter at all, so there's no system prompt for
-  user-supplied content to be concatenated into. `AnthropicSuggestionGenerator.generate`
-  sends `input.promptTemplate` verbatim as the user message; `AnthropicLlmPlanner.plan`
-  renders the prompt + gathered context into one string (`renderPrompt`) and sends
-  that, also as the user message.
-- Both responses are constrained with `output_config.format: json_schema` and parsed
-  with `JSON.parse` into a typed shape (`SuggestionOutputShape` /
-  `PlanningOutputShape`); malformed output throws rather than being interpreted as
-  instructions. Neither file ever `eval`s, execs, or templates the model's output
-  back into a prompt — the parsed result is returned up to the use-case layer and
-  persisted as inert data (`ai_suggestions` rows / `planning_jobs.result` in Mongo).
-  Nothing downstream re-feeds stored suggestion/plan text into another LLM call
-  unsanitized.
-
-No code change made or needed for this item.
+- Both call sites pass a fixed `system` prompt and the content as the `user`
+  message, through the `LlmGateway` port. `GatewaySuggestionGenerator.generate`
+  sends `input.promptTemplate` as the user message; `GatewayLlmPlanner.plan` renders
+  the prompt + gathered context into one string and sends that as the user message.
+- Both requests set a `json_schema` `response_format` and the reply is parsed
+  with `JSON.parse` into a typed shape; malformed output throws rather than being
+  interpreted as instructions. Neither file ever `eval`s or execs the model's output.
+  The only time a reply goes back to the model is the gateway's one repair retry, which
+  sends the unparsed reply as an `assistant` turn within that same call. The parsed result is returned up to the
+  use-case layer and persisted as inert data (`ai_suggestions` rows /
+  `planning_jobs.result` in Mongo). Nothing downstream re-feeds stored
+  suggestion/plan text into another LLM call unsanitized.
 
 ## Rate-limiting note
 

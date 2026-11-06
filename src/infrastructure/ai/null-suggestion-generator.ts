@@ -6,7 +6,7 @@ import {
 } from '../../domain/ai/suggestion-generator.port';
 
 /**
- * Fallback `SuggestionGenerator` bound when `ANTHROPIC_API_KEY` is unset —
+ * Fallback `SuggestionGenerator` bound when `OPENROUTER_API_KEY` is unset —
  * keeps `start:dev`/smoke/e2e/tests working with no AI provider configured.
  * `generate()` always throws so any caller that skips the `isAvailable()`
  * check still fails safely.

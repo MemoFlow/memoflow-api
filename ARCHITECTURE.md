@@ -96,7 +96,7 @@ Stateful backing services used by the Core API.
 
 Third-party dependencies, kept behind internal abstractions so the rest of the system depends on stable internal interfaces rather than vendor specifics.
 
-- **LLM API** — the model provider (OpenAI / Anthropic), called through a provider-agnostic gateway so providers are swappable and prompts are versioned.
+- **LLM API** — OpenRouter, which routes to upstream model providers. All LLM calls go through the domain port `LlmGateway` (`src/domain/ai/llm-gateway.port.ts`) and a single adapter (`src/infrastructure/ai/openrouter.gateway.ts`, native `fetch`), so the provider is swappable and prompts are versioned.
 - **Connectors** — the external systems the Context module integrates with (Notion, GitHub, Trello, Gmail).
 - **Monitoring** — observability and error tracking (Sentry for errors, Datadog for metrics/APM).
 - **CDN** — delivery of static assets to the browser.

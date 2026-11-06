@@ -131,7 +131,7 @@ describeWithDocker()('Authorization (e2e)', () => {
       COMPOSIO_API_KEY: 'test-only-composio-key',
       COMPOSIO_AUTH_CONFIG_IDS: 'trello:ac_test,notion:ac_test,github:ac_test',
       COMPOSIO_WEBHOOK_SECRET: 'test-only-composio-webhook-secret',
-      ANTHROPIC_API_KEY: '',
+      OPENROUTER_API_KEY: '',
     });
 
     // Apply migrations against the fresh test container before boot —

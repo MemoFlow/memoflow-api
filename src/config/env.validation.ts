@@ -268,18 +268,36 @@ export class EnvironmentVariables {
   // `LLM_PLANNER` factory both fall back to a null/stub implementation when
   // unset, so `start:dev`/smoke/e2e/tests keep working with no AI provider
   // configured.
+  // All LLM calls go through OpenRouter (`OpenRouterGateway`).
   @IsOptional()
   @IsString()
-  ANTHROPIC_API_KEY?: string;
+  OPENROUTER_API_KEY?: string;
 
   @IsOptional()
   @IsString()
-  ANTHROPIC_MODEL: string = 'claude-sonnet-5';
+  OPENROUTER_MODEL: string = 'openrouter/free';
+
+  // Comma-separated model ids tried after OPENROUTER_MODEL (sent as the
+  // OpenRouter `models` array).
+  @IsOptional()
+  @IsString()
+  OPENROUTER_FALLBACK_MODELS?: string;
 
   @IsOptional()
   @IsInt()
   @Min(1)
-  ANTHROPIC_MAX_TOKENS: number = 4096;
+  OPENROUTER_MAX_TOKENS: number = 4096;
+
+  // Per-request abort timeout so a hung provider can't stall a request.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  OPENROUTER_TIMEOUT_MS: number = 60_000;
+
+  // Operator config only; overridable so tests can target a fake server.
+  @IsOptional()
+  @IsString()
+  OPENROUTER_BASE_URL: string = 'https://openrouter.ai/api/v1';
 
   // RabbitMQ context-engine transport (docs/contracts/context-engine.md).
   // Deliberately OPTIONAL — unset keeps `ContextModule`'s
@@ -341,7 +359,7 @@ export class EnvironmentVariables {
   EMAIL_VERIFICATION_REQUIRED: boolean = false;
 
   // Error-tracking (Sentry), roadmap-independent infra plumbing. Mirrors the
-  // ANTHROPIC_API_KEY convention: deliberately OPTIONAL, and its absence is
+  // OPENROUTER_API_KEY convention: deliberately OPTIONAL, and its absence is
   // the master switch — `src/instrument.ts` only calls `Sentry.init()` when
   // SENTRY_DSN is set, so start:dev/unit tests/e2e/smoke all keep working
   // with zero Sentry config. One Sentry project; SENTRY_ENVIRONMENT (falling
