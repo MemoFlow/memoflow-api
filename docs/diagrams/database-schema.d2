@@ -16,6 +16,8 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
     xp: int
     level: int
     last_active_at: timestamptz
+    disabled_at: "timestamptz (nullable)"
+    created_at: timestamptz
   }
 
   documents: {
@@ -172,6 +174,46 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
     created_at: timestamptz
   }
 
+  # One row per user, created by the first PUT /onboarding/me. PK is also the FK.
+  onboarding_profiles: {
+    shape: sql_table
+    user_id: uuid {constraint: [primary_key; foreign_key]}
+    persona: varchar
+    deliverable_type: varchar
+    due_date: date
+    academic_level: varchar
+    school_name: "varchar(120) (nullable)"
+    work_tools: "text[]"
+    blockers: "text[]"
+    acquisition_channel: varchar
+    marketing_opt_in: boolean
+    marketing_opt_in_at: timestamptz
+    submitted_at: timestamptz
+    created_at: timestamptz
+    updated_at: timestamptz
+  }
+
+  # Client-reported behaviour; unique (user_id, type) — IDX_lead_signals_user_type.
+  lead_signals: {
+    shape: sql_table
+    id: uuid {constraint: primary_key}
+    user_id: uuid {constraint: foreign_key}
+    type: varchar
+    first_seen_at: timestamptz
+    last_seen_at: timestamptz
+    occurrences: int
+  }
+
+  # Admin-only stored score; score and tier indexed, tier CHECK hot/warm/cold.
+  lead_scores: {
+    shape: sql_table
+    user_id: uuid {constraint: [primary_key; foreign_key]}
+    score: int
+    tier: varchar
+    breakdown: "jsonb ([{ rule, points }])"
+    computed_at: timestamptz
+  }
+
   documents.user_id -> users.id: cascade
   sections.document_id -> documents.id: cascade
   ai_suggestions.section_id -> sections.id
@@ -186,6 +228,9 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
   document_templates.document_id -> documents.id: cascade
   document_templates.template_id -> templates.id: cascade
   audit_logs.user_id -> users.id: set null
+  onboarding_profiles.user_id -> users.id: cascade
+  lead_signals.user_id -> users.id: cascade
+  lead_scores.user_id -> users.id: cascade
 }
 
 mongo: MongoDB (specialist — Mongoose) {

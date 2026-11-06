@@ -1,3 +1,4 @@
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { NotFoundException } from '@nestjs/common';
 import { ConnectorConnection } from '../../domain/connectors/connector-connection.entity';
 import {
@@ -96,7 +97,9 @@ function makeUseCase(
   gateway: FakeConnectorGateway = new FakeConnectorGateway(),
 ): GetConnectionUseCase {
   const repo = new InMemoryConnectorConnectionRepository(rows);
-  const syncUseCase = new SyncConnectionStatusUseCase(repo, gateway);
+  const syncUseCase = new SyncConnectionStatusUseCase(repo, gateway, {
+    emit: jest.fn(),
+  } as unknown as EventEmitter2);
   return new GetConnectionUseCase(repo, syncUseCase);
 }
 

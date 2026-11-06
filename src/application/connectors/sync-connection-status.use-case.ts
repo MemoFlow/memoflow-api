@@ -4,6 +4,9 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { CONNECTOR_STATUS_CHANGED_EVENT } from '../../domain/connectors/connector-events';
+import type { ConnectorStatusChangedEventPayload } from '../../domain/connectors/connector-events';
 import { ConnectorConnection } from '../../domain/connectors/connector-connection.entity';
 import {
   CONNECTOR_CONNECTION_REPOSITORY,
@@ -59,6 +62,7 @@ export class SyncConnectionStatusUseCase {
     private readonly connectorConnectionRepository: ConnectorConnectionRepository,
     @Inject(CONNECTOR_GATEWAY)
     private readonly connectorGateway: ConnectorGateway,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   /**
@@ -176,6 +180,14 @@ export class SyncConnectionStatusUseCase {
       connection.id,
       patch,
     );
+    if (updated) {
+      // Only after the write; fire-and-forget, so a listener failure can
+      // never fail the webhook or the read that triggered a reconcile.
+      const payload: ConnectorStatusChangedEventPayload = {
+        userId: updated.userId,
+      };
+      this.eventEmitter.emit(CONNECTOR_STATUS_CHANGED_EVENT, payload);
+    }
     return updated ?? connection;
   }
 }

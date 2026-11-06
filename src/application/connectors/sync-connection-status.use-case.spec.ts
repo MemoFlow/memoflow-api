@@ -1,3 +1,4 @@
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { UnauthorizedException } from '@nestjs/common';
 import { ConnectorConnection } from '../../domain/connectors/connector-connection.entity';
 import {
@@ -10,7 +11,17 @@ import {
 } from '../../domain/connectors/connector-gateway.port';
 import { ConnectorProvider } from '../../domain/connectors/connector-provider';
 import { ConnectorStatus } from '../../domain/connectors/connector-status';
+import { CONNECTOR_STATUS_CHANGED_EVENT } from '../../domain/connectors/connector-events';
 import { SyncConnectionStatusUseCase } from './sync-connection-status.use-case';
+
+function makeEmitter(): jest.Mocked<Pick<EventEmitter2, 'emit'>> {
+  return { emit: jest.fn() };
+}
+
+let emitter = makeEmitter();
+beforeEach(() => {
+  emitter = makeEmitter();
+});
 
 class InMemoryConnectorConnectionRepository implements ConnectorConnectionRepository {
   updateStatusCalls = 0;
@@ -117,6 +128,7 @@ describe('SyncConnectionStatusUseCase', () => {
       const useCase = new SyncConnectionStatusUseCase(
         repo,
         new FakeConnectorGateway(),
+        emitter as unknown as EventEmitter2,
       );
 
       await useCase.applyEvent({
@@ -127,6 +139,11 @@ describe('SyncConnectionStatusUseCase', () => {
       const updated = await repo.findById('conn-1');
       expect(updated?.status).toBe(ConnectorStatus.Active);
       expect(updated?.connectedAt).toBeInstanceOf(Date);
+      expect(emitter.emit).toHaveBeenCalledTimes(1);
+      expect(emitter.emit).toHaveBeenCalledWith(
+        CONNECTOR_STATUS_CHANGED_EVENT,
+        { userId: 'user-1' },
+      );
     });
 
     it('no-ops (does not throw) for an unknown Composio account', async () => {
@@ -134,6 +151,7 @@ describe('SyncConnectionStatusUseCase', () => {
       const useCase = new SyncConnectionStatusUseCase(
         repo,
         new FakeConnectorGateway(),
+        emitter as unknown as EventEmitter2,
       );
 
       await expect(
@@ -150,6 +168,7 @@ describe('SyncConnectionStatusUseCase', () => {
       const useCase = new SyncConnectionStatusUseCase(
         repo,
         new FakeConnectorGateway(),
+        emitter as unknown as EventEmitter2,
       );
 
       await useCase.applyEvent({
@@ -165,6 +184,8 @@ describe('SyncConnectionStatusUseCase', () => {
       const secondConnectedAt = (await repo.findById('conn-1'))?.connectedAt;
 
       expect(secondConnectedAt).toBe(firstConnectedAt);
+      // Only the first delivery was a real change.
+      expect(emitter.emit).toHaveBeenCalledTimes(1);
     });
 
     it('refuses to revive a Revoked connection on a stale/retried ACTIVE webhook', async () => {
@@ -173,6 +194,7 @@ describe('SyncConnectionStatusUseCase', () => {
       const useCase = new SyncConnectionStatusUseCase(
         repo,
         new FakeConnectorGateway(),
+        emitter as unknown as EventEmitter2,
       );
 
       await useCase.applyEvent({
@@ -183,6 +205,7 @@ describe('SyncConnectionStatusUseCase', () => {
       const updated = await repo.findById('conn-1');
       expect(updated?.status).toBe(ConnectorStatus.Revoked);
       expect(repo.updateStatusCalls).toBe(0);
+      expect(emitter.emit).not.toHaveBeenCalled();
     });
 
     it('refuses to move a Failed connection out of that terminal state', async () => {
@@ -191,6 +214,7 @@ describe('SyncConnectionStatusUseCase', () => {
       const useCase = new SyncConnectionStatusUseCase(
         repo,
         new FakeConnectorGateway(),
+        emitter as unknown as EventEmitter2,
       );
 
       await useCase.applyEvent({
@@ -201,6 +225,7 @@ describe('SyncConnectionStatusUseCase', () => {
       const updated = await repo.findById('conn-1');
       expect(updated?.status).toBe(ConnectorStatus.Failed);
       expect(repo.updateStatusCalls).toBe(0);
+      expect(emitter.emit).not.toHaveBeenCalled();
     });
   });
 
@@ -210,20 +235,32 @@ describe('SyncConnectionStatusUseCase', () => {
       const repo = new InMemoryConnectorConnectionRepository([connection]);
       const gateway = new FakeConnectorGateway();
       gateway.getConnectionStatusResult = ConnectorStatus.Active;
-      const useCase = new SyncConnectionStatusUseCase(repo, gateway);
+      const useCase = new SyncConnectionStatusUseCase(
+        repo,
+        gateway,
+        emitter as unknown as EventEmitter2,
+      );
 
       const result = await useCase.reconcile(connection);
 
       expect(result.status).toBe(ConnectorStatus.Active);
       expect(result.connectedAt).toBeInstanceOf(Date);
       expect(gateway.getConnectionStatusCalls).toBe(1);
+      expect(emitter.emit).toHaveBeenCalledWith(
+        CONNECTOR_STATUS_CHANGED_EVENT,
+        { userId: 'user-1' },
+      );
     });
 
     it('leaves terminal statuses untouched and never calls the gateway', async () => {
       const connection = makeConnection({ status: ConnectorStatus.Active });
       const repo = new InMemoryConnectorConnectionRepository([connection]);
       const gateway = new FakeConnectorGateway();
-      const useCase = new SyncConnectionStatusUseCase(repo, gateway);
+      const useCase = new SyncConnectionStatusUseCase(
+        repo,
+        gateway,
+        emitter as unknown as EventEmitter2,
+      );
 
       const result = await useCase.reconcile(connection);
 
@@ -236,11 +273,16 @@ describe('SyncConnectionStatusUseCase', () => {
       const repo = new InMemoryConnectorConnectionRepository([connection]);
       const gateway = new FakeConnectorGateway();
       gateway.getConnectionStatusResult = ConnectorStatus.Initiated;
-      const useCase = new SyncConnectionStatusUseCase(repo, gateway);
+      const useCase = new SyncConnectionStatusUseCase(
+        repo,
+        gateway,
+        emitter as unknown as EventEmitter2,
+      );
 
       const result = await useCase.reconcile(connection);
 
       expect(result).toBe(connection);
+      expect(emitter.emit).not.toHaveBeenCalled();
     });
 
     it('falls back to the last-known local status when the Composio lookup errors, without throwing', async () => {
@@ -248,7 +290,11 @@ describe('SyncConnectionStatusUseCase', () => {
       const repo = new InMemoryConnectorConnectionRepository([connection]);
       const gateway = new FakeConnectorGateway();
       gateway.getConnectionStatusError = new Error('Composio is down');
-      const useCase = new SyncConnectionStatusUseCase(repo, gateway);
+      const useCase = new SyncConnectionStatusUseCase(
+        repo,
+        gateway,
+        emitter as unknown as EventEmitter2,
+      );
 
       const result = await useCase.reconcile(connection);
 
@@ -266,7 +312,11 @@ describe('SyncConnectionStatusUseCase', () => {
         composioAccountId: 'ca_123',
         status: ConnectorStatus.Active,
       };
-      const useCase = new SyncConnectionStatusUseCase(repo, gateway);
+      const useCase = new SyncConnectionStatusUseCase(
+        repo,
+        gateway,
+        emitter as unknown as EventEmitter2,
+      );
 
       await useCase.verifyAndApply('{}', {
         id: 'msg_1',
@@ -282,7 +332,11 @@ describe('SyncConnectionStatusUseCase', () => {
       const repo = new InMemoryConnectorConnectionRepository([]);
       const gateway = new FakeConnectorGateway();
       gateway.verifyWebhookResult = new Error('bad signature');
-      const useCase = new SyncConnectionStatusUseCase(repo, gateway);
+      const useCase = new SyncConnectionStatusUseCase(
+        repo,
+        gateway,
+        emitter as unknown as EventEmitter2,
+      );
 
       await expect(
         useCase.verifyAndApply('{}', {
@@ -298,7 +352,11 @@ describe('SyncConnectionStatusUseCase', () => {
       const repo = new InMemoryConnectorConnectionRepository([connection]);
       const gateway = new FakeConnectorGateway();
       gateway.verifyWebhookResult = null;
-      const useCase = new SyncConnectionStatusUseCase(repo, gateway);
+      const useCase = new SyncConnectionStatusUseCase(
+        repo,
+        gateway,
+        emitter as unknown as EventEmitter2,
+      );
 
       await expect(
         useCase.verifyAndApply('{}', {

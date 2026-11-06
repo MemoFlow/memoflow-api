@@ -98,7 +98,9 @@ describe('RevokeConnectionUseCase', () => {
     const connection = makeConnection();
     const repo = new InMemoryConnectorConnectionRepository([connection]);
     const gateway = new FakeConnectorGateway();
-    const syncUseCase = new SyncConnectionStatusUseCase(repo, gateway);
+    const syncUseCase = new SyncConnectionStatusUseCase(repo, gateway, {
+      emit: jest.fn(),
+    } as unknown as EventEmitter2);
     const getUseCase = new GetConnectionUseCase(repo, syncUseCase);
     const eventEmitter = makeEventEmitter();
     const useCase = new RevokeConnectionUseCase(
@@ -126,7 +128,9 @@ describe('RevokeConnectionUseCase', () => {
     const connection = makeConnection({ userId: 'user-1' });
     const repo = new InMemoryConnectorConnectionRepository([connection]);
     const gateway = new FakeConnectorGateway();
-    const syncUseCase = new SyncConnectionStatusUseCase(repo, gateway);
+    const syncUseCase = new SyncConnectionStatusUseCase(repo, gateway, {
+      emit: jest.fn(),
+    } as unknown as EventEmitter2);
     const getUseCase = new GetConnectionUseCase(repo, syncUseCase);
     const eventEmitter = makeEventEmitter();
     const useCase = new RevokeConnectionUseCase(
@@ -146,7 +150,9 @@ describe('RevokeConnectionUseCase', () => {
   it('404s for a missing connection', async () => {
     const repo = new InMemoryConnectorConnectionRepository([]);
     const gateway = new FakeConnectorGateway();
-    const syncUseCase = new SyncConnectionStatusUseCase(repo, gateway);
+    const syncUseCase = new SyncConnectionStatusUseCase(repo, gateway, {
+      emit: jest.fn(),
+    } as unknown as EventEmitter2);
     const getUseCase = new GetConnectionUseCase(repo, syncUseCase);
     const eventEmitter = makeEventEmitter();
     const useCase = new RevokeConnectionUseCase(
@@ -166,7 +172,9 @@ describe('RevokeConnectionUseCase', () => {
     const connection = makeConnection({ status: ConnectorStatus.Revoked });
     const repo = new InMemoryConnectorConnectionRepository([connection]);
     const gateway = new FakeConnectorGateway();
-    const syncUseCase = new SyncConnectionStatusUseCase(repo, gateway);
+    const syncUseCase = new SyncConnectionStatusUseCase(repo, gateway, {
+      emit: jest.fn(),
+    } as unknown as EventEmitter2);
     const getUseCase = new GetConnectionUseCase(repo, syncUseCase);
     const eventEmitter = makeEventEmitter();
     const useCase = new RevokeConnectionUseCase(
@@ -190,7 +198,9 @@ describe('RevokeConnectionUseCase', () => {
     const connection = makeConnection();
     const repo = new InMemoryConnectorConnectionRepository([connection]);
     const gateway = new FakeConnectorGateway();
-    const syncUseCase = new SyncConnectionStatusUseCase(repo, gateway);
+    const syncUseCase = new SyncConnectionStatusUseCase(repo, gateway, {
+      emit: jest.fn(),
+    } as unknown as EventEmitter2);
     const getUseCase = new GetConnectionUseCase(repo, syncUseCase);
     const eventEmitter = makeEventEmitter();
     const useCase = new RevokeConnectionUseCase(

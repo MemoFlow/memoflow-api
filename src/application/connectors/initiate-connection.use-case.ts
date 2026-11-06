@@ -1,4 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { CONNECTOR_STATUS_CHANGED_EVENT } from '../../domain/connectors/connector-events';
 import { CONNECTOR_CONNECTION_REPOSITORY } from '../../domain/connectors/connector-connection.repository';
 import type { ConnectorConnectionRepository } from '../../domain/connectors/connector-connection.repository';
 import { CONNECTOR_GATEWAY } from '../../domain/connectors/connector-gateway.port';
@@ -30,6 +32,7 @@ export class InitiateConnectionUseCase {
     private readonly connectorGateway: ConnectorGateway,
     @Inject(CONNECTOR_CONNECTION_REPOSITORY)
     private readonly connectorConnectionRepository: ConnectorConnectionRepository,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async execute(
@@ -45,6 +48,12 @@ export class InitiateConnectionUseCase {
       userId: input.userId,
       provider: input.provider,
       composioAccountId,
+    });
+
+    // The row is back to `initiated`, so a previously active connector no
+    // longer counts toward the owner's lead score.
+    this.eventEmitter.emit(CONNECTOR_STATUS_CHANGED_EVENT, {
+      userId: input.userId,
     });
 
     return { redirectUrl, connectionId: row.id, status };

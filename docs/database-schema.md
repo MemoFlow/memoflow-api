@@ -9,7 +9,7 @@ PR as the code change.
 
 - **PostgreSQL is the primary database.** Everything relational lives here: users,
   auth, documents, sections, AI suggestions, prompts, connector connections, gamification,
-  the template system, and the security audit log. Accessed via TypeORM with
+  the template system, onboarding answers and lead scores, and the security audit log. Accessed via TypeORM with
   migrations only (`synchronize: false`, always).
 - **MongoDB is the specialist store.** Only two collections:
   `document_versions` (immutable snapshots) and `planning_jobs` (AI context engine
@@ -40,6 +40,7 @@ validate that the referenced PG row exists before writing to Mongo. The
 | level | int | |
 | last_active_at | timestamptz | |
 | disabled_at | timestamptz | nullable; set while the account is disabled (login, JWT and WebSocket auth reject it); exposed only to admin viewers |
+| created_at | timestamptz | default `now()`; accounts older than this column carry the time it was added |
 | email_verified_at | timestamptz | nullable; null until the address is verified (set by email verification or a completed password reset). Existing rows were backfilled to the migration time. Gates AI, connector and planning routes when `EMAIL_VERIFICATION_REQUIRED` is on |
 | token_version | int | NOT NULL, default 0; embedded in the JWT as `tv` and bumped on password reset/change — a token (or WebSocket) whose `tv` differs from this value is rejected |
 
@@ -162,6 +163,60 @@ via `EventEmitter2`, same swallow-and-log pattern as `GamificationListener`.
 Composite index **(user_id, created_at DESC)** — `IDX_audit_logs_user_created` —
 covers "events for a user, newest first" (db-mentor's recommendation); no separate
 plain `user_id` index (would be redundant with the composite's leading column).
+
+### Leads
+
+Onboarding answers and the stored lead score (`docs/contracts/lead-scoring.md`). The
+score is written only by `RecalculateLeadScoreUseCase`, on onboarding submit, paywall
+signal and connector status change. It is not refreshed as time passes. All three
+tables cascade-delete with their user. The migration also backfills a `lead_scores` row
+(score 3, rule `connected_tool`) for users who already have an `active` connector.
+
+#### `onboarding_profiles`
+One row per user, created by the first `PUT /onboarding/me`. No row means not submitted.
+
+| column | type | notes |
+| --- | --- | --- |
+| user_id | uuid | PK, FK → users, **ON DELETE CASCADE** |
+| persona | varchar | enum values: see the contract |
+| deliverable_type | varchar | |
+| due_date | date | |
+| academic_level | varchar | |
+| school_name | varchar(120) | nullable, free text |
+| work_tools | text[] | may be empty |
+| blockers | text[] | |
+| acquisition_channel | varchar | |
+| marketing_opt_in | boolean | default false |
+| marketing_opt_in_at | timestamptz | NOT NULL; set on first submit, then only when the value changes |
+| submitted_at | timestamptz | latest submit |
+| created_at | timestamptz | |
+| updated_at | timestamptz | |
+
+#### `lead_signals`
+Behaviour reported by the frontend. Client-reported, so treat as a heuristic.
+
+| column | type | notes |
+| --- | --- | --- |
+| id | uuid | PK |
+| user_id | uuid | FK → users, **ON DELETE CASCADE** |
+| type | varchar | `export_paywall_hit` |
+| first_seen_at | timestamptz | |
+| last_seen_at | timestamptz | |
+| occurrences | int | default 1 |
+
+Unique **(user_id, type)** — also covers lookups by user.
+
+#### `lead_scores`
+Current score per user. Admin-only: never serialized on a user route. No row reads as
+score 0, tier `cold`.
+
+| column | type | notes |
+| --- | --- | --- |
+| user_id | uuid | PK, FK → users, **ON DELETE CASCADE** |
+| score | int | **indexed** |
+| tier | varchar | **indexed**; CHECK in `hot` / `warm` / `cold` |
+| breakdown | jsonb | `[{ rule, points }]` for rules that fired |
+| computed_at | timestamptz | a write never replaces a newer value |
 
 ### Gamification
 
