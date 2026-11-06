@@ -6,7 +6,7 @@
       "subject": "Phase 1: Operational cleanup",
       "status": "in_progress",
       "blockedBy": [],
-      "description": "**Goal:** Rotate shared dev credentials and mark seed credentials as local-only.\n**Acceptance Criteria:** Dev account passwords changed by the user via direct DB update; Neon password rotated in GitHub and Render; README states seed credentials are local-only. Agent-side cleanup of local notes and scripts is done.\n**Verify:** User confirms rotation; old credential rejected by POST /auth/login on dev.\n```json:metadata\n{\"modelTier\": \"mechanical\", \"userGate\": true, \"acceptanceCriteria\": [\"Dev passwords rotated\", \"Neon password rotated\", \"README note added\"]}\n```"
+      "description": "**Goal:** Finish operational cleanup.\n**Done:** shared dev credentials replaced, admin promoted on development, README marks seed credentials local-only.\n**Acceptance Criteria (remaining, owner action):** Neon password rotated in GitHub and Render; past Sentry events on development reviewed; test verification and reset emails confirmed delivered.\n**Verify:** Owner confirms; /health returns 200 after rotation.\n```json:metadata\n{\"modelTier\": \"mechanical\", \"userGate\": true, \"acceptanceCriteria\": [\"Neon password rotated\", \"Sentry events reviewed\", \"Test emails confirmed\"]}\n```"
     },
     {
       "id": 2,
@@ -31,7 +31,7 @@
       "blockedBy": [
         3
       ],
-      "description": "**Goal:** Bound input sizes, responses, AI use and storage per user.\n**Acceptance Criteria:** @MaxLength and ArrayMaxSize across DTOs (must accept the existing 17-section template); capped pagination on GET /templates; per-user daily AI quota in Redis, failing closed for AI only; per-user caps on documents, sections per document, versions, templates; scope enum with global admin-only; doc_type validated; leaderboard XP capped per day. Needs user decision on quota numbers first.\n**Verify:** npm run lint && npm run build && npm test && npm run test:e2e\n```json:metadata\n{\"modelTier\": \"standard\", \"verifyCommand\": \"npm run lint && npm run build && npm test && npm run test:e2e\", \"acceptanceCriteria\": [\"Oversized input rejected\", \"Pagination capped\", \"Quota enforced\", \"Caps enforced\"]}\n```"
+      "description": "**Goal:** Bound non-AI input sizes, responses and storage per user. AI quota and AI input limits moved to docs/plans/2026-11-06-ai-rework.md (slices 3 and 5).\n**Acceptance Criteria:** @MaxLength and ArrayMaxSize across DTOs (must accept the existing 17-section template); capped pagination on GET /templates; per-user caps on documents, sections per document, versions, templates; scope enum with global admin-only; doc_type validated; leaderboard XP capped per day. Needs user decisions first: storage cap numbers, and whether registration stays open.\n**Verify:** npm run lint && npm run build && npm test && npm run test:e2e\n```json:metadata\n{\"modelTier\": \"standard\", \"verifyCommand\": \"npm run lint && npm run build && npm test && npm run test:e2e\", \"acceptanceCriteria\": [\"Oversized input rejected\", \"Pagination capped\", \"Caps enforced\"]}\n```"
     },
     {
       "id": 5,
@@ -49,8 +49,15 @@
       "blockedBy": [
         2
       ],
-      "description": "**Goal:** Close the remaining smaller items.\n**Acceptance Criteria:** Audit events for template publish, update, delete, admin actions and role changes; per-tier broker credentials with restricted queue permissions and trust boundary documented in docs/security.md; Swagger off on staging; generic provider errors to clients; featureType allowlist; doc-type check on apply; connector reconnect reviewed for leftover Composio accounts and fixed if needed; Postgres TLS verifies the server certificate (typeorm data source and app config currently use rejectUnauthorized false), confirming Neon CA compatibility; non-admin template update made conditional on is_published at the DB so a concurrent publish can't be overwritten.\n**Verify:** npm run lint && npm run build && npm test && npm run test:e2e\n```json:metadata\n{\"modelTier\": \"standard\", \"verifyCommand\": \"npm run lint && npm run build && npm test && npm run test:e2e\", \"acceptanceCriteria\": [\"Audit events recorded\", \"Swagger off on staging\", \"Provider errors generic\", \"Connector reconnect resolved\"]}\n```"
+      "description": "**Goal:** Close the remaining smaller items. Generic provider errors and the featureType allowlist moved to docs/plans/2026-11-06-ai-rework.md.\n**Acceptance Criteria:** Audit events for template publish, update, delete, admin actions and role changes; per-tier broker credentials with restricted queue permissions and trust boundary documented in docs/security.md; Swagger off on staging; doc-type check on apply; connector reconnect reviewed for leftover Composio accounts and fixed if needed; Postgres TLS verifies the server certificate (typeorm data source and app config currently use rejectUnauthorized false), confirming Neon CA compatibility; non-admin template update made conditional on is_published at the DB so a concurrent publish can't be overwritten.\n**Verify:** npm run lint && npm run build && npm test && npm run test:e2e\n```json:metadata\n{\"modelTier\": \"standard\", \"verifyCommand\": \"npm run lint && npm run build && npm test && npm run test:e2e\", \"acceptanceCriteria\": [\"Audit events recorded\", \"Swagger off on staging\", \"Connector reconnect resolved\"]}\n```"
+    },
+    {
+      "id": 7,
+      "subject": "Template content: key points and guidance",
+      "status": "pending",
+      "blockedBy": [],
+      "description": "**Goal:** Store section keyPoints and guidance for the starter templates.\n**Acceptance Criteria:** template_sections gains key_points (jsonb) and guidance (text), both nullable, with migration and schema doc; the fields carried through every layer: domain TemplateSection and TemplateSectionData, TemplateSectionInput and toTemplateSectionData, ORM entity and toDomain mapping, request DTO with class-validator and Swagger, response DTO as snake_case key_points and guidance; unit and e2e tests proving a round trip. The ValidationPipe whitelist strips unknown fields without an error, so a PATCH sent before deploy reports success and loses the content. A decision on whether apply copies them into the document (if so: document section column, migration and schema doc). After the deploy to development, each of the five templates PATCHed as an admin from docs/plans/2026-11-06-template-content.json, then read back and compared. PATCH replaces sections wholesale, so section ids change.\n**Verify:** npm run lint && npm run build && npm test && npm run test:e2e\n```json:metadata\n{\"modelTier\": \"standard\", \"verifyCommand\": \"npm run lint && npm run build && npm test && npm run test:e2e\", \"acceptanceCriteria\": [\"Fields stored and returned\", \"All five templates match the JSON\"]}\n```"
     }
   ],
-  "lastUpdated": "2026-11-06T15:00:00Z"
+  "lastUpdated": "2026-11-06T17:00:00Z"
 }
