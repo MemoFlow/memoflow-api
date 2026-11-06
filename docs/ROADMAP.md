@@ -427,7 +427,8 @@ work already flagged as deferred in the sections above, not a numbered feature:
   - ◐ **Phase 1, operational cleanup:** shared dev credentials are replaced and an admin is
     promoted on `development`. Outstanding, owner action: rotate the Neon password in both
     GitHub and Render; review past Sentry events on `development`; confirm the test
-    verification and reset emails were delivered.
+    verification and reset emails were delivered; create per-tier broker credentials with
+    restricted queue permissions (Phase 6).
   - ☐ **Phase 4, limits:** non-AI input size limits, capped `GET /templates` pagination,
     per-user storage caps, controlled `scope`/`doc_type`, leaderboard integrity. **Needs
     decisions first:** storage cap numbers, and whether registration stays open. The AI quota
@@ -437,11 +438,15 @@ work already flagged as deferred in the sections above, not a numbered feature:
     15 minutes), uniform login and register timing, 72-byte password
     cap, boot checks for unsafe `CORS_ORIGIN`, `WS_CORS_ORIGIN` and `JWT_SECRET` on
     staging/production. See [`docs/security.md`](security.md#session-and-login-hardening).
-  - ☐ **Phase 6, remaining:** audit coverage for template and admin actions, Postgres TLS
-    certificate verification, non-admin template update conditional on `is_published`,
-    per-tier broker credentials, Swagger off on staging, doc-type check on apply,
-    connector reconnect review. Generic provider errors and the `featureType` allowlist moved
-    to the [AI rework](plans/2026-11-06-ai-rework.md).
+  - ✅ **Phase 6, remaining:** audit events for template, admin and role-change actions and
+    throttled logins, Postgres TLS certificate verification (`POSTGRES_SSL_REJECT_UNAUTHORIZED`,
+    `development` only), non-admin template update conditional on `is_published` at the
+    database, Swagger only on `development`/`test`, doc-type check on apply (400), and a
+    connector reconnect that revokes the previous Composio account. See
+    [`docs/security.md`](security.md#audit-coverage). **Outstanding, owner action:**
+    per-tier broker credentials with restricted queue permissions (see
+    [`docs/security.md`](security.md#message-broker)). Generic provider errors and the `featureType` allowlist moved to the
+    [AI rework](plans/2026-11-06-ai-rework.md).
   - ☐ **Template content:** the five starter templates (thesis and internship report) are
     published on `development`, but their section `keyPoints` and `guidance` aren't stored,
     since the API doesn't have those fields. Add `key_points` (`jsonb`) and `guidance`

@@ -160,15 +160,15 @@ Unique composite index on **(user_id, provider)** — one connection per user pe
 Write-only internal sink for security-relevant events (security-hardening plan,
 slice 5) — no public controller, `AuditLog` is never serialized into an API
 response. Populated by the single `AuditListener` consuming domain events emitted
-by other features (auth login/login-failed, connector revoke, suggestion review, prompt create/activate)
-via `EventEmitter2`, same swallow-and-log pattern as `GamificationListener`.
+by other features (auth login/login-failed/login-throttled, connector revoke, suggestion review, prompt create/activate,
+template changes, admin account actions) via `EventEmitter2`, same swallow-and-log pattern as `GamificationListener`.
 
 | column | type | notes |
 | --- | --- | --- |
 | id | uuid | PK |
-| user_id | uuid | FK → users, **ON DELETE SET NULL** (nullable — the trail must outlive a deleted user, same pattern as `templates.created_by`; also null for a failed login against an unknown email) |
-| action | varchar | `auth.login` / `auth.login_failed` / `auth.password_reset_requested` / `auth.password_reset_completed` / `auth.password_changed` / `auth.email_verified` / `connector.revoked` / `suggestion.reviewed` / `prompt.created` / `prompt.activated` |
-| metadata | jsonb | small contextual payload, e.g. `{ email }` on a failed login, `{ connectionId, provider }` on revoke, `{ suggestionId, decision }` on review, `{ promptId, featureType, version }` on prompt create/activate |
+| user_id | uuid | FK → users, **ON DELETE SET NULL** (nullable — the trail must outlive a deleted user, same pattern as `templates.created_by`; also null for a failed login against an unknown email, a throttled login, and role changes made by `npm run admin:promote`, which has no session) |
+| action | varchar | `auth.login` / `auth.login_failed` / `auth.login_throttled` / `auth.password_reset_requested` / `auth.password_reset_completed` / `auth.password_changed` / `auth.email_verified` / `connector.revoked` / `suggestion.reviewed` / `prompt.created` / `prompt.activated` / `template.created` / `template.updated` / `template.published` / `template.unpublished` / `template.deleted` / `user.disabled` / `user.enabled` / `user.role_changed` |
+| metadata | jsonb | small contextual payload, e.g. `{ email }` on a failed login, `{ connectionId, provider }` on revoke, `{ suggestionId, decision }` on review, `{ promptId, featureType, version }` on prompt create/activate, `{ templateId }` on template events (plus `changedFields`, the names of the patched fields, on `template.updated` — never content), `{ targetUserId }` on `user.disabled`/`user.enabled` (the acting admin is `user_id`), `{ email }` on `auth.login_throttled` (`user_id` null; recorded once, when the limit is first exceeded in a window), `{ targetUserId, from, to, source }` on `user.role_changed` (`user_id` null) |
 | ip | varchar | nullable — not yet populated (would require threading the request IP through use-case inputs); reserved for a future slice |
 | created_at | timestamptz | |
 

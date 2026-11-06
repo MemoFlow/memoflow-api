@@ -27,7 +27,7 @@ npm run db:up          # postgres:16 + mongo:7 + redis:7 via docker compose
 npm run start:dev
 ```
 
-- Swagger UI: http://localhost:3000/docs
+- Swagger UI: http://localhost:3000/docs (served only when `NODE_ENV` is `development` or `test`; off on staging and production)
 - Health (checks Postgres, MongoDB, and Redis): http://localhost:3000/health
 
 ## Commands
@@ -79,7 +79,7 @@ via `@nestjs/jwt` and validated by Passport-JWT.
 | `GET` | `/templates/:id` | JWT | fetch a template by id; visible if published or owned by the caller. `created_by` is `null` unless the viewer owns the template or is an admin |
 | `PATCH` | `/templates/:id` | JWT | partial update, owner or admin; non-admins cannot edit a published template (**403**) and cannot publish; `sections` replaces the template's sections wholesale when provided |
 | `DELETE` | `/templates/:id` | JWT | owner or admin; returns **204** |
-| `POST` | `/templates/:id/apply` | JWT | applies a template to a document, appending one section per template section |
+| `POST` | `/templates/:id/apply` | JWT | applies a template to a document, appending one section per template section; **400** if the template's `docType` differs from the document's |
 | `POST` | `/documents/:documentId/versions` | JWT | snapshots the document's current sections into a new immutable version |
 | `GET` | `/documents/:documentId/versions` | JWT | lists the document's version metadata (no sections payload), newest first |
 | `GET` | `/documents/:documentId/versions/:versionId` | JWT | fetch a version's full sections snapshot, owner-scoped |
@@ -214,6 +214,7 @@ Beyond the database connection vars, auth requires:
 | `REDIS_HOST` | yes | — | Redis host for the BullMQ planning queue |
 | `REDIS_PORT` | yes | — | Redis port (`0`–`65535`) |
 | `REDIS_PASSWORD` | no | — | Redis auth password, if required |
+| `POSTGRES_SSL_REJECT_UNAUTHORIZED` | no | `true` | with `POSTGRES_SSL=true`, verify the database server certificate; `false` is for a private-CA database on `development` only — boot fails on staging/production if it is `false` (Neon works with the default) |
 | `REDIS_TLS` | no | `false` | set `true` for managed TLS-only Redis (e.g. Upstash); local docker Redis stays `false` — mirrors `POSTGRES_SSL` |
 | `CORS_ORIGIN` | no | `*` | frontend origin allowed for cross-origin REST API requests; `*` is dev-only — boot fails on staging/production if it is `*` or blank |
 | `WS_CORS_ORIGIN` | no | `*` | frontend origin allowed to open the planning WebSocket; `*` is dev-only — boot fails on staging/production if it is `*` or blank |

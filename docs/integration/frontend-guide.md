@@ -2,7 +2,7 @@
 
 Everything a frontend needs to talk to the MemoFlow API: auth, the REST endpoints, and
 the real-time WebSocket. The live, always-current reference is **Swagger at `/docs`**
-(`http://localhost:3000/docs` in dev) — this guide is the practical walkthrough.
+(`http://localhost:3000/docs` in dev; Swagger is not served on staging or production) — this guide is the practical walkthrough.
 
 ## 1. Setup
 
@@ -102,7 +102,8 @@ avoid the round trip.
 
 ### Templates — role rules
 - Only admins can publish templates (`is_published: true`); other callers get `403`.
-- Non-admins cannot edit a published template (`403`).
+- Non-admins cannot edit a published template (`403`), including when a publish lands while their edit is in flight.
+- `POST /templates/:id/apply` returns `400` when the template's `doc_type` differs from the document's; offer only templates matching the document's type.
 - `created_by` in template responses is `null` unless the viewer owns the template or is an admin.
 
 ### Leaderboard — `GET /gamification/leaderboard` (JWT)
