@@ -60,6 +60,7 @@ The part of the system dedicated to context gathering and connector-driven LLM p
 - **OAuth vault** — encrypted-at-rest storage and refresh of third-party OAuth tokens.
 - **Context assembly** — truncation and relevance filtering of fetched data into a coherent, size-bounded context payload for the model.
 - **LLM planning** — orchestrating the model call through the provider abstraction and structuring the response (suggestions, outline, cited sources).
+- **Retrieval** — before planning, a shared `PlanningPipeline` (used by both the in-process and the RabbitMQ transports) searches the job owner's own sections through the `SectionRetriever` port (Postgres full-text search over `sections.search_vector`, always scoped to the job's user), merges them with the connector context, fits them to the input budget (bound-document sections first), and renders them as numbered `[S1]` sources. After the model call, citations of sources that don't exist are removed. Only metadata about the sources is stored on the job, never their text.
 
 The planning feature is intentionally scoped to help the user *plan and structure* a document, never to *write* it.
 

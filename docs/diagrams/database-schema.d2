@@ -42,6 +42,7 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
     order: int
     status: varchar
     word_count: int
+    search_vector: "tsvector (generated, GIN-indexed)"
     created_at: timestamptz
     updated_at: timestamptz
   }
@@ -63,7 +64,7 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
     updated_at: timestamptz
   }
 
-  # Admin-managed via /admin/prompts; v2 prompts ship by migration. Unique
+  # Admin-managed via /admin/prompts; v2 and v3 prompts ship by migration. Unique
   # (feature_type, version); partial unique on feature_type WHERE is_active.
   prompts: {
     shape: sql_table
@@ -266,8 +267,8 @@ mongo: MongoDB (specialist — Mongoose) {
     connectors: "string[] (unused until item 7)"
     prompt_version: "string? (recorded once the job runs)"
     model: "string? (recorded once the job runs)"
-    context_used: "object? (recorded once the job runs)"
-    result: object
+    context_used: "object? (connector context + retrieval metadata, no text)"
+    result: "object? (suggestions, outline, sources [{id, type, title}])"
     error_code: "string?"
     error_message: "string?"
     created_at: date

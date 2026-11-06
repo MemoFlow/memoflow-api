@@ -124,7 +124,7 @@ as context is gathered, then a **terminal `status` chunk** (`phase: completed` o
   terminal only when `phase` is `completed` or `failed`, never merely because
   `type: status`.
 - **Terminal marker:** exactly one terminal `status` chunk ends the job. `completed`
-  hands the assembled context to the planner (roadmap item 5); `failed` (with
+  hands the assembled context to the planning pipeline, which merges it with the job owner's retrieved sections before planning (see `ARCHITECTURE.md`; the CE sees none of this); `failed` (with
   `error_code`) marks the planning job `failed`.
 - **WebSocket relay:** the API relays each `data`/`status` chunk to the owning user over
   the existing gateway (`src/presentation/context/planning.gateway.ts`, `planning.*`

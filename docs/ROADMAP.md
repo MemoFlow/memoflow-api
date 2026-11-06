@@ -283,7 +283,14 @@ limits, guardrails, caching and AI data consent.
   the limit. Output is validated and rejected if it echoes the prompt (502 for suggestions, failed job for
   planning). Clients get fixed error messages. `OPENROUTER_MAX_RETRIES` (default 1, 0 to 3) adds
   conservative retries sharing one deadline.
-- Slices 4–7 — pending. See the plan.
+- **Slice 4, RAG pipeline — ✅ done.** `sections.search_vector` (generated, GIN-indexed, `simple`
+  configuration) and the v3 prompts ship by migration (`SectionSearchVector`, `PromptsV3`). A
+  `SectionRetriever` port with a Postgres adapter scoped to the job's user feeds a shared `PlanningPipeline`
+  used by both transports: retrieve, merge connector context, budget, numbered sources, plan, validate
+  citations. `result.sources` is `{ id, type, title }[]` and unknown citations are removed;
+  `context_used.retrieval` holds metadata only. Invocable v3 prompts gain `{{context}}` (document title and
+  neighbouring headings). Word variants are not matched.
+- Slices 5–7 — pending. See the plan.
 
 ## 6. Gamification (PG) — ✅ done
 
