@@ -275,6 +275,7 @@ describeWithDocker()('Users + Auth (e2e)', () => {
   });
 
   describe('per-account login throttle', () => {
+    // Each test runs many bcrypt logins, which can pass Jest's 5s default under load.
     it('answers 429 with Retry-After on the 11th failed attempt, even with the right password', async () => {
       const email = `throttle-${Date.now()}@example.com`;
       const password = 'correct-horse-battery-staple';
@@ -301,7 +302,7 @@ describeWithDocker()('Users + Auth (e2e)', () => {
       expect(blocked.body.message).toBe(
         'Too many login attempts. Try again later.',
       );
-    });
+    }, 30_000);
 
     it('throttles unknown emails the same way', async () => {
       const email = `ghost-${Date.now()}@example.com`;
@@ -316,7 +317,7 @@ describeWithDocker()('Users + Auth (e2e)', () => {
         .send({ email, password: 'whatever-password' })
         .expect(429);
       expect(blocked.headers['retry-after']).toBeDefined();
-    });
+    }, 30_000);
 
     it('a successful login resets the counter', async () => {
       const email = `reset-${Date.now()}@example.com`;
@@ -338,7 +339,7 @@ describeWithDocker()('Users + Auth (e2e)', () => {
           .send({ email, password })
           .expect(200);
       }
-    });
+    }, 30_000);
   });
 
   describe('72-byte password cap', () => {

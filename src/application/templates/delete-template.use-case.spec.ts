@@ -1,4 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { UserRole } from '../../domain/users/user-role';
 import { Template } from '../../domain/templates/template.entity';
 import { TemplateRepository } from '../../domain/templates/template.repository';
@@ -48,9 +49,14 @@ function makeTemplate(overrides: Partial<Template> = {}): Template {
 }
 
 describe('DeleteTemplateUseCase', () => {
+  const emit = jest.fn();
+  const emitter = { emit } as unknown as EventEmitter2;
+
+  beforeEach(() => emit.mockClear());
+
   it('deletes a template owned by the requesting user', async () => {
     const repository = new InMemoryTemplateRepository([makeTemplate()]);
-    const useCase = new DeleteTemplateUseCase(repository);
+    const useCase = new DeleteTemplateUseCase(repository, emitter);
 
     await useCase.execute({
       userId: 'user-1',
@@ -63,7 +69,7 @@ describe('DeleteTemplateUseCase', () => {
 
   it('throws NotFoundException when the template does not exist', async () => {
     const repository = new InMemoryTemplateRepository([]);
-    const useCase = new DeleteTemplateUseCase(repository);
+    const useCase = new DeleteTemplateUseCase(repository, emitter);
 
     await expect(
       useCase.execute({
@@ -79,7 +85,7 @@ describe('DeleteTemplateUseCase', () => {
     const repository = new InMemoryTemplateRepository([
       makeTemplate({ createdBy: 'user-1' }),
     ]);
-    const useCase = new DeleteTemplateUseCase(repository);
+    const useCase = new DeleteTemplateUseCase(repository, emitter);
 
     await expect(
       useCase.execute({
@@ -95,7 +101,7 @@ describe('DeleteTemplateUseCase', () => {
     const repository = new InMemoryTemplateRepository([
       makeTemplate({ createdBy: null, isPublished: true }),
     ]);
-    const useCase = new DeleteTemplateUseCase(repository);
+    const useCase = new DeleteTemplateUseCase(repository, emitter);
 
     await expect(
       useCase.execute({
@@ -111,7 +117,7 @@ describe('DeleteTemplateUseCase', () => {
     const repository = new InMemoryTemplateRepository([
       makeTemplate({ isPublished: true }),
     ]);
-    const useCase = new DeleteTemplateUseCase(repository);
+    const useCase = new DeleteTemplateUseCase(repository, emitter);
 
     await useCase.execute({
       userId: 'user-1',
@@ -127,7 +133,7 @@ describe('DeleteTemplateUseCase', () => {
       makeTemplate({ id: 'owned', createdBy: 'user-1' }),
       makeTemplate({ id: 'system', createdBy: null, isPublished: true }),
     ]);
-    const useCase = new DeleteTemplateUseCase(repository);
+    const useCase = new DeleteTemplateUseCase(repository, emitter);
 
     await useCase.execute({
       userId: 'admin-1',
@@ -146,6 +152,7 @@ describe('DeleteTemplateUseCase', () => {
   it('throws NotFoundException for an unknown template even for an admin', async () => {
     const useCase = new DeleteTemplateUseCase(
       new InMemoryTemplateRepository([]),
+      emitter,
     );
 
     await expect(
@@ -155,5 +162,39 @@ describe('DeleteTemplateUseCase', () => {
         templateId: 'missing',
       }),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  it('emits template.deleted with the acting user and no content', async () => {
+    const useCase = new DeleteTemplateUseCase(
+      new InMemoryTemplateRepository([makeTemplate()]),
+      emitter,
+    );
+
+    await useCase.execute({
+      userId: 'user-1',
+      role: UserRole.User,
+      templateId: 'template-1',
+    });
+
+    expect(emit).toHaveBeenCalledWith('template.deleted', {
+      userId: 'user-1',
+      templateId: 'template-1',
+    });
+  });
+
+  it('emits nothing when the delete is refused', async () => {
+    const useCase = new DeleteTemplateUseCase(
+      new InMemoryTemplateRepository([]),
+      emitter,
+    );
+
+    await expect(
+      useCase.execute({
+        userId: 'user-1',
+        role: UserRole.User,
+        templateId: 'missing',
+      }),
+    ).rejects.toThrow(NotFoundException);
+    expect(emit).not.toHaveBeenCalled();
   });
 });

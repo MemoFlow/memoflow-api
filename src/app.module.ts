@@ -18,6 +18,7 @@ import { LeadsModule } from './leads.module';
 import { HealthModule } from './shared/health/health.module';
 import { AppThrottlerModule } from './shared/throttler/throttler.module';
 import { TemplatesModule } from './templates.module';
+import { postgresSslOptions } from './config/postgres-ssl';
 import { UsersModule } from './users.module';
 
 @Module({
@@ -40,11 +41,12 @@ import { UsersModule } from './users.module';
         autoLoadEntities: true,
         // Schema changes go through generated migrations only. Never enable.
         synchronize: false,
-        // rejectUnauthorized:false — dev/staging managed Postgres (e.g. Neon)
-        // that don't provide a CA cert. Revisit if a verifiable CA becomes available.
-        ssl: config.get<boolean>('POSTGRES_SSL')
-          ? { rejectUnauthorized: false }
-          : false,
+        // Verified TLS by default (managed providers such as Neon present a
+        // valid public-CA chain); shared with the CLI data source.
+        ssl: postgresSslOptions(
+          config.get('POSTGRES_SSL'),
+          config.get('POSTGRES_SSL_REJECT_UNAUTHORIZED'),
+        ),
       }),
     }),
     MongooseModule.forRootAsync({

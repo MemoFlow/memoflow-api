@@ -50,7 +50,10 @@ export class DisableUserUseCase {
     }
     // Lets live connections (e.g. the planning WebSocket gateway) drop the
     // account's sessions.
-    const payload: UserDisabledEventPayload = { userId: user.id };
+    const payload: UserDisabledEventPayload = {
+      userId: user.id,
+      actorId: input.actorId,
+    };
     this.eventEmitter.emit(USER_DISABLED_EVENT, payload);
   }
 }

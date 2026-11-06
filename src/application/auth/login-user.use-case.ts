@@ -5,8 +5,12 @@ import * as bcrypt from 'bcrypt';
 import {
   AUTH_LOGIN_EVENT,
   AUTH_LOGIN_FAILED_EVENT,
+  AUTH_LOGIN_THROTTLED_EVENT,
 } from '../../domain/audit/audit-events';
-import { LOGIN_ATTEMPT_LIMITER } from '../../domain/auth/login-attempt-limiter.port';
+import {
+  LOGIN_ATTEMPT_LIMITER,
+  LOGIN_MAX_ATTEMPTS,
+} from '../../domain/auth/login-attempt-limiter.port';
 import type { LoginAttemptLimiter } from '../../domain/auth/login-attempt-limiter.port';
 import { normalizeEmail } from '../../domain/users/normalize-email';
 import { USER_REPOSITORY } from '../../domain/users/user.repository';
@@ -48,6 +52,14 @@ export class LoginUserUseCase {
     // bcrypt work is spent on a blocked account.
     const attempt = await this.attemptLimiter.registerAttempt(email);
     if (!attempt.allowed) {
+      // Only the first blocked attempt of a window is audited, so a flood of
+      // guesses against one account cannot flood the audit log.
+      if (attempt.attempts === LOGIN_MAX_ATTEMPTS + 1) {
+        this.eventEmitter.emit(AUTH_LOGIN_THROTTLED_EVENT, {
+          userId: null,
+          email,
+        });
+      }
       throw new LoginThrottledException(attempt.retryAfterSeconds);
     }
 

@@ -108,7 +108,11 @@ describe('RedisLoginAttemptLimiter', () => {
     }
     now += 600_000; // 10 minutes in
     const blocked = await limiter.registerAttempt('a@b.com');
-    expect(blocked).toEqual({ allowed: false, retryAfterSeconds: 300 });
+    expect(blocked).toEqual({
+      allowed: false,
+      retryAfterSeconds: 300,
+      attempts: LOGIN_MAX_ATTEMPTS + 1,
+    });
 
     now += LOGIN_ATTEMPT_WINDOW_SECONDS * 1000; // window over
     expect((await limiter.registerAttempt('a@b.com')).allowed).toBe(true);

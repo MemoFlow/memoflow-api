@@ -156,6 +156,11 @@ export class TemplatesController {
       'Apply a template to a document, appending one section per template section',
   })
   @ApiResponse({ status: 201, type: ApplyTemplateResponseDto })
+  @ApiResponse({
+    status: 400,
+    description:
+      "The template's doc type does not match the document's doc type",
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({
     status: 404,

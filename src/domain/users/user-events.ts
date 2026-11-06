@@ -5,9 +5,20 @@
  */
 
 export const USER_DISABLED_EVENT = 'user.disabled';
+export const USER_ENABLED_EVENT = 'user.enabled';
 
 export interface UserDisabledEventPayload {
+  /** The disabled account. */
   userId: string;
+  /** The admin who performed the action. */
+  actorId: string;
+}
+
+export interface UserEnabledEventPayload {
+  /** The re-enabled account. */
+  userId: string;
+  /** The admin who performed the action. */
+  actorId: string;
 }
 
 /**

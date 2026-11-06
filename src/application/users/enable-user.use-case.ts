@@ -4,6 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { USER_ENABLED_EVENT } from '../../domain/users/user-events';
+import type { UserEnabledEventPayload } from '../../domain/users/user-events';
 import { UserRole } from '../../domain/users/user-role';
 import { USER_REPOSITORY } from '../../domain/users/user.repository';
 import type { UserRepository } from '../../domain/users/user.repository';
@@ -23,6 +26,7 @@ export class EnableUserUseCase {
   constructor(
     @Inject(USER_REPOSITORY)
     private readonly userRepository: UserRepository,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async execute(input: EnableUserInput): Promise<void> {
@@ -37,5 +41,10 @@ export class EnableUserUseCase {
       return;
     }
     await this.userRepository.setDisabledAt(user.id, null);
+    const payload: UserEnabledEventPayload = {
+      userId: user.id,
+      actorId: input.actorId,
+    };
+    this.eventEmitter.emit(USER_ENABLED_EVENT, payload);
   }
 }

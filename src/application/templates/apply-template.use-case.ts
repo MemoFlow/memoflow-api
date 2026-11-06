@@ -1,4 +1,9 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { DOCUMENT_REPOSITORY } from '../../domain/documents/document.repository';
 import type { DocumentRepository } from '../../domain/documents/document.repository';
 import { DOCUMENT_TEMPLATE_REPOSITORY } from '../../domain/templates/document-template.repository';
@@ -29,7 +34,8 @@ export interface ApplyTemplateResult {
  *    to keep this application layer depending only on domain-layer
  *    repository interfaces, per feature, not on another feature's
  *    use-cases);
- * 3. `DocumentTemplateRepository.applyToDocument` performs the actual
+ * 3. the template's `docType` must equal the document's — else 400;
+ * 4. `DocumentTemplateRepository.applyToDocument` performs the actual
  *    writes — one document section per template section (ordered by the
  *    template section's `order`, appended after the document's current
  *    sections) plus the `document_templates` row — atomically, in a single
@@ -57,6 +63,14 @@ export class ApplyTemplateUseCase {
     const document = await this.documentRepository.findById(input.documentId);
     if (!document || document.userId !== input.userId) {
       throw new NotFoundException(`Document ${input.documentId} not found`);
+    }
+
+    // After the ownership check so a mismatch never reveals another user's
+    // document. Exact match: doc types are free-form strings until Phase 4.
+    if (template.docType !== document.docType) {
+      throw new BadRequestException(
+        `Template doc type '${template.docType}' does not match document doc type '${document.docType}'`,
+      );
     }
 
     const orderedSections = [...template.sections].sort(

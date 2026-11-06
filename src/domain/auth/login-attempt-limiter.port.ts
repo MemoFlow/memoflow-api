@@ -9,6 +9,12 @@ export interface LoginAttemptResult {
   allowed: boolean;
   /** Seconds until the window resets; meaningful when `allowed` is false. */
   retryAfterSeconds: number;
+  /**
+   * Attempts counted in the current window, including this one (0 when the
+   * store was unavailable and the limiter failed open). Lets callers detect
+   * the first blocked attempt: `attempts === LOGIN_MAX_ATTEMPTS + 1`.
+   */
+  attempts: number;
 }
 
 /**

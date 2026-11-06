@@ -66,10 +66,11 @@ export class RedisLoginAttemptLimiter
       return {
         allowed: count <= LOGIN_MAX_ATTEMPTS,
         retryAfterSeconds: Math.max(1, Math.ceil(ttlMs / 1000)),
+        attempts: count,
       };
     } catch (err) {
       this.warn('registerAttempt', err);
-      return { allowed: true, retryAfterSeconds: 0 };
+      return { allowed: true, retryAfterSeconds: 0, attempts: 0 };
     }
   }
 

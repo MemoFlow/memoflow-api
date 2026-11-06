@@ -16,10 +16,10 @@ import { GATHER_TIMEOUT_QUEUE_NAME } from './bullmq-gather-timeout.scheduler';
           port: config.getOrThrow<number>('REDIS_PORT'),
           password: config.get<string>('REDIS_PASSWORD') || undefined,
           // Strict `tls: {}` (default rejectUnauthorized: true) on purpose:
-          // Upstash presents a properly-signed cert, so verify it. This
-          // deliberately differs from POSTGRES_SSL, which relaxes
-          // rejectUnauthorized for Neon's unverifiable CA — only the parsing
-          // mirrors POSTGRES_SSL, not the TLS options shape.
+          // Upstash presents a properly-signed cert, so verify it. Postgres
+          // verifies too (POSTGRES_SSL, see config/postgres-ssl.ts) — Neon's
+          // chain is publicly valid; only the parsing is shared by the two
+          // toggles, not the TLS options shape.
           ...(config.get<boolean>('REDIS_TLS') ? { tls: {} } : {}),
         },
       }),

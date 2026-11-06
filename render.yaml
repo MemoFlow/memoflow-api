@@ -111,7 +111,8 @@ services:
       # Postgres is external (Neon free tier) — set manually in the Render
       # dashboard, not derived from a Render-managed database. Neon is
       # TLS-only, so POSTGRES_SSL is a plain (non-secret) literal, mirroring
-      # REDIS_TLS above.
+      # REDIS_TLS above. The certificate is verified (Neon's chain is publicly
+      # valid); POSTGRES_SSL_REJECT_UNAUTHORIZED defaults to true, so no entry.
       - key: POSTGRES_HOST
         sync: false
       - key: POSTGRES_PORT

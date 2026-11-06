@@ -5,6 +5,7 @@ import {
   AUTH_EMAIL_VERIFIED_EVENT,
   AUTH_LOGIN_EVENT,
   AUTH_LOGIN_FAILED_EVENT,
+  AUTH_LOGIN_THROTTLED_EVENT,
   AUTH_LOGOUT_EVENT,
   AUTH_PASSWORD_CHANGED_EVENT,
   AUTH_PASSWORD_RESET_COMPLETED_EVENT,
@@ -13,11 +14,26 @@ import {
   PROMPT_ACTIVATED_EVENT,
   PROMPT_CREATED_EVENT,
   SUGGESTION_REVIEWED_EVENT,
+  TEMPLATE_CREATED_EVENT,
+  TEMPLATE_DELETED_EVENT,
+  TEMPLATE_PUBLISHED_EVENT,
+  TEMPLATE_UNPUBLISHED_EVENT,
+  TEMPLATE_UPDATED_EVENT,
 } from '../../domain/audit/audit-events';
+import {
+  USER_DISABLED_EVENT,
+  USER_ENABLED_EVENT,
+} from '../../domain/users/user-events';
+import type {
+  UserDisabledEventPayload,
+  UserEnabledEventPayload,
+} from '../../domain/users/user-events';
 import type {
   AuthAccountEventPayload,
   AuthLoginEventPayload,
   AuthLoginFailedEventPayload,
+  AuthLoginThrottledEventPayload,
+  TemplateAuditEventPayload,
   ConnectorRevokedEventPayload,
   PromptAuditEventPayload,
   SuggestionReviewedEventPayload,
@@ -58,6 +74,15 @@ export class AuditListener {
   @OnEvent(AUTH_LOGIN_FAILED_EVENT)
   async onAuthLoginFailed(payload: AuthLoginFailedEventPayload): Promise<void> {
     await this.safeRecord(AUTH_LOGIN_FAILED_EVENT, payload.userId, {
+      email: payload.email,
+    });
+  }
+
+  @OnEvent(AUTH_LOGIN_THROTTLED_EVENT)
+  async onAuthLoginThrottled(
+    payload: AuthLoginThrottledEventPayload,
+  ): Promise<void> {
+    await this.safeRecord(AUTH_LOGIN_THROTTLED_EVENT, payload.userId, {
       email: payload.email,
     });
   }
@@ -134,6 +159,60 @@ export class AuditListener {
       promptId: payload.promptId,
       featureType: payload.featureType,
       version: payload.version,
+    });
+  }
+
+  @OnEvent(TEMPLATE_CREATED_EVENT)
+  async onTemplateCreated(payload: TemplateAuditEventPayload): Promise<void> {
+    await this.recordTemplate(TEMPLATE_CREATED_EVENT, payload);
+  }
+
+  @OnEvent(TEMPLATE_UPDATED_EVENT)
+  async onTemplateUpdated(payload: TemplateAuditEventPayload): Promise<void> {
+    await this.recordTemplate(TEMPLATE_UPDATED_EVENT, payload);
+  }
+
+  @OnEvent(TEMPLATE_PUBLISHED_EVENT)
+  async onTemplatePublished(payload: TemplateAuditEventPayload): Promise<void> {
+    await this.recordTemplate(TEMPLATE_PUBLISHED_EVENT, payload);
+  }
+
+  @OnEvent(TEMPLATE_UNPUBLISHED_EVENT)
+  async onTemplateUnpublished(
+    payload: TemplateAuditEventPayload,
+  ): Promise<void> {
+    await this.recordTemplate(TEMPLATE_UNPUBLISHED_EVENT, payload);
+  }
+
+  @OnEvent(TEMPLATE_DELETED_EVENT)
+  async onTemplateDeleted(payload: TemplateAuditEventPayload): Promise<void> {
+    await this.recordTemplate(TEMPLATE_DELETED_EVENT, payload);
+  }
+
+  /** The acting admin is the audit row's user; the target is in metadata. */
+  @OnEvent(USER_DISABLED_EVENT)
+  async onUserDisabled(payload: UserDisabledEventPayload): Promise<void> {
+    await this.safeRecord(USER_DISABLED_EVENT, payload.actorId, {
+      targetUserId: payload.userId,
+    });
+  }
+
+  @OnEvent(USER_ENABLED_EVENT)
+  async onUserEnabled(payload: UserEnabledEventPayload): Promise<void> {
+    await this.safeRecord(USER_ENABLED_EVENT, payload.actorId, {
+      targetUserId: payload.userId,
+    });
+  }
+
+  private async recordTemplate(
+    action: string,
+    payload: TemplateAuditEventPayload,
+  ): Promise<void> {
+    await this.safeRecord(action, payload.userId, {
+      templateId: payload.templateId,
+      ...(payload.changedFields
+        ? { changedFields: payload.changedFields }
+        : {}),
     });
   }
 

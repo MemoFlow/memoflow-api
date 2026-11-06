@@ -17,6 +17,13 @@ import {
   ValidatorConstraintInterface,
 } from 'class-validator';
 
+import {
+  parsePostgresSsl,
+  parsePostgresSslRejectUnauthorized,
+  postgresSslTierViolation,
+} from './postgres-ssl';
+import { Logger } from '@nestjs/common';
+
 export const NODE_ENVS = [
   'development',
   'staging',
@@ -25,15 +32,7 @@ export const NODE_ENVS = [
 ] as const;
 export type NodeEnv = (typeof NODE_ENVS)[number];
 
-/**
- * Case-insensitive "true" check shared between the runtime config
- * (env.validation.ts, via @Transform) and the standalone TypeORM CLI
- * data source (typeorm.data-source.ts, reading process.env directly) so
- * POSTGRES_SSL parses identically in both places.
- */
-export function parsePostgresSsl(value: unknown): boolean {
-  return String(value).toLowerCase() === 'true';
-}
+export { parsePostgresSsl, parsePostgresSslRejectUnauthorized };
 
 /**
  * Case-insensitive "true" check for REDIS_TLS, mirroring parsePostgresSsl so
@@ -161,6 +160,28 @@ export class EnvironmentVariables {
     parsePostgresSsl(obj.POSTGRES_SSL),
   )
   POSTGRES_SSL: boolean = false;
+
+  /**
+   * Verify the Postgres server certificate (default true). Escape hatch for
+   * a private-CA database on development only; boot fails on staging and
+   * production if this is false.
+   */
+  @IsOptional()
+  @IsBoolean({
+    message:
+      "POSTGRES_SSL_REJECT_UNAUTHORIZED must be 'true' or 'false' (or unset)",
+  })
+  @Transform(({ obj }: { obj: Record<string, unknown> }) => {
+    try {
+      return parsePostgresSslRejectUnauthorized(
+        obj.POSTGRES_SSL_REJECT_UNAUTHORIZED,
+      );
+    } catch {
+      // Keep the raw value so @IsBoolean rejects it on every tier.
+      return obj.POSTGRES_SSL_REJECT_UNAUTHORIZED;
+    }
+  })
+  POSTGRES_SSL_REJECT_UNAUTHORIZED: boolean = true;
 
   @IsString()
   @IsNotEmpty()
@@ -418,6 +439,12 @@ export function validate(
   // as a 503 on the first `/connectors/:provider/connect` call.
   parseComposioAuthConfigIds(validated.COMPOSIO_AUTH_CONFIG_IDS);
 
+  if (validated.POSTGRES_SSL && !validated.POSTGRES_SSL_REJECT_UNAUTHORIZED) {
+    new Logger('Config').warn(
+      `POSTGRES_SSL_REJECT_UNAUTHORIZED is false: Postgres TLS certificates are NOT verified (NODE_ENV=${validated.NODE_ENV})`,
+    );
+  }
+
   if (validated.NODE_ENV === 'staging' || validated.NODE_ENV === 'production') {
     const missing = ['RESEND_API_KEY', 'EMAIL_FROM', 'APP_BASE_URL'].filter(
       (key) =>
@@ -458,6 +485,13 @@ export function validate(
       unsafe.push(
         `JWT_SECRET: cannot be the .env.example placeholder when NODE_ENV is ${validated.NODE_ENV}`,
       );
+    }
+    const tlsViolation = postgresSslTierViolation(
+      validated.NODE_ENV,
+      validated.POSTGRES_SSL_REJECT_UNAUTHORIZED,
+    );
+    if (tlsViolation) {
+      unsafe.push(tlsViolation);
     }
     if (unsafe.length > 0) {
       throw new Error(

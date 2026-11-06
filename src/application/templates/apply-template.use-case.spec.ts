@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Document } from '../../domain/documents/document.entity';
 import { DocumentRepository } from '../../domain/documents/document.repository';
 import { DocumentTemplate } from '../../domain/templates/document-template.entity';
@@ -195,6 +195,58 @@ describe('ApplyTemplateUseCase', () => {
       templateRepository,
       new InMemoryDocumentTemplateRepository(),
       new InMemoryDocumentRepository([makeDocument({ userId: 'user-2' })]),
+    );
+
+    await expect(
+      useCase.execute({
+        userId: 'user-1',
+        templateId: 'template-1',
+        documentId: 'doc-1',
+      }),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('throws BadRequestException and writes nothing when doc types differ', async () => {
+    const documentTemplateRepository = new InMemoryDocumentTemplateRepository();
+    const useCase = new ApplyTemplateUseCase(
+      new InMemoryTemplateRepository([makeTemplate({ docType: 'blog' })]),
+      documentTemplateRepository,
+      new InMemoryDocumentRepository([makeDocument({ docType: 'report' })]),
+    );
+
+    await expect(
+      useCase.execute({
+        userId: 'user-1',
+        templateId: 'template-1',
+        documentId: 'doc-1',
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(documentTemplateRepository.applyToDocumentCalls).toEqual([]);
+  });
+
+  it('treats doc types as an exact match (case-sensitive)', async () => {
+    const useCase = new ApplyTemplateUseCase(
+      new InMemoryTemplateRepository([makeTemplate({ docType: 'Blog' })]),
+      new InMemoryDocumentTemplateRepository(),
+      new InMemoryDocumentRepository([makeDocument({ docType: 'blog' })]),
+    );
+
+    await expect(
+      useCase.execute({
+        userId: 'user-1',
+        templateId: 'template-1',
+        documentId: 'doc-1',
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it("returns 404, not the doc-type 400, for another user's document", async () => {
+    const useCase = new ApplyTemplateUseCase(
+      new InMemoryTemplateRepository([makeTemplate({ docType: 'blog' })]),
+      new InMemoryDocumentTemplateRepository(),
+      new InMemoryDocumentRepository([
+        makeDocument({ userId: 'user-2', docType: 'report' }),
+      ]),
     );
 
     await expect(

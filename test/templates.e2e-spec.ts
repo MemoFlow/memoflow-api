@@ -9,6 +9,11 @@ import {
   PgTestEnv,
 } from './utils/pg-testcontainer';
 import { promoteToAdmin } from './utils/promote-admin';
+import {
+  TEMPLATE_REPOSITORY,
+  TemplatePublishedError,
+} from './../src/domain/templates/template.repository';
+import type { TemplateRepository } from './../src/domain/templates/template.repository';
 import { registerUser } from './utils/register-user';
 
 // Booting AppModule requires a live PostgreSQL (TypeORM connects at init),
@@ -77,11 +82,14 @@ describeWithDocker()('Templates (e2e)', () => {
     return res.body.id as string;
   }
 
-  async function createDocument(token: string): Promise<string> {
+  async function createDocument(
+    token: string,
+    docType = 'blog',
+  ): Promise<string> {
     const res = await request(app.getHttpServer())
       .post('/documents')
       .set('Authorization', `Bearer ${token}`)
-      .send({ title: 'Q3 Planning', docType: 'blog' })
+      .send({ title: 'Q3 Planning', docType })
       .expect(201);
     return res.body.id as string;
   }
@@ -480,5 +488,95 @@ describeWithDocker()('Templates (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ documentId })
       .expect(404);
+  });
+
+  it('POST /templates/:id/apply returns 400 and writes nothing when the doc types differ', async () => {
+    const token = await registerAndLogin('template-apply-mismatch@example.com');
+    const templateId = await createTemplate(token, { docType: 'blog' });
+    const documentId = await createDocument(token, 'report');
+
+    const res = await request(app.getHttpServer())
+      .post(`/templates/${templateId}/apply`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ documentId })
+      .expect(400);
+    expect(res.body.message).toContain('doc type');
+
+    const sectionsRes = await request(app.getHttpServer())
+      .get(`/documents/${documentId}/sections`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(sectionsRes.body).toEqual([]);
+  });
+
+  it("POST /templates/:id/apply returns 404 (not the doc-type 400) for another user's document of a different type", async () => {
+    const token = await registerAndLogin('template-apply-leak-a@example.com');
+    await promoteToAdmin(pg.env, 'template-apply-leak-a@example.com');
+    const templateId = await createTemplate(token, {
+      isPublished: true,
+      docType: 'blog',
+    });
+    const otherToken = await registerAndLogin(
+      'template-apply-leak-b@example.com',
+    );
+    const documentId = await createDocument(otherToken, 'report');
+
+    await request(app.getHttpServer())
+      .post(`/templates/${templateId}/apply`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ documentId })
+      .expect(404);
+  });
+
+  describe('TemplateRepository.update with onlyIfUnpublished (publish race guard)', () => {
+    it('refuses and leaves the row untouched when the stored template is published', async () => {
+      const token = await registerAndLogin('template-race-a@example.com');
+      await promoteToAdmin(pg.env, 'template-race-a@example.com');
+      const templateId = await createTemplate(token, { title: 'Original' });
+      await request(app.getHttpServer())
+        .patch(`/templates/${templateId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ isPublished: true })
+        .expect(200);
+
+      const repository = app.get<TemplateRepository>(TEMPLATE_REPOSITORY);
+      await expect(
+        repository.update(
+          templateId,
+          { title: 'Stale overwrite' },
+          { onlyIfUnpublished: true },
+        ),
+      ).rejects.toBeInstanceOf(TemplatePublishedError);
+
+      const res = await request(app.getHttpServer())
+        .get(`/templates/${templateId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(res.body.title).toBe('Original');
+    });
+
+    it('updates normally when unpublished, and an unconditional update still works on a published one', async () => {
+      const token = await registerAndLogin('template-race-b@example.com');
+      const templateId = await createTemplate(token, { title: 'Draft' });
+      const repository = app.get<TemplateRepository>(TEMPLATE_REPOSITORY);
+
+      const updated = await repository.update(
+        templateId,
+        { title: 'Edited' },
+        { onlyIfUnpublished: true },
+      );
+      expect(updated.title).toBe('Edited');
+
+      await promoteToAdmin(pg.env, 'template-race-b@example.com');
+      await request(app.getHttpServer())
+        .patch(`/templates/${templateId}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ isPublished: true })
+        .expect(200);
+      const adminEdit = await repository.update(templateId, {
+        title: 'Admin edit',
+      });
+      expect(adminEdit.title).toBe('Admin edit');
+    });
   });
 });
