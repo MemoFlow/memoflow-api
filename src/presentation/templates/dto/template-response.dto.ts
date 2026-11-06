@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Template } from '../../../domain/templates/template.entity';
+import { User } from '../../../domain/users/user.entity';
 import { TemplateSectionResponseDto } from './template-section-response.dto';
 
 export class TemplateResponseDto {
@@ -33,13 +34,20 @@ export class TemplateResponseDto {
   @ApiProperty()
   updated_at: Date;
 
-  static fromEntity(template: Template): TemplateResponseDto {
+  /**
+   * `created_by` is only revealed to the owner or an admin; everyone else
+   * sees `null`.
+   */
+  static fromEntity(template: Template, viewer: User): TemplateResponseDto {
     const dto = new TemplateResponseDto();
     dto.id = template.id;
     dto.title = template.title;
     dto.doc_type = template.docType;
     dto.scope = template.scope;
-    dto.created_by = template.createdBy;
+    dto.created_by =
+      viewer.isAdmin || template.createdBy === viewer.id
+        ? template.createdBy
+        : null;
     dto.style_config = template.styleConfig;
     dto.is_published = template.isPublished;
     dto.sections = [...template.sections]

@@ -1,3 +1,5 @@
+import { ForbiddenException } from '@nestjs/common';
+import { UserRole } from '../../domain/users/user-role';
 import { randomUUID } from 'node:crypto';
 import { Template } from '../../domain/templates/template.entity';
 import { TemplateSection } from '../../domain/templates/template-section.entity';
@@ -64,6 +66,7 @@ describe('CreateTemplateUseCase', () => {
 
     const template = await useCase.execute({
       userId: 'user-1',
+      role: UserRole.User,
       title: 'Standard Blog Post',
       docType: 'blog',
       scope: 'personal',
@@ -85,12 +88,13 @@ describe('CreateTemplateUseCase', () => {
     });
   });
 
-  it('honors an explicit isPublished, styleConfig, and per-section isRequired', async () => {
+  it('lets an admin publish and honors an explicit isPublished, styleConfig, and per-section isRequired', async () => {
     const repository = new InMemoryTemplateRepository();
     const useCase = new CreateTemplateUseCase(repository);
 
     const template = await useCase.execute({
       userId: 'user-1',
+      role: UserRole.Admin,
       title: 'Standard Blog Post',
       docType: 'blog',
       scope: 'org',
@@ -110,5 +114,22 @@ describe('CreateTemplateUseCase', () => {
     expect(template.isPublished).toBe(true);
     expect(template.styleConfig).toEqual({ theme: 'dark' });
     expect(template.sections[0].isRequired).toBe(true);
+  });
+
+  it('throws ForbiddenException when a non-admin creates a published template', async () => {
+    const repository = new InMemoryTemplateRepository();
+    const useCase = new CreateTemplateUseCase(repository);
+
+    await expect(
+      useCase.execute({
+        userId: 'user-1',
+        role: UserRole.User,
+        title: 'Standard Blog Post',
+        docType: 'blog',
+        scope: 'org',
+        isPublished: true,
+        sections: [],
+      }),
+    ).rejects.toThrow(ForbiddenException);
   });
 });

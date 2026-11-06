@@ -8,6 +8,7 @@ import {
   startPgContainer,
   PgTestEnv,
 } from './utils/pg-testcontainer';
+import { promoteToAdmin } from './utils/promote-admin';
 
 // Booting AppModule requires a live PostgreSQL (TypeORM connects at init),
 // which Testcontainers can only provide when a Docker daemon is present.
@@ -211,6 +212,8 @@ describeWithDocker()('Templates (e2e)', () => {
     const otherToken = await registerAndLogin(
       'template-lister-other@example.com',
     );
+    // Only an admin can publish.
+    await promoteToAdmin(pg.env, 'template-lister-other@example.com');
 
     await createTemplate(token, { title: 'Mine (unpublished)' });
     await createTemplate(otherToken, {
@@ -284,6 +287,7 @@ describeWithDocker()('Templates (e2e)', () => {
     const ownerToken = await registerAndLogin(
       'template-published-owner@example.com',
     );
+    await promoteToAdmin(pg.env, 'template-published-owner@example.com');
     const templateId = await createTemplate(ownerToken, {
       isPublished: true,
     });
@@ -308,6 +312,8 @@ describeWithDocker()('Templates (e2e)', () => {
 
   it('PATCH /templates/:id updates a template owned by the current user', async () => {
     const token = await registerAndLogin('template-updater@example.com');
+    // Publishing in the same update requires the admin role.
+    await promoteToAdmin(pg.env, 'template-updater@example.com');
     const templateId = await createTemplate(token);
 
     const res = await request(app.getHttpServer())
@@ -464,6 +470,7 @@ describeWithDocker()('Templates (e2e)', () => {
     const token = await registerAndLogin(
       'template-apply-doc-owner@example.com',
     );
+    await promoteToAdmin(pg.env, 'template-apply-doc-owner@example.com');
     const templateId = await createTemplate(token, { isPublished: true });
     const otherToken = await registerAndLogin(
       'template-apply-doc-other@example.com',

@@ -1,4 +1,5 @@
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { UserRole } from '../../domain/users/user-role';
 import { Template } from '../../domain/templates/template.entity';
 import { TemplateSection } from '../../domain/templates/template-section.entity';
 import {
@@ -74,12 +75,13 @@ function makeTemplate(overrides: Partial<Template> = {}): Template {
 }
 
 describe('UpdateTemplateUseCase', () => {
-  it('updates a template owned by the requesting user', async () => {
+  it('updates (and, as an admin, publishes) a template owned by the requesting user', async () => {
     const repository = new InMemoryTemplateRepository([makeTemplate()]);
     const useCase = new UpdateTemplateUseCase(repository);
 
     const result = await useCase.execute({
       userId: 'user-1',
+      role: UserRole.Admin,
       templateId: 'template-1',
       patch: { title: 'Renamed', isPublished: true },
     });
@@ -94,6 +96,7 @@ describe('UpdateTemplateUseCase', () => {
 
     const result = await useCase.execute({
       userId: 'user-1',
+      role: UserRole.User,
       templateId: 'template-1',
       patch: {
         sections: [
@@ -128,6 +131,7 @@ describe('UpdateTemplateUseCase', () => {
     await expect(
       useCase.execute({
         userId: 'user-1',
+        role: UserRole.User,
         templateId: 'missing',
         patch: { title: 'X' },
       }),
@@ -142,6 +146,7 @@ describe('UpdateTemplateUseCase', () => {
     await expect(
       useCase.execute({
         userId: 'user-2',
+        role: UserRole.User,
         templateId: 'template-1',
         patch: { title: 'Hijacked' },
       }),
@@ -158,9 +163,76 @@ describe('UpdateTemplateUseCase', () => {
     await expect(
       useCase.execute({
         userId: 'user-1',
+        role: UserRole.User,
         templateId: 'template-1',
         patch: { title: 'Hijacked' },
       }),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  it('throws ForbiddenException when a non-admin publishes their own template', async () => {
+    const repository = new InMemoryTemplateRepository([makeTemplate()]);
+    const useCase = new UpdateTemplateUseCase(repository);
+
+    await expect(
+      useCase.execute({
+        userId: 'user-1',
+        role: UserRole.User,
+        templateId: 'template-1',
+        patch: { isPublished: true },
+      }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(repository.updateCalls).toEqual([]);
+  });
+
+  it('throws ForbiddenException when a non-admin owner edits an already published template', async () => {
+    const repository = new InMemoryTemplateRepository([
+      makeTemplate({ isPublished: true }),
+    ]);
+    const useCase = new UpdateTemplateUseCase(repository);
+
+    await expect(
+      useCase.execute({
+        userId: 'user-1',
+        role: UserRole.User,
+        templateId: 'template-1',
+        patch: { title: 'Renamed' },
+      }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(repository.updateCalls).toEqual([]);
+  });
+
+  it("lets an admin edit and unpublish another user's published template", async () => {
+    const repository = new InMemoryTemplateRepository([
+      makeTemplate({ isPublished: true }),
+    ]);
+    const useCase = new UpdateTemplateUseCase(repository);
+
+    const result = await useCase.execute({
+      userId: 'admin-1',
+      role: UserRole.Admin,
+      templateId: 'template-1',
+      patch: { title: 'Edited', isPublished: false },
+    });
+
+    expect(result.title).toBe('Edited');
+    expect(result.isPublished).toBe(false);
+  });
+
+  it('lets an admin edit a system template', async () => {
+    const useCase = new UpdateTemplateUseCase(
+      new InMemoryTemplateRepository([
+        makeTemplate({ createdBy: null, isPublished: true }),
+      ]),
+    );
+
+    const result = await useCase.execute({
+      userId: 'admin-1',
+      role: UserRole.Admin,
+      templateId: 'template-1',
+      patch: { title: 'Edited' },
+    });
+
+    expect(result.title).toBe('Edited');
   });
 });

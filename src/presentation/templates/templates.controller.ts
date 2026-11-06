@@ -52,12 +52,14 @@ export class TemplatesController {
   @ApiOperation({ summary: 'Create a template' })
   @ApiResponse({ status: 201, type: TemplateResponseDto })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Only an admin can publish' })
   async create(
     @CurrentUser() user: User,
     @Body() dto: CreateTemplateDto,
   ): Promise<TemplateResponseDto> {
     const template = await this.createTemplateUseCase.execute({
       userId: user.id,
+      role: user.role,
       title: dto.title,
       docType: dto.docType,
       scope: dto.scope,
@@ -65,7 +67,7 @@ export class TemplatesController {
       isPublished: dto.isPublished,
       sections: dto.sections,
     });
-    return TemplateResponseDto.fromEntity(template);
+    return TemplateResponseDto.fromEntity(template, user);
   }
 
   @Get()
@@ -84,7 +86,7 @@ export class TemplatesController {
       scope: query.scope,
     });
     return templates.map((template) =>
-      TemplateResponseDto.fromEntity(template),
+      TemplateResponseDto.fromEntity(template, user),
     );
   }
 
@@ -101,16 +103,20 @@ export class TemplatesController {
       userId: user.id,
       templateId: id,
     });
-    return TemplateResponseDto.fromEntity(template);
+    return TemplateResponseDto.fromEntity(template, user);
   }
 
   @Patch(':id')
   @ApiOperation({
     summary:
-      'Update a template (owner-scoped; sections replace wholesale when provided)',
+      'Update a template (owner or admin; sections replace wholesale when provided)',
   })
   @ApiResponse({ status: 200, type: TemplateResponseDto })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description: 'Only an admin can publish or modify a published template',
+  })
   @ApiResponse({ status: 404, description: 'Template not found' })
   async update(
     @CurrentUser() user: User,
@@ -119,15 +125,16 @@ export class TemplatesController {
   ): Promise<TemplateResponseDto> {
     const template = await this.updateTemplateUseCase.execute({
       userId: user.id,
+      role: user.role,
       templateId: id,
       patch: dto,
     });
-    return TemplateResponseDto.fromEntity(template);
+    return TemplateResponseDto.fromEntity(template, user);
   }
 
   @Delete(':id')
   @HttpCode(204)
-  @ApiOperation({ summary: 'Delete a template (owner-scoped)' })
+  @ApiOperation({ summary: 'Delete a template (owner or admin)' })
   @ApiResponse({ status: 204, description: 'Template deleted' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'Template not found' })
@@ -137,6 +144,7 @@ export class TemplatesController {
   ): Promise<void> {
     await this.deleteTemplateUseCase.execute({
       userId: user.id,
+      role: user.role,
       templateId: id,
     });
   }

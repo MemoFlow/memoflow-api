@@ -1,4 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
+import { UserRole } from '../../domain/users/user-role';
 import { Template } from '../../domain/templates/template.entity';
 import { TemplateRepository } from '../../domain/templates/template.repository';
 import { DeleteTemplateUseCase } from './delete-template.use-case';
@@ -51,7 +52,11 @@ describe('DeleteTemplateUseCase', () => {
     const repository = new InMemoryTemplateRepository([makeTemplate()]);
     const useCase = new DeleteTemplateUseCase(repository);
 
-    await useCase.execute({ userId: 'user-1', templateId: 'template-1' });
+    await useCase.execute({
+      userId: 'user-1',
+      role: UserRole.User,
+      templateId: 'template-1',
+    });
 
     expect(repository.deleteCalls).toEqual(['template-1']);
   });
@@ -61,7 +66,11 @@ describe('DeleteTemplateUseCase', () => {
     const useCase = new DeleteTemplateUseCase(repository);
 
     await expect(
-      useCase.execute({ userId: 'user-1', templateId: 'missing' }),
+      useCase.execute({
+        userId: 'user-1',
+        role: UserRole.User,
+        templateId: 'missing',
+      }),
     ).rejects.toThrow(NotFoundException);
     expect(repository.deleteCalls).toEqual([]);
   });
@@ -73,7 +82,11 @@ describe('DeleteTemplateUseCase', () => {
     const useCase = new DeleteTemplateUseCase(repository);
 
     await expect(
-      useCase.execute({ userId: 'user-2', templateId: 'template-1' }),
+      useCase.execute({
+        userId: 'user-2',
+        role: UserRole.User,
+        templateId: 'template-1',
+      }),
     ).rejects.toThrow(NotFoundException);
     expect(repository.deleteCalls).toEqual([]);
   });
@@ -85,8 +98,62 @@ describe('DeleteTemplateUseCase', () => {
     const useCase = new DeleteTemplateUseCase(repository);
 
     await expect(
-      useCase.execute({ userId: 'user-1', templateId: 'template-1' }),
+      useCase.execute({
+        userId: 'user-1',
+        role: UserRole.User,
+        templateId: 'template-1',
+      }),
     ).rejects.toThrow(NotFoundException);
     expect(repository.deleteCalls).toEqual([]);
+  });
+
+  it('lets a non-admin owner delete their own published template', async () => {
+    const repository = new InMemoryTemplateRepository([
+      makeTemplate({ isPublished: true }),
+    ]);
+    const useCase = new DeleteTemplateUseCase(repository);
+
+    await useCase.execute({
+      userId: 'user-1',
+      role: UserRole.User,
+      templateId: 'template-1',
+    });
+
+    expect(repository.deleteCalls).toEqual(['template-1']);
+  });
+
+  it("lets an admin delete another user's and a system template", async () => {
+    const repository = new InMemoryTemplateRepository([
+      makeTemplate({ id: 'owned', createdBy: 'user-1' }),
+      makeTemplate({ id: 'system', createdBy: null, isPublished: true }),
+    ]);
+    const useCase = new DeleteTemplateUseCase(repository);
+
+    await useCase.execute({
+      userId: 'admin-1',
+      role: UserRole.Admin,
+      templateId: 'owned',
+    });
+    await useCase.execute({
+      userId: 'admin-1',
+      role: UserRole.Admin,
+      templateId: 'system',
+    });
+
+    expect(repository.deleteCalls).toEqual(['owned', 'system']);
+  });
+
+  it('throws NotFoundException for an unknown template even for an admin', async () => {
+    const useCase = new DeleteTemplateUseCase(
+      new InMemoryTemplateRepository([]),
+    );
+
+    await expect(
+      useCase.execute({
+        userId: 'admin-1',
+        role: UserRole.Admin,
+        templateId: 'missing',
+      }),
+    ).rejects.toThrow(NotFoundException);
   });
 });
