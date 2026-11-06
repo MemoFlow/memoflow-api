@@ -63,7 +63,8 @@ services:
 
       # Real frontend origin for CORS — same value for both: the REST API
       # (CORS_ORIGIN) and the WebSocket gateway (WS_CORS_ORIGIN). Set manually
-      # in the Render dashboard; unset falls back to the code default '*'.
+      # in the Render dashboard; required: boot fails in staging/production if
+      # either is unset or '*'.
       - key: CORS_ORIGIN
         sync: false
       - key: WS_CORS_ORIGIN

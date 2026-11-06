@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import 'reflect-metadata';
 import {
+  JWT_SECRET_PLACEHOLDER,
   parseComposioAuthConfigIds,
   parsePostgresSsl,
   parseRedisTls,
@@ -22,6 +23,14 @@ function baseConfig(overrides: Record<string, unknown> = {}) {
     COMPOSIO_API_KEY: 'composio-test-key',
     COMPOSIO_AUTH_CONFIG_IDS: 'trello:ac_123,notion:ac_456,github:ac_789',
     COMPOSIO_WEBHOOK_SECRET: 'composio-test-webhook-secret',
+    // Staging/production refuse wildcard origins; give those tiers safe ones
+    // so each test only overrides what it is about.
+    ...(overrides.NODE_ENV === 'staging' || overrides.NODE_ENV === 'production'
+      ? {
+          CORS_ORIGIN: 'https://app.memoflow.dev',
+          WS_CORS_ORIGIN: 'https://app.memoflow.dev',
+        }
+      : {}),
     ...overrides,
   };
 }
@@ -470,4 +479,83 @@ describe('env.validation blank and strict mail settings', () => {
       ).toThrow('required when NODE_ENV');
     },
   );
+});
+
+describe('env.validation deployed-tier safety checks', () => {
+  const mail = {
+    RESEND_API_KEY: 're_test',
+    EMAIL_FROM: 'MemoFlow <no-reply@example.com>',
+    APP_BASE_URL: 'https://app.example.com',
+  };
+
+  it.each(['staging', 'production'])(
+    'accepts explicit origins and a real secret in %s',
+    (NODE_ENV) => {
+      expect(() => validate(baseConfig({ NODE_ENV, ...mail }))).not.toThrow();
+    },
+  );
+
+  it.each([
+    ['staging', 'CORS_ORIGIN'],
+    ['staging', 'WS_CORS_ORIGIN'],
+    ['production', 'CORS_ORIGIN'],
+    ['production', 'WS_CORS_ORIGIN'],
+  ])('rejects a wildcard in %s %s', (NODE_ENV, key) => {
+    expect(() =>
+      validate(baseConfig({ NODE_ENV, ...mail, [key]: '*' })),
+    ).toThrow(new RegExp(`${key}: cannot be blank or '\\*'`));
+  });
+
+  it.each(
+    ['staging', 'production'].flatMap((env) =>
+      ['CORS_ORIGIN', 'WS_CORS_ORIGIN'].flatMap((key) =>
+        ['', '   '].map((blank) => [env, key, blank]),
+      ),
+    ),
+  )('rejects a blank %s %s value %j', (NODE_ENV, key, blank) => {
+    expect(() =>
+      validate(baseConfig({ NODE_ENV, ...mail, [key]: blank })),
+    ).toThrow(new RegExp(`${key}: cannot be blank`));
+  });
+
+  it.each(['staging', 'production'])(
+    'rejects an unset (defaulted) wildcard origin in %s',
+    (NODE_ENV) => {
+      const config = baseConfig({ NODE_ENV, ...mail });
+      delete (config as Record<string, unknown>).CORS_ORIGIN;
+      expect(() => validate(config)).toThrow('CORS_ORIGIN');
+    },
+  );
+
+  it.each(['staging', 'production'])(
+    'rejects the .env.example JWT_SECRET placeholder in %s',
+    (NODE_ENV) => {
+      expect(() =>
+        validate(
+          baseConfig({ NODE_ENV, ...mail, JWT_SECRET: JWT_SECRET_PLACEHOLDER }),
+        ),
+      ).toThrow('JWT_SECRET');
+    },
+  );
+
+  it.each(['development', 'test'])(
+    'leaves %s unaffected (wildcards and the placeholder are fine)',
+    (NODE_ENV) => {
+      expect(() =>
+        validate(
+          baseConfig({
+            NODE_ENV,
+            CORS_ORIGIN: '*',
+            WS_CORS_ORIGIN: '*',
+            JWT_SECRET: JWT_SECRET_PLACEHOLDER,
+          }),
+        ),
+      ).not.toThrow();
+    },
+  );
+
+  it('keeps the placeholder constant in sync with .env.example', () => {
+    const example = readFileSync(join(__dirname, '../../.env.example'), 'utf8');
+    expect(example).toContain(`JWT_SECRET=${JWT_SECRET_PLACEHOLDER}`);
+  });
 });

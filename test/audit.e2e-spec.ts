@@ -177,7 +177,7 @@ describeWithDocker()('Audit log (e2e)', () => {
   });
 
   it('a bad-password login writes one audit_logs row with action=auth.login_failed', async () => {
-    const email = 'audit-login-bad@example.com';
+    const email = `audit-login-bad-${Date.now()}@example.com`;
     const password = 'correct-horse-battery-staple';
     await registerUser(app, { email, password, display_name: 'Audit Bad' });
 
@@ -203,24 +203,24 @@ describeWithDocker()('Audit log (e2e)', () => {
   });
 
   it('a failed login against an unknown email writes a row with a null userId', async () => {
+    // Unique per run: the per-account throttle persists in a long-lived Redis.
+    const unknownEmail = `nobody-audit-${Date.now()}@example.com`;
     await request(app.getHttpServer())
       .post('/auth/login')
-      .send({ email: 'nobody-audit@example.com', password: 'whatever' })
+      .send({ email: unknownEmail, password: 'whatever' })
       .expect(401);
 
     const rows = await waitForAuditLog((all) =>
       all.some(
         (row) =>
           row.action === 'auth.login_failed' &&
-          (row.metadata as { email?: string } | null)?.email ===
-            'nobody-audit@example.com',
+          (row.metadata as { email?: string } | null)?.email === unknownEmail,
       ),
     );
     const failedRow = rows.find(
       (row) =>
         row.action === 'auth.login_failed' &&
-        (row.metadata as { email?: string } | null)?.email ===
-          'nobody-audit@example.com',
+        (row.metadata as { email?: string } | null)?.email === unknownEmail,
     );
     expect(failedRow?.userId).toBeNull();
   });

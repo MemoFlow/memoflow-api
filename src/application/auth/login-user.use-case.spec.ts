@@ -8,8 +8,22 @@ import {
 } from '../../domain/audit/audit-events';
 import { UserRole } from '../../domain/users/user-role';
 import { User } from '../../domain/users/user.entity';
+import {
+  LoginAttemptLimiter,
+  LoginAttemptResult,
+} from '../../domain/auth/login-attempt-limiter.port';
 import { UserRepository } from '../../domain/users/user.repository';
+import { LoginThrottledException } from './login-throttled.exception';
 import { LoginUserUseCase } from './login-user.use-case';
+
+// Wraps the real bcrypt.compare so calls can be counted without faking it.
+jest.mock('bcrypt', () => {
+  const actual = jest.requireActual<typeof import('bcrypt')>('bcrypt');
+  return {
+    ...actual,
+    compare: jest.fn(actual.compare as (...a: unknown[]) => Promise<boolean>),
+  };
+});
 
 function makeEventEmitter(): jest.Mocked<Pick<EventEmitter2, 'emit'>> {
   return { emit: jest.fn() };
@@ -58,7 +72,29 @@ class InMemoryUserRepository implements UserRepository {
   }
 }
 
+class FakeLimiter implements LoginAttemptLimiter {
+  readonly registered: string[] = [];
+  readonly cleared: string[] = [];
+  result: LoginAttemptResult = { allowed: true, retryAfterSeconds: 0 };
+
+  registerAttempt(email: string): Promise<LoginAttemptResult> {
+    this.registered.push(email);
+    return Promise.resolve(this.result);
+  }
+
+  clear(email: string): Promise<void> {
+    this.cleared.push(email);
+    return Promise.resolve();
+  }
+}
+
 describe('LoginUserUseCase', () => {
+  let limiter: FakeLimiter;
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   let repository: InMemoryUserRepository;
   let jwtService: JwtService;
   let eventEmitter: jest.Mocked<Pick<EventEmitter2, 'emit'>>;
@@ -66,6 +102,7 @@ describe('LoginUserUseCase', () => {
   let user: User;
 
   beforeEach(async () => {
+    (bcrypt.compare as unknown as jest.Mock).mockClear();
     user = new User({
       id: 'user-1',
       email: 'ada@example.com',
@@ -79,10 +116,12 @@ describe('LoginUserUseCase', () => {
     repository = new InMemoryUserRepository([user]);
     jwtService = new JwtService({ secret: 'test-secret' });
     eventEmitter = makeEventEmitter();
+    limiter = new FakeLimiter();
     useCase = new LoginUserUseCase(
       repository,
       jwtService,
       eventEmitter as unknown as EventEmitter2,
+      limiter,
     );
   });
 
@@ -169,6 +208,82 @@ describe('LoginUserUseCase', () => {
     expect(eventEmitter.emit).toHaveBeenCalledWith(AUTH_LOGIN_FAILED_EVENT, {
       userId: 'user-1',
       email: 'ada@example.com',
+    });
+  });
+
+  describe('per-account throttle', () => {
+    it('counts the normalized email and clears the counter on success', async () => {
+      await useCase.execute({
+        email: '  Ada@Example.COM ',
+        password: 'correct-password',
+      });
+
+      expect(limiter.registered).toEqual(['ada@example.com']);
+      expect(limiter.cleared).toEqual(['ada@example.com']);
+    });
+
+    it('does not clear the counter after a failed login', async () => {
+      await expect(
+        useCase.execute({ email: 'ada@example.com', password: 'wrong' }),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(limiter.registered).toEqual(['ada@example.com']);
+      expect(limiter.cleared).toEqual([]);
+    });
+
+    it('counts unknown emails too', async () => {
+      await expect(
+        useCase.execute({ email: 'ghost@example.com', password: 'x' }),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(limiter.registered).toEqual(['ghost@example.com']);
+    });
+
+    it('throws LoginThrottledException without touching the repository or bcrypt when blocked', async () => {
+      limiter.result = { allowed: false, retryAfterSeconds: 42 };
+      const findByEmail = jest.spyOn(repository, 'findByEmail');
+      const compare = bcrypt.compare as unknown as jest.Mock;
+
+      const err: unknown = await useCase
+        .execute({ email: 'ada@example.com', password: 'correct-password' })
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(LoginThrottledException);
+      expect((err as LoginThrottledException).retryAfterSeconds).toBe(42);
+      expect((err as LoginThrottledException).getStatus()).toBe(429);
+      expect(findByEmail).not.toHaveBeenCalled();
+      expect(compare).not.toHaveBeenCalled();
+      expect(eventEmitter.emit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('uniform timing', () => {
+    it('runs a bcrypt compare against a cost-10 hash for an unknown email', async () => {
+      const compare = bcrypt.compare as unknown as jest.Mock;
+
+      await expect(
+        useCase.execute({ email: 'ghost@example.com', password: 'x' }),
+      ).rejects.toThrow(new UnauthorizedException('Invalid email or password'));
+
+      expect(compare).toHaveBeenCalledTimes(1);
+      const hash = (compare.mock.calls[0] as unknown[])[1] as string;
+      expect(bcrypt.getRounds(hash)).toBe(10);
+    });
+
+    it('runs exactly one compare for a known account and for a disabled one', async () => {
+      const compare = bcrypt.compare as unknown as jest.Mock;
+      await expect(
+        useCase.execute({ email: 'ada@example.com', password: 'wrong' }),
+      ).rejects.toThrow(UnauthorizedException);
+      user.disabledAt = new Date();
+      await expect(
+        useCase.execute({
+          email: 'ada@example.com',
+          password: 'correct-password',
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+
+      expect(compare).toHaveBeenCalledTimes(2);
     });
   });
 });

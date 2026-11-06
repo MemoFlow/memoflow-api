@@ -115,6 +115,10 @@ export function parseEmailVerificationRequired(value: unknown): boolean {
   return String(value).toLowerCase() === 'true';
 }
 
+/** The `JWT_SECRET` shipped in `.env.example`; must never reach a deployed tier. */
+export const JWT_SECRET_PLACEHOLDER =
+  'dev-only-change-me-to-a-32char-min-random-secret';
+
 export class EnvironmentVariables {
   @IsOptional()
   @IsIn(NODE_ENVS)
@@ -437,6 +441,29 @@ export function validate(
       );
     }
     validated.EMAIL_VERIFICATION_REQUIRED = true;
+
+    const unsafe: string[] = [];
+    // A blank origin is treated as '*' by `cors`, so it is refused too.
+    if (['', '*'].includes(validated.CORS_ORIGIN.trim())) {
+      unsafe.push(
+        `CORS_ORIGIN: cannot be blank or '*' when NODE_ENV is ${validated.NODE_ENV}`,
+      );
+    }
+    if (['', '*'].includes(validated.WS_CORS_ORIGIN.trim())) {
+      unsafe.push(
+        `WS_CORS_ORIGIN: cannot be blank or '*' when NODE_ENV is ${validated.NODE_ENV}`,
+      );
+    }
+    if (validated.JWT_SECRET === JWT_SECRET_PLACEHOLDER) {
+      unsafe.push(
+        `JWT_SECRET: cannot be the .env.example placeholder when NODE_ENV is ${validated.NODE_ENV}`,
+      );
+    }
+    if (unsafe.length > 0) {
+      throw new Error(
+        `Invalid environment configuration:\n- ${unsafe.join('\n- ')}`,
+      );
+    }
   }
 
   return validated;

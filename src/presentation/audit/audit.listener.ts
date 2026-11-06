@@ -5,6 +5,7 @@ import {
   AUTH_EMAIL_VERIFIED_EVENT,
   AUTH_LOGIN_EVENT,
   AUTH_LOGIN_FAILED_EVENT,
+  AUTH_LOGOUT_EVENT,
   AUTH_PASSWORD_CHANGED_EVENT,
   AUTH_PASSWORD_RESET_COMPLETED_EVENT,
   AUTH_PASSWORD_RESET_REQUESTED_EVENT,
@@ -56,6 +57,11 @@ export class AuditListener {
     await this.safeRecord(AUTH_LOGIN_FAILED_EVENT, payload.userId, {
       email: payload.email,
     });
+  }
+
+  @OnEvent(AUTH_LOGOUT_EVENT)
+  async onAuthLogout(payload: AuthAccountEventPayload): Promise<void> {
+    await this.safeRecord(AUTH_LOGOUT_EVENT, payload.userId, null);
   }
 
   @OnEvent(AUTH_PASSWORD_RESET_REQUESTED_EVENT)

@@ -21,6 +21,8 @@ describe('ResetPasswordUseCase', () => {
   let emit: jest.Mock;
   let useCase: ResetPasswordUseCase;
   let token: string;
+  let cleared: string[];
+  let limiter: { registerAttempt: jest.Mock; clear: jest.Mock };
 
   async function issue(userId = 'user-1', ttlMs = 3600_000) {
     token = generateAuthToken();
@@ -37,10 +39,43 @@ describe('ResetPasswordUseCase', () => {
     tokens = new FakeAuthTokenRepository();
     users = new FakeUserRepository([makeUser()], tokens);
     emit = jest.fn();
-    useCase = new ResetPasswordUseCase(users, {
-      emit,
-    } as unknown as EventEmitter2);
+    cleared = [];
+    limiter = {
+      registerAttempt: jest.fn(),
+      clear: jest.fn((email: string) => {
+        cleared.push(email);
+        return Promise.resolve();
+      }),
+    };
+    useCase = new ResetPasswordUseCase(
+      users,
+      { emit } as unknown as EventEmitter2,
+      limiter,
+    );
     await issue();
+  });
+
+  it('clears the account login counter after a successful reset', async () => {
+    await useCase.execute({ token, newPassword: 'brand-new-password' });
+
+    expect(cleared).toEqual(['ada@example.com']);
+  });
+
+  it('does not clear the counter when the token is invalid', async () => {
+    await expect(
+      useCase.execute({ token: 'bogus', newPassword: 'brand-new-password' }),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(cleared).toEqual([]);
+  });
+
+  it('still succeeds when clearing the counter fails', async () => {
+    limiter.clear.mockRejectedValue(new Error('redis down'));
+
+    await expect(
+      useCase.execute({ token, newPassword: 'brand-new-password' }),
+    ).resolves.toBeUndefined();
+    expect(users.resets).toHaveLength(1);
   });
 
   it('sets the new password, bumps the session version and emits revocation + audit events', async () => {

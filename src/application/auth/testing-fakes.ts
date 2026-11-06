@@ -94,6 +94,13 @@ export class FakeUserRepository implements UserRepository {
     return Promise.resolve(userId);
   }
 
+  revokeSessions(id: string): Promise<number> {
+    const user = this.users.find((u) => u.id === id);
+    if (!user) return Promise.reject(new Error('User not found'));
+    user.tokenVersion += 1;
+    return Promise.resolve(user.tokenVersion);
+  }
+
   changePassword(id: string, passwordHash: string): Promise<number> {
     const user = this.users.find((u) => u.id === id);
     if (!user) return Promise.reject(new Error('User not found'));

@@ -1,4 +1,4 @@
-import { Logger, NotFoundException } from '@nestjs/common';
+import { Logger, NotFoundException, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { OnEvent } from '@nestjs/event-emitter';
@@ -6,6 +6,7 @@ import {
   ConnectedSocket,
   MessageBody,
   OnGatewayConnection,
+  OnGatewayDisconnect,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
@@ -23,6 +24,9 @@ import type {
   UserDisabledEventPayload,
   UserSessionsRevokedEventPayload,
 } from '../../domain/users/user-events';
+
+/** Largest delay `setTimeout` accepts (2^31 - 1 ms). */
+const MAX_TIMEOUT_MS = 2_147_483_647;
 
 interface PlanningStatusEvent {
   jobId: string;
@@ -89,8 +93,12 @@ interface SubscribeMessagePayload {
 @WebSocketGateway({
   cors: { origin: process.env.WS_CORS_ORIGIN ?? '*' },
 })
-export class PlanningGateway implements OnGatewayConnection {
+export class PlanningGateway
+  implements OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy
+{
   private readonly logger = new Logger(PlanningGateway.name);
+  /** Per-socket timers that drop the socket when its JWT expires. */
+  private readonly expiryTimers = new Map<string, NodeJS.Timeout>();
 
   @WebSocketServer()
   server: Server;
@@ -136,6 +144,15 @@ export class PlanningGateway implements OnGatewayConnection {
         return;
       }
 
+      // The access token is short-lived; a socket must not outlive it. A
+      // token with no `exp` is never issued by this API, so it is refused
+      // rather than granted an unbounded session.
+      if (typeof payload.exp !== 'number' || client.disconnected) {
+        client.disconnect(true);
+        return;
+      }
+      this.scheduleExpiry(client, payload.exp * 1000);
+
       client.data.userId = payload.sub;
       // Kept so `subscribe` can re-check the session version without the
       // token.
@@ -156,6 +173,45 @@ export class PlanningGateway implements OnGatewayConnection {
         this.logger.warn(`Socket handshake failed unexpectedly: ${message}`);
       }
       client.disconnect(true);
+    }
+  }
+
+  handleDisconnect(client: Socket): void {
+    this.clearExpiry(client.id);
+  }
+
+  onModuleDestroy(): void {
+    for (const timer of this.expiryTimers.values()) clearTimeout(timer);
+    this.expiryTimers.clear();
+  }
+
+  /**
+   * Disconnects the socket at `expiresAtMs`. `setTimeout` caps at 2^31-1 ms
+   * (~24.8 days), so a longer wait re-arms itself until the deadline passes.
+   */
+  private scheduleExpiry(client: Socket, expiresAtMs: number): void {
+    this.clearExpiry(client.id);
+    const remaining = expiresAtMs - Date.now();
+    if (remaining <= 0) {
+      client.disconnect(true);
+      return;
+    }
+    const timer = setTimeout(
+      () => {
+        this.expiryTimers.delete(client.id);
+        this.scheduleExpiry(client, expiresAtMs);
+      },
+      Math.min(remaining, MAX_TIMEOUT_MS),
+    );
+    timer.unref();
+    this.expiryTimers.set(client.id, timer);
+  }
+
+  private clearExpiry(clientId: string): void {
+    const timer = this.expiryTimers.get(clientId);
+    if (timer) {
+      clearTimeout(timer);
+      this.expiryTimers.delete(clientId);
     }
   }
 

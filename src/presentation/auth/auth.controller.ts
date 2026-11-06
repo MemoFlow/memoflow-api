@@ -4,6 +4,7 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -13,9 +14,12 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import type { Response } from 'express';
 import { ChangePasswordUseCase } from '../../application/auth/change-password.use-case';
 import { ForgotPasswordUseCase } from '../../application/auth/forgot-password.use-case';
 import { LoginUserUseCase } from '../../application/auth/login-user.use-case';
+import { LoginThrottledException } from '../../application/auth/login-throttled.exception';
+import { LogoutUserUseCase } from '../../application/auth/logout-user.use-case';
 import { ResendVerificationUseCase } from '../../application/auth/resend-verification.use-case';
 import { ResetPasswordUseCase } from '../../application/auth/reset-password.use-case';
 import { VerifyEmailUseCase } from '../../application/auth/verify-email.use-case';
@@ -48,6 +52,7 @@ export class AuthController {
     private readonly changePasswordUseCase: ChangePasswordUseCase,
     private readonly verifyEmailUseCase: VerifyEmailUseCase,
     private readonly resendVerificationUseCase: ResendVerificationUseCase,
+    private readonly logoutUserUseCase: LogoutUserUseCase,
   ) {}
 
   @Throttle(AUTH_THROTTLE)
@@ -76,14 +81,45 @@ export class AuthController {
   @ApiOperation({ summary: 'Log in and receive a JWT access token' })
   @ApiResponse({ status: 200, type: LoginResponseDto })
   @ApiResponse({ status: 401, description: 'Invalid email or password' })
-  async login(@Body() dto: LoginUserDto): Promise<LoginResponseDto> {
-    const result = await this.loginUserUseCase.execute({
-      email: dto.email,
-      password: dto.password,
-    });
+  @ApiResponse({
+    status: 429,
+    description:
+      'Too many login attempts for this account (10 per 15 minutes); see the Retry-After header (seconds)',
+  })
+  async login(
+    @Body() dto: LoginUserDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<LoginResponseDto> {
+    let result: { accessToken: string };
+    try {
+      result = await this.loginUserUseCase.execute({
+        email: dto.email,
+        password: dto.password,
+      });
+    } catch (err) {
+      if (err instanceof LoginThrottledException) {
+        res.setHeader('Retry-After', String(err.retryAfterSeconds));
+      }
+      throw err;
+    }
     const response = new LoginResponseDto();
     response.accessToken = result.accessToken;
     return response;
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Post('logout')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Log out of all sessions',
+    description:
+      'Access tokens are stateless, so logging out revokes every session of the user: all access tokens issued so far stop working and their live WebSocket connections are closed. Not just the current device.',
+  })
+  @ApiResponse({ status: 204, description: 'All sessions ended' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async logout(@CurrentUser() user: User): Promise<void> {
+    await this.logoutUserUseCase.execute({ userId: user.id });
   }
 
   @Throttle(AUTH_THROTTLE)
