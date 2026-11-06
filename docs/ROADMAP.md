@@ -457,7 +457,8 @@ work already flagged as deferred in the sections above, not a numbered feature:
     host, and the release workflow described in `CLAUDE.md`, which doesn't exist yet.
   - **Open:** end-to-end planning job through RabbitMQ and n8n on `development` is not yet
     confirmed from the API side (transport fixes merged in PR #65). `test/rabbitmq-transport.e2e-spec.ts`
-    also failed CI once with a broker connection reset; act on it only if it recurs.
+    kept failing CI with `connect ECONNRESET` on a different port each time, likely from
+    supertest's per-request servers; the suite now keeps one listening server. Reopen if it recurs.
 - **Onboarding and lead scoring — ◐ merged to `development`, not yet promoted**
   ([plan](plans/2026-11-06-lead-scoring.md), [contract](contracts/lead-scoring.md)).
   Merged in PR #67: onboarding answers with marketing consent,
