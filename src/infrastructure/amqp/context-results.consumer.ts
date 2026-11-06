@@ -123,6 +123,23 @@ export class ContextResultsConsumer implements OnModuleInit {
   private readonly logger = new Logger(ContextResultsConsumer.name);
   private readonly channelWrapper: ChannelWrapper;
 
+  /**
+   * Tail of the in-flight handling chain per `job_id`. With `prefetch: 20`
+   * and a fire-and-forget delivery callback, messages run concurrently; a
+   * terminal chunk could then finalize a job (assembling context from the
+   * state returned by its own append) while earlier data chunks of the same
+   * job were still being written, losing them. Chaining per job restores
+   * in-order handling within a job while different jobs still run in
+   * parallel (a slow LLM call on one job must not block the others).
+   * Entries are removed when a job's chain drains, so the map cannot grow.
+   *
+   * Limit: this relies on a single consumer instance and broker delivery
+   * order. A data chunk requeued after a transient failure can still be
+   * redelivered after the terminal chunk; that is accepted, best-effort
+   * behaviour per `docs/contracts/context-engine.md`.
+   */
+  private readonly jobChains = new Map<string, Promise<void>>();
+
   constructor(
     connectionProvider: RabbitMqConnectionProvider,
     private readonly handleChunk: HandleContextResultChunkUseCase,
@@ -136,16 +153,43 @@ export class ContextResultsConsumer implements OnModuleInit {
     });
   }
 
-  async onModuleInit(): Promise<void> {
-    await this.channelWrapper.waitForConnect();
-    await this.channelWrapper.consume(
-      CTX_GATHER_RESULTS_QUEUE,
-      (msg) => {
-        void this.onMessage(msg);
-      },
-      { prefetch: 20 },
-    );
-    this.logger.log('RabbitMQ context-results consumer ready');
+  /**
+   * Deliberately does NOT wait for the broker: Nest blocks listening on
+   * `onModuleInit`, so an unreachable/refused `RABBITMQ_URL` must not stop
+   * the API from starting. amqp-connection-manager keeps (re)connecting in
+   * the background. `ChannelWrapper.consume()` is safe to call before the
+   * first connect: with no channel yet it just registers the consumer and
+   * returns, and every (re)connect re-runs the setup (topology assertion)
+   * and then re-establishes all registered consumers.
+   */
+  onModuleInit(): Promise<void> {
+    this.channelWrapper.on('connect', () => {
+      this.logger.log('RabbitMQ context-results channel connected');
+    });
+    this.channelWrapper.on('error', (err: Error) => {
+      this.logger.error(
+        `RabbitMQ context-results channel error: ${err.message}`,
+      );
+    });
+    this.channelWrapper
+      .consume(
+        CTX_GATHER_RESULTS_QUEUE,
+        (msg) => {
+          void this.onMessage(msg);
+        },
+        { prefetch: 20 },
+      )
+      .then(() => {
+        this.logger.log('RabbitMQ context-results consumer registered');
+      })
+      .catch((err: unknown) => {
+        this.logger.error(
+          `RabbitMQ context-results consumer registration failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      });
+    return Promise.resolve();
   }
 
   private async onMessage(msg: ConsumeMessage | null): Promise<void> {
@@ -171,6 +215,40 @@ export class ContextResultsConsumer implements OnModuleInit {
       return;
     }
 
+    return this.runInJobOrder(chunk.jobId, () =>
+      this.handleParsedChunk(msg, chunk),
+    );
+  }
+
+  /** Runs `work` after every previously queued task for `jobId`. Never
+   * rejects, so one failing message cannot break later ones in the chain. */
+  private runInJobOrder(
+    jobId: string,
+    work: () => Promise<void>,
+  ): Promise<void> {
+    const previous = this.jobChains.get(jobId) ?? Promise.resolve();
+    const next: Promise<void> = previous
+      .then(work)
+      .catch((err: unknown) => {
+        this.logger.error(
+          `Unexpected failure handling context result chunk for job ${jobId}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      })
+      .finally(() => {
+        if (this.jobChains.get(jobId) === next) {
+          this.jobChains.delete(jobId);
+        }
+      });
+    this.jobChains.set(jobId, next);
+    return next;
+  }
+
+  private async handleParsedChunk(
+    msg: ConsumeMessage,
+    chunk: ContextResultChunk,
+  ): Promise<void> {
     try {
       const result = await this.handleChunk.execute({ chunk });
 

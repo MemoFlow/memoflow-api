@@ -1,0 +1,76 @@
+{
+  "planPath": "docs/plans/2026-11-06-ai-rework.md",
+  "tasks": [
+    {
+      "id": 1,
+      "subject": "Slice 0: Pipeline reliability",
+      "status": "completed",
+      "blockedBy": [],
+      "description": "**Goal:** Broker outage can't block boot or hang publishing; terminal chunks can't finalize before earlier data chunks are saved.\n**Acceptance Criteria:** App boots with an unreachable broker and reconnects later; publish fails within a bounded time so the job fails instead of hanging; chunks for one job are handled in delivery order while other jobs proceed; failing test written first.\n**Verify:** Unit specs for consumer and publisher; e2e boot with unreachable broker; rabbitmq-transport e2e repeated.\n```json:metadata\n{\"modelTier\": \"standard\", \"verifyCommand\": \"npm run lint && npm run build && npm test && REDIS_HOST=localhost REDIS_PORT=<port> npm run test:e2e\"}\n```"
+    },
+    {
+      "id": 2,
+      "subject": "Slice 1: Gateway and OpenRouter swap",
+      "status": "pending",
+      "blockedBy": [
+        1
+      ],
+      "description": "**Goal:** All LLM calls go through an LlmGateway port with an OpenRouter adapter using native fetch; Anthropic removed.\n**Acceptance Criteria:** @anthropic-ai/sdk and ANTHROPIC_* gone; OPENROUTER_* optional env; unset key keeps null and stub fallbacks; errors mapped to existing typed errors; tolerant JSON parse with one repair retry; model chosen via env.\n**Verify:** Gateway specs against a fake server; e2e with no key; README, .env.example and render.yaml updated.\n```json:metadata\n{\"modelTier\": \"standard\", \"verifyCommand\": \"npm run lint && npm run build && npm test && REDIS_HOST=localhost REDIS_PORT=<port> npm run test:e2e\"}\n```"
+    },
+    {
+      "id": 3,
+      "subject": "Slice 2: Prompt system",
+      "status": "pending",
+      "blockedBy": [
+        2
+      ],
+      "description": "**Goal:** Versioned system and user templates shipped to every tier by migration, rendered safely on both planning paths, managed by admins.\n**Acceptance Criteria:** prompts gains system_template and user_invocable; one active prompt per feature type enforced; feature types suggestion, rewrite, summarize, expand and internal planning; only invocable types accepted on the suggestions route; single-pass renderer; admin list, create and activate routes guarded by RolesGuard; model recorded on ai_suggestions and planning_jobs; schema doc updated.\n**Verify:** Renderer specs; e2e for route rejection and admin 403; migration run and revert.\n```json:metadata\n{\"modelTier\": \"frontier\", \"verifyCommand\": \"npm run lint && npm run build && npm test && REDIS_HOST=localhost REDIS_PORT=<port> npm run test:e2e\"}\n```"
+    },
+    {
+      "id": 4,
+      "subject": "Slice 3: Guardrails",
+      "status": "pending",
+      "blockedBy": [
+        3
+      ],
+      "description": "**Goal:** Input limits, secret redaction, untrusted-data delimiting, strict output validation, timeouts and retries, generic client errors.\n**Acceptance Criteria:** Size limits on prompt and section text; best-effort redaction before anything leaves the API; per-request nonce tags with closing tag neutralised; schema validation including array items and canary check; bounded retry honouring retry-after; provider details only in logs and Sentry; logs carry no content.\n**Verify:** Injection fixtures with a scripted fake gateway; redaction and validation specs.\n```json:metadata\n{\"modelTier\": \"frontier\", \"verifyCommand\": \"npm run lint && npm run build && npm test && REDIS_HOST=localhost REDIS_PORT=<port> npm run test:e2e\"}\n```"
+    },
+    {
+      "id": 5,
+      "subject": "Slice 4: RAG pipeline",
+      "status": "pending",
+      "blockedBy": [
+        4
+      ],
+      "description": "**Goal:** Planning jobs retrieve the user's own sections with Postgres full-text search through a shared pipeline on both transports.\n**Acceptance Criteria:** Generated tsvector column and GIN index by migration; SectionRetriever port requires userId; bound document first; connector chunks merged; token budget with truncation recorded; numbered sources; unknown citations dropped; sources returned as id, type and title; retrieval metadata in context_used; schema doc updated.\n**Verify:** E2e proving retrieval never returns another user's sections; both transports covered.\n```json:metadata\n{\"modelTier\": \"frontier\", \"verifyCommand\": \"npm run lint && npm run build && npm test && REDIS_HOST=localhost REDIS_PORT=<port> npm run test:e2e\"}\n```"
+    },
+    {
+      "id": 6,
+      "subject": "Slice 5: Quota and caching",
+      "status": "pending",
+      "blockedBy": [
+        5
+      ],
+      "description": "**Goal:** Per-user and global daily quota, per-user response cache and active prompt cache, all in place on AI paths.\n**Acceptance Criteria:** AiQuota reserves atomically in Redis before each provider attempt; over limit returns 429 with Retry-After; fails closed if Redis is down; AI_USER_DAILY_LIMIT=10 and AI_GLOBAL_DAILY_LIMIT=40; suggestions cache keyed per user with TTL and fail-open; cache hits use no quota; prompts cached 60s and cleared on activation; worker re-checks user is active; connector ids validated at submission; authz Phase 4 tasks updated.\n**Verify:** Atomicity and cache isolation specs; e2e over-quota 429.\n```json:metadata\n{\"modelTier\": \"standard\", \"verifyCommand\": \"npm run lint && npm run build && npm test && REDIS_HOST=localhost REDIS_PORT=<port> npm run test:e2e\"}\n```"
+    },
+    {
+      "id": 7,
+      "subject": "Slice 6: Consent and notice",
+      "status": "pending",
+      "blockedBy": [
+        6
+      ],
+      "description": "**Goal:** AI use requires recorded consent, with a draft notice for legal review.\n**Acceptance Criteria:** users.ai_consent_at by migration; accept endpoint with notice version; AI routes return 403 with a clear code until accepted; docs/ai-data-notice.md marked as needing legal review; frontend guide documents the flow; schema doc updated.\n**Verify:** E2e no-consent 403 and accepted path.\n```json:metadata\n{\"modelTier\": \"standard\", \"verifyCommand\": \"npm run lint && npm run build && npm test && REDIS_HOST=localhost REDIS_PORT=<port> npm run test:e2e\"}\n```"
+    },
+    {
+      "id": 8,
+      "subject": "Slice 7: Docs sweep and live smoke",
+      "status": "pending",
+      "blockedBy": [
+        7
+      ],
+      "description": "**Goal:** Docs reflect the new AI layer, and it is proven live on dev.\n**Acceptance Criteria:** security.md injection posture rewritten; privacy inventory updated for OpenRouter, upstream providers, retrieved content and cached text; ROADMAP and README current; live smoke script gated on OPENROUTER_API_KEY confirms a suggestion, a planning job, a cache hit and quota counters. Needs the user's key in Render.\n**Verify:** Run smoke on dev with non-sensitive data; /health 200 after deploy.\n```json:metadata\n{\"modelTier\": \"mechanical\", \"verifyCommand\": \"npm run lint && npm run build && npm test && REDIS_HOST=localhost REDIS_PORT=<port> npm run test:e2e\"}\n```"
+    }
+  ],
+  "lastUpdated": "2026-11-06T10:58:55.093952+00:00"
+}

@@ -11,6 +11,12 @@ import {
 } from './context-topology';
 import { RabbitMqConnectionProvider } from './rabbitmq-connection.provider';
 
+/** Upper bound on a single publish. `ChannelWrapper.publish` buffers
+ * indefinitely while disconnected; without this a dead broker would leave
+ * the caller (and its job) hanging. A timeout rejects, which the use-case
+ * maps to `CONTEXT_ENGINE_PUBLISH_FAILED`. */
+export const PUBLISH_TIMEOUT_MS = 10_000;
+
 /** Wire shape published to `ctx.gather.requests` — mirrors
  * `docs/contracts/context-request.schema.json` exactly (snake_case, as the
  * CE team's schema dictates; the domain-side `GatherRequestInput` stays
@@ -50,13 +56,23 @@ export class RabbitContextRequestPublisher
     });
   }
 
-  async onModuleInit(): Promise<void> {
-    // Waits for the initial connect + topology assertion so the app only
-    // reports "ready" once publishing is actually possible — mirrors how
-    // TypeORM/Mongoose already block boot on their own connections when
-    // configured.
-    await this.channelWrapper.waitForConnect();
-    this.logger.log('RabbitMQ context-request publisher ready');
+  /**
+   * Does NOT wait for the broker: Nest blocks listening on `onModuleInit`,
+   * so an unreachable `RABBITMQ_URL` must not stop the API from starting.
+   * The connection (and topology assertion) continues in the background via
+   * amqp-connection-manager's reconnect; publishes made meanwhile are
+   * bounded by `PUBLISH_TIMEOUT_MS` and fail rather than hang.
+   */
+  onModuleInit(): Promise<void> {
+    this.channelWrapper.on('connect', () => {
+      this.logger.log('RabbitMQ context-request publisher ready');
+    });
+    this.channelWrapper.on('error', (err: Error) => {
+      this.logger.error(
+        `RabbitMQ context-request publisher channel error: ${err.message}`,
+      );
+    });
+    return Promise.resolve();
   }
 
   async publishGatherRequest(input: GatherRequestInput): Promise<void> {
@@ -74,17 +90,29 @@ export class RabbitContextRequestPublisher
     };
 
     const content = Buffer.from(JSON.stringify(body), 'utf-8');
-    await this.channelWrapper.publish(
-      CONTEXT_EXCHANGE,
-      CTX_GATHER_REQUEST_ROUTING_KEY,
-      content,
-      {
-        contentType: 'application/json',
-        messageId: input.jobId,
-        correlationId: input.jobId,
-        persistent: true,
-        timestamp: Math.floor(Date.now() / 1000),
-      },
-    );
+    try {
+      await this.channelWrapper.publish(
+        CONTEXT_EXCHANGE,
+        CTX_GATHER_REQUEST_ROUTING_KEY,
+        content,
+        {
+          contentType: 'application/json',
+          messageId: input.jobId,
+          correlationId: input.jobId,
+          persistent: true,
+          timestamp: Math.floor(Date.now() / 1000),
+          timeout: PUBLISH_TIMEOUT_MS,
+        },
+      );
+    } catch (err) {
+      // `error_message` on the job is serialized to clients — keep the
+      // broker/library detail (e.g. a bare "timeout") in the logs only.
+      this.logger.error(
+        `Failed to publish context gather request for job ${input.jobId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      throw new Error('Context engine unavailable');
+    }
   }
 }
