@@ -16,3 +16,11 @@ export interface GatherInput {
 export interface ContextGatherer {
   gather(input: GatherInput): Promise<Record<string, unknown>>;
 }
+
+/**
+ * The exact `note` `StubContextGatherer` returns. The planning pipeline
+ * recognises the stub's placeholder by comparing for equality, so a real
+ * gatherer's own `note` is never mistaken for it.
+ */
+export const STUB_CONTEXT_NOTE =
+  'stub — no context engine configured (CONTEXT_ENGINE_URL unset)';

@@ -2,7 +2,10 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Document } from '../../domain/documents/document.entity';
 import { DocumentRepository } from '../../domain/documents/document.repository';
 import { Section } from '../../domain/documents/section.entity';
-import { SectionRepository } from '../../domain/documents/section.repository';
+import {
+  SectionRepository,
+  SectionTitle,
+} from '../../domain/documents/section.repository';
 import { GetDocumentUseCase } from './get-document.use-case';
 import { ReorderSectionsUseCase } from './reorder-sections.use-case';
 
@@ -72,6 +75,9 @@ class InMemorySectionRepository implements SectionRepository {
     return Promise.resolve();
   }
 
+  findTitlesByDocument(): Promise<SectionTitle[]> {
+    return Promise.reject(new Error('not implemented'));
+  }
   replaceAll(): Promise<number> {
     return Promise.reject(new Error('not implemented'));
   }

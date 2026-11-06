@@ -10,6 +10,7 @@ import { AI_MAX_INPUT_CHARS } from './application/ai/max-input-chars.token';
 import { GATHER_TIMEOUT_MS } from './application/context/gather-timeout-ms.token';
 import { HandleContextResultChunkUseCase } from './application/context/handle-context-result-chunk.use-case';
 import { HandleGatherTimeoutUseCase } from './application/context/handle-gather-timeout.use-case';
+import { PlanningPipeline } from './application/context/planning-pipeline';
 import { ProcessPlanningJobUseCase } from './application/context/process-planning-job.use-case';
 import { SubmitPlanningJobUseCase } from './application/context/submit-planning-job.use-case';
 import { AiModule, aiMaxInputCharsFactory } from './ai.module';
@@ -238,6 +239,7 @@ export function contextResultsConsumerFactory(
     },
     SubmitPlanningJobUseCase,
     GetPlanningJobUseCase,
+    PlanningPipeline,
     ProcessPlanningJobUseCase,
     HandleContextResultChunkUseCase,
     HandleGatherTimeoutUseCase,

@@ -16,7 +16,8 @@ import {
   leaksPrompt,
   prepareUntrustedText,
 } from '../../domain/ai/prompt-guards';
-import { renderPrompt } from '../../domain/ai/prompt-render';
+import { listPlaceholders, renderPrompt } from '../../domain/ai/prompt-render';
+import type { Prompt } from '../../domain/ai/prompt.entity';
 import { PROMPT_REPOSITORY } from '../../domain/ai/prompt.repository';
 import type { PromptRepository } from '../../domain/ai/prompt.repository';
 import {
@@ -31,6 +32,7 @@ import { SUGGESTION_GENERATOR } from '../../domain/ai/suggestion-generator.port'
 import type { SuggestionGenerator } from '../../domain/ai/suggestion-generator.port';
 import { DOCUMENT_REPOSITORY } from '../../domain/documents/document.repository';
 import type { DocumentRepository } from '../../domain/documents/document.repository';
+import type { Section } from '../../domain/documents/section.entity';
 import { SECTION_REPOSITORY } from '../../domain/documents/section.repository';
 import type { SectionRepository } from '../../domain/documents/section.repository';
 import {
@@ -41,6 +43,12 @@ import { assertSectionOwnedByUser } from './section-access';
 
 /** Longest `suggested_text` accepted from the model. */
 const MAX_SUGGESTED_TEXT_CHARS = 100_000;
+
+/** Longest title shown in the light context. */
+const MAX_CONTEXT_TITLE_CHARS = 200;
+
+const oneLine = (title: string): string =>
+  title.replace(/\s+/g, ' ').trim().slice(0, MAX_CONTEXT_TITLE_CHARS);
 
 const GENERATION_FAILED_MESSAGE = 'AI suggestion generation failed';
 const INVALID_OUTPUT_MESSAGE = 'The AI provider returned an invalid response';
@@ -113,8 +121,10 @@ export class GenerateSuggestionUseCase {
     // text is redacted and fence tags neutralised for the model only; the
     // stored `originalText` stays the user's real text.
     const nonce = randomBytes(16).toString('hex');
+    const light = await this.lightContext(prompt, section);
     const vars = {
       content: prepareUntrustedText(section.content),
+      context: prepareUntrustedText(light.join('\n')),
       nonce,
     };
     let system: string;
@@ -140,7 +150,7 @@ export class GenerateSuggestionUseCase {
       this.assertValidOutput(generated.suggestedText, {
         nonce,
         system,
-        source: section.content,
+        source: [section.content, ...light].join('\n'),
       });
     } catch (err) {
       throw this.mapGenerationError(err);
@@ -155,6 +165,37 @@ export class GenerateSuggestionUseCase {
       promptVersion: prompt.version,
       model: generated.model,
     });
+  }
+
+  /**
+   * The light `{{context}}` for a section: its document's title and the
+   * titles (only) of the previous and next sections. Skipped when the active
+   * prompt does not use the placeholder, so older prompts cost nothing extra.
+   * Uses the existing repositories; the section list is already ordered.
+   */
+  private async lightContext(
+    prompt: Prompt,
+    section: Section,
+  ): Promise<string[]> {
+    const usesContext = [prompt.systemTemplate, prompt.template].some(
+      (template) => listPlaceholders(template).includes('context'),
+    );
+    if (!usesContext) return [];
+
+    const [document, siblings] = await Promise.all([
+      this.documentRepository.findById(section.documentId),
+      this.sectionRepository.findTitlesByDocument(section.documentId),
+    ]);
+    const index = siblings.findIndex((s) => s.id === section.id);
+    const lines: string[] = [];
+    if (document) lines.push(`Document: ${oneLine(document.title)}`);
+    if (index > 0) {
+      lines.push(`Previous section: ${oneLine(siblings[index - 1].title)}`);
+    }
+    if (index >= 0 && index < siblings.length - 1) {
+      lines.push(`Next section: ${oneLine(siblings[index + 1].title)}`);
+    }
+    return lines;
   }
 
   /** The reply is inert data: checked, stored, never executed or re-fed. */

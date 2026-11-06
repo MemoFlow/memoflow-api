@@ -1,13 +1,12 @@
 import { randomBytes } from 'node:crypto';
 import {
-  PROMPT_DEFINITIONS_V2,
+  PROMPT_DEFINITIONS_V3,
   PromptTexts,
 } from '../../domain/ai/prompt-definitions';
 import {
   collectStrings,
   leaksPrompt,
   prepareUntrustedText,
-  prepareUntrustedValue,
 } from '../../domain/ai/prompt-guards';
 import { renderPrompt } from '../../domain/ai/prompt-render';
 import type { PromptRepository } from '../../domain/ai/prompt.repository';
@@ -27,7 +26,6 @@ import {
   PlanningOutputInvalidError,
   PlanningOutputRejectedError,
 } from '../../domain/context/planning-errors';
-import { DEFAULT_AI_MAX_INPUT_CHARS } from '../ai/max-input-chars.token';
 
 /** Feature type of the planning prompt. */
 export const PLANNING_FEATURE_TYPE = 'planning';
@@ -39,7 +37,7 @@ export interface ResolvedPlanningPrompt extends PromptTexts {
 
 /**
  * Looks up the active `planning` prompt. A missing prompt is not a job
- * failure: the built-in v2 text is used and `promptVersion` stays null.
+ * failure: the built-in v3 text is used and `promptVersion` stays null.
  */
 export async function resolvePlanningPrompt(
   promptRepository: PromptRepository,
@@ -56,7 +54,7 @@ export async function resolvePlanningPrompt(
   }
   return {
     promptVersion: null,
-    ...PROMPT_DEFINITIONS_V2[PLANNING_FEATURE_TYPE],
+    ...PROMPT_DEFINITIONS_V3[PLANNING_FEATURE_TYPE],
   };
 }
 
@@ -68,28 +66,22 @@ export interface RenderedPlanningPrompt {
 }
 
 /**
- * Renders both templates with a fresh per-call nonce. The request and the
- * serialised context are untrusted: both are redacted and have fence tags
- * neutralised, and the context is cut at `maxInputChars` (it is data for the
- * model, so a cut is acceptable until real source budgets exist). Throws if
- * a template uses an unknown placeholder, so call it inside the job's try
+ * Renders both templates with a fresh per-call nonce. The request is
+ * untrusted: it is redacted and has fence tags neutralised here. The
+ * context arrives already prepared and within budget (`PlanningPipeline`
+ * redacts and cuts every source), so it is substituted as is. Throws if a
+ * template uses an unknown placeholder, so call it inside the job's try
  * block.
  */
 export function renderPlanningPrompt(
   resolved: PromptTexts,
   prompt: string,
-  context: Record<string, unknown>,
-  maxInputChars: number = DEFAULT_AI_MAX_INPUT_CHARS,
+  renderedContext: string,
 ): RenderedPlanningPrompt {
-  // Redact and defuse the string leaves first: once serialised, quotes are
-  // escaped and a quoted secret would slip past the patterns.
-  const preparedContext = JSON.stringify(
-    prepareUntrustedValue(context, maxInputChars),
-  ).slice(0, maxInputChars);
   const nonce = randomBytes(16).toString('hex');
   const vars = {
     prompt: prepareUntrustedText(prompt),
-    context: preparedContext,
+    context: renderedContext,
     nonce,
   };
   return {
@@ -109,6 +101,19 @@ function planningResultStrings(result: PlanningResult): string[] {
   return strings;
 }
 
+export interface GuardedPlanRequest {
+  prompt: string;
+  /** Raw connector context, for planners that read it directly (the stub). */
+  context: Record<string, unknown>;
+  /** Numbered, redacted, budgeted sources: the `{{context}}` value. */
+  renderedContext: string;
+  /**
+   * Raw strings the model legitimately saw (source titles and text), so
+   * quoting them back is not mistaken for leaking the system prompt.
+   */
+  sourceStrings: string[];
+}
+
 /**
  * The one place both planning paths render, call the planner and check the
  * reply, so they behave identically. A reply that echoes the nonce or the
@@ -118,21 +123,26 @@ function planningResultStrings(result: PlanningResult): string[] {
 export async function planWithGuards(
   planner: LlmPlanner,
   resolved: PromptTexts,
-  prompt: string,
-  context: Record<string, unknown>,
-  maxInputChars: number = DEFAULT_AI_MAX_INPUT_CHARS,
+  request: GuardedPlanRequest,
 ): Promise<PlanningResult> {
   const { nonce, ...rendered } = renderPlanningPrompt(
     resolved,
-    prompt,
-    context,
-    maxInputChars,
+    request.prompt,
+    request.renderedContext,
   );
-  const result = await planner.plan({ prompt, context, ...rendered });
+  const result = await planner.plan({
+    prompt: request.prompt,
+    context: request.context,
+    ...rendered,
+  });
   const leaked = leaksPrompt(planningResultStrings(result).join('\n'), {
     nonce,
     system: rendered.system,
-    source: [prompt, ...collectStrings(context)].join('\n'),
+    source: [
+      request.prompt,
+      ...collectStrings(request.context),
+      ...request.sourceStrings,
+    ].join('\n'),
   });
   if (leaked) throw new PlanningOutputRejectedError();
   return result;

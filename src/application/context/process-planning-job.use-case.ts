@@ -15,20 +15,15 @@ import { CONTEXT_REQUEST_PUBLISHER } from '../../domain/context/context-request-
 import type { ContextRequestPublisher } from '../../domain/context/context-request-publisher.port';
 import { GATHER_TIMEOUT_SCHEDULER } from '../../domain/context/gather-timeout-scheduler.port';
 import type { GatherTimeoutScheduler } from '../../domain/context/gather-timeout-scheduler.port';
-import { LLM_PLANNER } from '../../domain/context/llm-planner.port';
-import type {
-  LlmPlanner,
-  PlanningResult,
-} from '../../domain/context/llm-planner.port';
 import { JobStatus, PlanningJob } from '../../domain/context/planning-job';
 import { PLANNING_JOB_REPOSITORY } from '../../domain/context/planning-job.repository';
 import type { PlanningJobRepository } from '../../domain/context/planning-job.repository';
 import { resolveActiveConnectorReferences } from '../../domain/context/resolve-connector-references';
 import { GATHER_TIMEOUT_MS } from './gather-timeout-ms.token';
-import { AI_MAX_INPUT_CHARS } from '../ai/max-input-chars.token';
+import type { ValidatedPlanningResult } from './planning-citations';
+import { PlanningPipeline } from './planning-pipeline';
 import {
   errorName,
-  planWithGuards,
   resolvePlanningPrompt,
   safeFailureMessage,
 } from './planning-prompt';
@@ -77,8 +72,7 @@ export class ProcessPlanningJobUseCase {
     private readonly planningJobRepository: PlanningJobRepository,
     @Inject(CONTEXT_GATHERER)
     private readonly contextGatherer: ContextGatherer,
-    @Inject(LLM_PLANNER)
-    private readonly llmPlanner: LlmPlanner,
+    private readonly planningPipeline: PlanningPipeline,
     @Inject(PROMPT_REPOSITORY)
     private readonly promptRepository: PromptRepository,
     @Optional()
@@ -93,9 +87,6 @@ export class ProcessPlanningJobUseCase {
     @Optional()
     @Inject(GATHER_TIMEOUT_MS)
     private readonly gatherTimeoutMs?: number,
-    @Optional()
-    @Inject(AI_MAX_INPUT_CHARS)
-    private readonly maxInputChars?: number,
   ) {}
 
   execute(input: ProcessPlanningJobInput): Promise<ProcessPlanningJobResult> {
@@ -132,19 +123,22 @@ export class ProcessPlanningJobUseCase {
     const promptVersion = resolvedPrompt.promptVersion;
 
     let context: Record<string, unknown> | undefined;
-    let result: PlanningResult;
+    let result: ValidatedPlanningResult;
     try {
-      context = await this.contextGatherer.gather({
+      const gathered = await this.contextGatherer.gather({
         userId: claimed.userId,
         connectors: claimed.connectors,
         prompt: claimed.prompt,
       });
-      result = await planWithGuards(
-        this.llmPlanner,
+      // Retrieval joins the connector context here; `context` (what is
+      // recorded as `context_used`) is set before planning so a failed plan
+      // still records it.
+      const prepared = await this.planningPipeline.prepare(claimed, gathered);
+      context = prepared.contextUsed;
+      result = await this.planningPipeline.plan(
         resolvedPrompt,
         claimed.prompt,
-        context,
-        this.maxInputChars,
+        prepared,
       );
     } catch (err) {
       // A domain failure (gather/plan) is a terminal state, not a queue

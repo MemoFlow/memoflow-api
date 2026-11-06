@@ -21,6 +21,7 @@ import {
   UpdatePlanningJobStatusData,
 } from '../../domain/context/planning-job.repository';
 import { ProcessPlanningJobUseCase } from './process-planning-job.use-case';
+import { makePipeline } from './testing-fakes';
 
 class InMemoryPlanningJobRepository implements PlanningJobRepository {
   private readonly jobs = new Map<string, PlanningJob>();
@@ -237,7 +238,7 @@ describe('ProcessPlanningJobUseCase — RabbitMQ transport branch', () => {
     const useCase = new ProcessPlanningJobUseCase(
       repository,
       new StubGatherer(),
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository(),
       publisher,
       connectorRepo,
@@ -272,7 +273,7 @@ describe('ProcessPlanningJobUseCase — RabbitMQ transport branch', () => {
     const useCase = new ProcessPlanningJobUseCase(
       repository,
       new StubGatherer(),
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository(),
       publisher,
       connectorRepo,
@@ -294,7 +295,7 @@ describe('ProcessPlanningJobUseCase — RabbitMQ transport branch', () => {
     const useCase = new ProcessPlanningJobUseCase(
       repository,
       new StubGatherer(),
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository(),
       publisher,
       connectorRepo,
@@ -321,7 +322,7 @@ describe('ProcessPlanningJobUseCase — RabbitMQ transport branch', () => {
     const useCase = new ProcessPlanningJobUseCase(
       repository,
       new StubGatherer(),
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository(),
       publisher,
       new FakeConnectorConnectionRepository([]),
@@ -339,7 +340,7 @@ describe('ProcessPlanningJobUseCase — RabbitMQ transport branch', () => {
     const useCase = new ProcessPlanningJobUseCase(
       repository,
       new StubGatherer(),
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository(),
       new FakeContextRequestPublisher(),
       new FakeConnectorConnectionRepository([]),
@@ -357,7 +358,7 @@ describe('ProcessPlanningJobUseCase — RabbitMQ transport branch', () => {
     const useCase = new ProcessPlanningJobUseCase(
       repository,
       new StubGatherer(),
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository(),
       publisher,
       new FakeConnectorConnectionRepository([]),

@@ -34,10 +34,24 @@ export class PlanningJobResponseDto {
   })
   model: string | null;
 
-  @ApiProperty({ nullable: true, type: Object })
+  @ApiProperty({
+    nullable: true,
+    type: Object,
+    description:
+      'Context recorded for the run: the connector context as gathered, plus `retrieval` ' +
+      '({ sources: { id, type, title, ref, truncated }[], matched, used, dropped, truncated, failed }). ' +
+      '`retrieval` is metadata only (`ref` is a section id or a provider); retrieved section text is never stored.',
+  })
   context_used: Record<string, unknown> | null;
 
-  @ApiProperty({ nullable: true, type: Object })
+  @ApiProperty({
+    nullable: true,
+    type: Object,
+    description:
+      '{ suggestions: string[], outline: string | null, sources: { id, type, title }[] }. ' +
+      '`sources` lists only the numbered sources the plan cites ("S1", ...; `type` is "section" or "connector"), ' +
+      'never their text; inline [S1] citations of unknown sources are removed.',
+  })
   result: Record<string, unknown> | null;
 
   @ApiProperty({ nullable: true })

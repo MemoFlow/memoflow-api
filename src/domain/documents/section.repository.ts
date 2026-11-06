@@ -27,11 +27,22 @@ export interface ReplaceSectionData {
   wordCount: number;
 }
 
+/** Just enough of a section to list it by heading. */
+export interface SectionTitle {
+  id: string;
+  title: string;
+}
+
 export interface SectionRepository {
   create(data: CreateSectionData): Promise<Section>;
   findById(id: string): Promise<Section | null>;
   /** Ordered by `order` ASC. */
   findByDocument(documentId: string): Promise<Section[]>;
+  /**
+   * Ids and titles only, in the same order as `findByDocument`. For callers
+   * that need headings, not content.
+   */
+  findTitlesByDocument(documentId: string): Promise<SectionTitle[]>;
   update(id: string, patch: UpdateSectionData): Promise<Section>;
   delete(id: string): Promise<void>;
   maxOrder(documentId: string): Promise<number | null>;

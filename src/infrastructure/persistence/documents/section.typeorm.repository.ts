@@ -6,6 +6,7 @@ import {
   CreateSectionData,
   ReplaceSectionData,
   SectionRepository,
+  SectionTitle,
   UpdateSectionData,
 } from '../../../domain/documents/section.repository';
 import { DocumentOrmEntity } from './document.orm-entity';
@@ -46,6 +47,15 @@ export class SectionTypeOrmRepository implements SectionRepository {
       order: { order: 'ASC', createdAt: 'ASC' },
     });
     return entities.map((entity) => this.toDomain(entity));
+  }
+
+  async findTitlesByDocument(documentId: string): Promise<SectionTitle[]> {
+    const entities = await this.repository.find({
+      select: { id: true, title: true },
+      where: { documentId },
+      order: { order: 'ASC', createdAt: 'ASC' },
+    });
+    return entities.map(({ id, title }) => ({ id, title }));
   }
 
   async update(id: string, patch: UpdateSectionData): Promise<Section> {
