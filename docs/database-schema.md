@@ -103,6 +103,7 @@ existence checks).
 | suggested_text | text | |
 | status | varchar | pending / accepted / rejected |
 | prompt_version | varchar | |
+| model | varchar? | **nullable** — the model that served the call; null for rows created before models were recorded |
 | created_at | timestamptz | |
 | updated_at | timestamptz | |
 
@@ -115,16 +116,27 @@ future "my suggestions" query path.
 | column | type | notes |
 | --- | --- | --- |
 | id | uuid | PK |
-| feature_type | varchar | **indexed** |
+| feature_type | varchar | `suggestion` / `rewrite` / `summarize` / `expand` / `planning` |
 | version | varchar | |
-| template | text | |
-| is_active | boolean | **indexed** |
+| system_template | text | system message template |
+| template | text | user message template |
+| user_invocable | boolean | default `false`; whether a client may run this type via `POST /sections/:sectionId/suggestions` (true for `suggestion`, `rewrite`, `summarize`, `expand`; false for `planning`) |
+| is_active | boolean | |
 | created_at | timestamptz | |
 | updated_at | timestamptz | |
 
-No public controller — repository-internal active-prompt lookup
-(`findActiveByFeatureType`), seeded via `scripts/seed.ts` (one active prompt per
-feature type: `suggestion`, `planning`).
+Indexes: unique **(feature_type, version)** (`UQ_prompts_feature_type_version`) and a
+partial unique index on `feature_type` `WHERE is_active = true`
+(`UQ_prompts_active_feature_type`), which guarantees at most one active prompt per
+feature type and serves the active-prompt lookup (`findActiveByFeatureType`). The
+earlier plain `is_active` index was dropped.
+
+The v2 prompts for all five feature types ship in the `PromptSystem` migration and are
+the active ones; they are not seeded by `scripts/seed.ts`. Admins manage prompts through
+`GET /admin/prompts` (optional `feature_type` filter), `POST /admin/prompts` (creates an
+**inactive** version) and `POST /admin/prompts/:id/activate` (makes it the active one
+for its type), all admin-only. Create and activate are audited as `prompt.created` and
+`prompt.activated`.
 
 #### `connector_connections`
 No provider tokens are stored here — **Composio is the token vault**; this API keeps
@@ -148,15 +160,15 @@ Unique composite index on **(user_id, provider)** — one connection per user pe
 Write-only internal sink for security-relevant events (security-hardening plan,
 slice 5) — no public controller, `AuditLog` is never serialized into an API
 response. Populated by the single `AuditListener` consuming domain events emitted
-by other features (auth login/login-failed, connector revoke, suggestion review)
+by other features (auth login/login-failed, connector revoke, suggestion review, prompt create/activate)
 via `EventEmitter2`, same swallow-and-log pattern as `GamificationListener`.
 
 | column | type | notes |
 | --- | --- | --- |
 | id | uuid | PK |
 | user_id | uuid | FK → users, **ON DELETE SET NULL** (nullable — the trail must outlive a deleted user, same pattern as `templates.created_by`; also null for a failed login against an unknown email) |
-| action | varchar | `auth.login` / `auth.login_failed` / `auth.password_reset_requested` / `auth.password_reset_completed` / `auth.password_changed` / `auth.email_verified` / `connector.revoked` / `suggestion.reviewed` |
-| metadata | jsonb | small contextual payload, e.g. `{ email }` on a failed login, `{ connectionId, provider }` on revoke, `{ suggestionId, decision }` on review |
+| action | varchar | `auth.login` / `auth.login_failed` / `auth.password_reset_requested` / `auth.password_reset_completed` / `auth.password_changed` / `auth.email_verified` / `connector.revoked` / `suggestion.reviewed` / `prompt.created` / `prompt.activated` |
+| metadata | jsonb | small contextual payload, e.g. `{ email }` on a failed login, `{ connectionId, provider }` on revoke, `{ suggestionId, decision }` on review, `{ promptId, featureType, version }` on prompt create/activate |
 | ip | varchar | nullable — not yet populated (would require threading the request IP through use-case inputs); reserved for a future slice |
 | created_at | timestamptz | |
 
@@ -386,6 +398,7 @@ two chunk-accumulation fields, `chunk_sequences`/`data_chunks`:
 | prompt | string | user's planning prompt |
 | connectors | string[] | e.g. ["notion", "github"] — unused until item 7 |
 | prompt_version | string? | **nullable** — the active `planning` prompt's version, recorded once the job runs (item 5) |
+| model | string? | **nullable** — the model that served the planning call, when known; null until the job runs, for the stub planner, and for jobs created before models were recorded |
 | context_used | object? | **nullable** — the context-gatherer's output for this run, recorded once the job runs (item 5); flexible shape, varies by connector |
 | result | object? | **nullable** — stub/echo payload today; a richer `{ suggestions[], outline?, sources[] }` shape is provider-dependent future work |
 | error_code / error_message | string? | set when failed |

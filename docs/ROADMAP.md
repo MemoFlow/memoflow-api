@@ -210,8 +210,8 @@ own `RABBITMQ_URL` provisioned before their first deploys.
 ## 5. AI layer — ✅ done
 
 - Slice implemented per the `prompts`/`ai_suggestions` tables in the schema doc:
-  `prompts` (`feature_type`/`is_active` indexed, no public controller — repository-
-  internal active-prompt lookup) and `ai_suggestions` (FK → sections **ON DELETE
+  `prompts` (admin-managed via `/admin/prompts`; unique `(feature_type, version)` and
+  one active prompt per feature type) and `ai_suggestions` (FK → sections **ON DELETE
   CASCADE**, FK → users **ON DELETE CASCADE**, plain indexes on `section_id`/
   `user_id` — a deliberate addition beyond the original schema-doc design, both on
   the FK lookup path for every suggestions call). Both tables carry `created_at`/
@@ -240,9 +240,9 @@ own `RABBITMQ_URL` provisioned before their first deploys.
   (default `4096`), `OPENROUTER_TIMEOUT_MS` (default `60000`), `OPENROUTER_BASE_URL`.
   `AiModule` exports `LLM_GATEWAY` so `ContextModule` shares one gateway instance
   rather than constructing a second. Provider 5xx and timeouts surface as 503.
-- Seed: `scripts/seed.ts` now seeds one active prompt per feature type —
-  `suggestion` (v1, substitutes `{{content}}`) and `planning` (v1) — idempotent,
-  dev/test only.
+- Prompts: the v2 prompts for `suggestion`, `rewrite`, `summarize`, `expand` and
+  `planning` ship by migration to every environment (`scripts/seed.ts` no longer
+  seeds them).
 - Mongo `planning_jobs` completed (see `docs/database-schema.md`): `prompt_version`/
   `context_used` are now recorded by `ProcessPlanningJobUseCase` once a job runs;
   `document_id`/`section_id` are now validated and bound at submission time —
@@ -270,7 +270,14 @@ limits, guardrails, caching and AI data consent.
   (optional; unset keeps the null generator and stub planner), `OPENROUTER_MODEL` (default `openrouter/free`),
   `OPENROUTER_FALLBACK_MODELS`, `OPENROUTER_MAX_TOKENS`, `OPENROUTER_TIMEOUT_MS`, `OPENROUTER_BASE_URL`.
   Provider 5xx and timeouts now surface as 503 rather than 502.
-- Slices 2–7 — pending. See the plan.
+- **Slice 2, prompt system — ✅ done.** `prompts` gains `system_template` and `user_invocable`, with one
+  active prompt per feature type and unique `(feature_type, version)`. The v2 prompts for `suggestion`,
+  `rewrite`, `summarize`, `expand` and internal `planning` ship by migration. Admin routes
+  `GET /admin/prompts`, `POST /admin/prompts` and `POST /admin/prompts/:id/activate` (audited as
+  `prompt.created` / `prompt.activated`). Only user-invocable types are accepted on
+  `POST /sections/:id/suggestions`; `planning` and unknown types get the same 404. `model` is recorded on
+  `ai_suggestions` and `planning_jobs` and returned in their responses.
+- Slices 3–7 — pending. See the plan.
 
 ## 6. Gamification (PG) — ✅ done
 
