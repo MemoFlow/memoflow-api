@@ -87,6 +87,17 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false
 
+      # Transactional email (Resend) — required when NODE_ENV is staging or
+      # production (boot fails without them, and email verification is
+      # forced on). Set manually in the Render dashboard. APP_BASE_URL is the
+      # frontend origin that email links are built from.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: APP_BASE_URL
+        sync: false
+
       # RabbitMQ URL for the context-engine transport — optional (amqps://
       # CloudAMQP or similar). Set manually in the Render dashboard. When
       # unset the API keeps the HTTP/stub context path; boot is unaffected.
