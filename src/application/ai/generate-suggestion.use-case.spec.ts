@@ -358,6 +358,42 @@ describe('GenerateSuggestionUseCase', () => {
     ).rejects.toThrow(ServiceUnavailableException);
   });
 
+  it('reports "AI not configured" when generate() throws the default unavailable error', async () => {
+    const { useCase, generator } = build({
+      sections: [makeSection()],
+      documents: [makeDocument()],
+      prompts: [makePrompt()],
+    });
+    generator.error = new SuggestionGeneratorUnavailableError();
+
+    await expect(
+      useCase.execute({
+        userId: 'user-1',
+        sectionId: 'section-1',
+        featureType: 'suggestion',
+      }),
+    ).rejects.toThrow('AI not configured');
+  });
+
+  it('surfaces the outage message when the provider is temporarily unavailable', async () => {
+    const { useCase, generator } = build({
+      sections: [makeSection()],
+      documents: [makeDocument()],
+      prompts: [makePrompt()],
+    });
+    generator.error = new SuggestionGeneratorUnavailableError(
+      'AI provider temporarily unavailable',
+    );
+
+    const result = useCase.execute({
+      userId: 'user-1',
+      sectionId: 'section-1',
+      featureType: 'suggestion',
+    });
+    await expect(result).rejects.toThrow(ServiceUnavailableException);
+    await expect(result).rejects.toThrow('AI provider temporarily unavailable');
+  });
+
   it('502s on an unexpected provider error', async () => {
     const { useCase, generator } = build({
       sections: [makeSection()],

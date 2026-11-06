@@ -1,25 +1,25 @@
 import { ConfigService } from '@nestjs/config';
 import { suggestionGeneratorFactory } from './ai.module';
-import { AnthropicSuggestionGenerator } from './infrastructure/ai/anthropic-suggestion-generator';
-import { AnthropicClientProvider } from './infrastructure/ai/anthropic.client';
+import { LlmGateway } from './domain/ai/llm-gateway.port';
+import { GatewaySuggestionGenerator } from './infrastructure/ai/gateway-suggestion-generator';
 import { NullSuggestionGenerator } from './infrastructure/ai/null-suggestion-generator';
 
 describe('suggestionGeneratorFactory', () => {
-  it('returns AnthropicSuggestionGenerator when ANTHROPIC_API_KEY is set', () => {
+  const gateway = {} as LlmGateway;
+
+  it('returns GatewaySuggestionGenerator when OPENROUTER_API_KEY is set', () => {
     const config = { get: () => 'sk-test-key' } as unknown as ConfigService;
-    const clientProvider = {} as AnthropicClientProvider;
 
-    const generator = suggestionGeneratorFactory(config, clientProvider);
-
-    expect(generator).toBeInstanceOf(AnthropicSuggestionGenerator);
+    expect(suggestionGeneratorFactory(config, gateway)).toBeInstanceOf(
+      GatewaySuggestionGenerator,
+    );
   });
 
-  it('returns NullSuggestionGenerator when ANTHROPIC_API_KEY is unset', () => {
+  it('returns NullSuggestionGenerator when OPENROUTER_API_KEY is unset', () => {
     const config = { get: () => undefined } as unknown as ConfigService;
-    const clientProvider = {} as AnthropicClientProvider;
 
-    const generator = suggestionGeneratorFactory(config, clientProvider);
-
-    expect(generator).toBeInstanceOf(NullSuggestionGenerator);
+    expect(suggestionGeneratorFactory(config, gateway)).toBeInstanceOf(
+      NullSuggestionGenerator,
+    );
   });
 });

@@ -5,15 +5,16 @@ import { GenerateSuggestionUseCase } from './application/ai/generate-suggestion.
 import { ListSuggestionsUseCase } from './application/ai/list-suggestions.use-case';
 import { ReviewSuggestionUseCase } from './application/ai/review-suggestion.use-case';
 import { AI_SUGGESTION_REPOSITORY } from './domain/ai/ai-suggestion.repository';
+import { LLM_GATEWAY, LlmGateway } from './domain/ai/llm-gateway.port';
 import { PROMPT_REPOSITORY } from './domain/ai/prompt.repository';
 import {
   SUGGESTION_GENERATOR,
   SuggestionGenerator,
 } from './domain/ai/suggestion-generator.port';
 import { DocumentsModule } from './documents.module';
-import { AnthropicClientProvider } from './infrastructure/ai/anthropic.client';
-import { AnthropicSuggestionGenerator } from './infrastructure/ai/anthropic-suggestion-generator';
+import { GatewaySuggestionGenerator } from './infrastructure/ai/gateway-suggestion-generator';
 import { NullSuggestionGenerator } from './infrastructure/ai/null-suggestion-generator';
+import { OpenRouterGateway } from './infrastructure/ai/openrouter.gateway';
 import { AiSuggestionOrmEntity } from './infrastructure/persistence/ai/ai-suggestion.orm-entity';
 import { AiSuggestionTypeOrmRepository } from './infrastructure/persistence/ai/ai-suggestion.typeorm.repository';
 import { PromptOrmEntity } from './infrastructure/persistence/ai/prompt.orm-entity';
@@ -23,7 +24,7 @@ import { SuggestionsController } from './presentation/ai/suggestions.controller'
 import { UsersModule } from './users.module';
 
 /**
- * Picks the real, Anthropic-backed generator once `ANTHROPIC_API_KEY` is
+ * Picks the real, gateway-backed generator once `OPENROUTER_API_KEY` is
  * configured, and falls back to `NullSuggestionGenerator` otherwise — so
  * `start:dev`/smoke/e2e/tests keep working with no AI provider configured.
  * Mirrors `ContextModule.contextGathererFactory`. Exported (rather than
@@ -31,10 +32,10 @@ import { UsersModule } from './users.module';
  */
 export function suggestionGeneratorFactory(
   config: ConfigService,
-  clientProvider: AnthropicClientProvider,
+  gateway: LlmGateway,
 ): SuggestionGenerator {
-  return config.get<string>('ANTHROPIC_API_KEY')
-    ? new AnthropicSuggestionGenerator(clientProvider)
+  return config.get<string>('OPENROUTER_API_KEY')
+    ? new GatewaySuggestionGenerator(gateway)
     : new NullSuggestionGenerator();
 }
 
@@ -44,9 +45,8 @@ export function suggestionGeneratorFactory(
  * `DOCUMENT_REPOSITORY` for the ownership checks in
  * `application/ai/section-access.ts` (same convention `TemplatesModule`
  * documents for depending on another feature's domain interfaces, not its
- * use-cases). Exports `AnthropicClientProvider` so `ContextModule` can wire
- * `AnthropicLlmPlanner` from the same client/config without a second
- * `Anthropic` instance.
+ * use-cases). Exports `LLM_GATEWAY` so `ContextModule` can wire
+ * `GatewayLlmPlanner` on the same OpenRouter adapter.
  */
 @Module({
   imports: [
@@ -56,7 +56,12 @@ export function suggestionGeneratorFactory(
   ],
   controllers: [SuggestionsController, SuggestionReviewsController],
   providers: [
-    AnthropicClientProvider,
+    {
+      provide: LLM_GATEWAY,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService): LlmGateway =>
+        new OpenRouterGateway(config),
+    },
     { provide: PROMPT_REPOSITORY, useClass: PromptTypeOrmRepository },
     {
       provide: AI_SUGGESTION_REPOSITORY,
@@ -64,17 +69,13 @@ export function suggestionGeneratorFactory(
     },
     {
       provide: SUGGESTION_GENERATOR,
-      inject: [ConfigService, AnthropicClientProvider],
+      inject: [ConfigService, LLM_GATEWAY],
       useFactory: suggestionGeneratorFactory,
     },
     GenerateSuggestionUseCase,
     ListSuggestionsUseCase,
     ReviewSuggestionUseCase,
   ],
-  exports: [
-    AnthropicClientProvider,
-    PROMPT_REPOSITORY,
-    AI_SUGGESTION_REPOSITORY,
-  ],
+  exports: [LLM_GATEWAY, PROMPT_REPOSITORY, AI_SUGGESTION_REPOSITORY],
 })
 export class AiModule {}

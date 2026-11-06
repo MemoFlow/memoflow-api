@@ -1,7 +1,7 @@
 /**
  * Port abstracting the AI call behind a suggestion. Domain imports nothing
- * external — the only layer allowed to import `@anthropic-ai/sdk` is
- * infrastructure (`AnthropicSuggestionGenerator`).
+ * external; the implementation (`GatewaySuggestionGenerator`) lives in
+ * infrastructure on top of the `LlmGateway` port.
  */
 export const SUGGESTION_GENERATOR = Symbol('SuggestionGenerator');
 
@@ -19,7 +19,7 @@ export interface GenerateSuggestionOutput {
 export interface SuggestionGenerator {
   /**
    * Whether this generator can actually produce a suggestion right now
-   * (e.g. `ANTHROPIC_API_KEY` is configured). Checked by
+   * (e.g. `OPENROUTER_API_KEY` is configured). Checked by
    * `GenerateSuggestionUseCase` up front so a missing API key is reported as
    * "AI not configured" without a wasted round trip through `generate`.
    */
@@ -27,7 +27,7 @@ export interface SuggestionGenerator {
 
   /**
    * Throws `SuggestionGeneration*`/`SuggestionGeneratorUnavailableError`
-   * (see `suggestion-generation.errors.ts`) on failure — never a raw SDK
+   * (see `suggestion-generation.errors.ts`) on failure — never a raw provider
    * error.
    */
   generate(input: GenerateSuggestionInput): Promise<GenerateSuggestionOutput>;

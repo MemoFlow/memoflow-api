@@ -80,11 +80,12 @@ services:
       - key: COMPOSIO_WEBHOOK_SECRET
         sync: false
 
-      # Anthropic API key for the AI layer — optional at boot; AI
+      # OpenRouter API key for the AI layer — optional at boot; AI
       # suggestion/planning endpoints return 503 without it. Set manually in
-      # the Render dashboard. ANTHROPIC_MODEL/ANTHROPIC_MAX_TOKENS have code
-      # defaults and are intentionally omitted here.
-      - key: ANTHROPIC_API_KEY
+      # the Render dashboard. OPENROUTER_MODEL/_FALLBACK_MODELS/_MAX_TOKENS/
+      # _TIMEOUT_MS/_BASE_URL have code defaults and are intentionally
+      # omitted here.
+      - key: OPENROUTER_API_KEY
         sync: false
 
       # Transactional email (Resend) — required when NODE_ENV is staging or

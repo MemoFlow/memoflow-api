@@ -1,11 +1,11 @@
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ContextEnginePort } from './domain/context/context-engine.port';
-import { AnthropicClientProvider } from './infrastructure/ai/anthropic.client';
+import { LlmGateway } from './domain/ai/llm-gateway.port';
 import { ContextResultsConsumer } from './infrastructure/amqp/context-results.consumer';
 import { RabbitContextRequestPublisher } from './infrastructure/amqp/rabbit-context-request.publisher';
 import { RabbitMqConnectionProvider } from './infrastructure/amqp/rabbitmq-connection.provider';
-import { AnthropicLlmPlanner } from './infrastructure/context/anthropic-llm-planner';
+import { GatewayLlmPlanner } from './infrastructure/context/gateway-llm-planner';
 import { ConnectorContextGatherer } from './infrastructure/context/connector-context-gatherer';
 import { StubContextGatherer } from './infrastructure/context/stub-context-gatherer';
 import { StubLlmPlanner } from './infrastructure/context/stub-llm-planner';
@@ -51,21 +51,18 @@ describe('contextGathererFactory', () => {
 });
 
 describe('llmPlannerFactory', () => {
-  const clientProvider = {} as AnthropicClientProvider;
+  const gateway = {} as LlmGateway;
 
-  it('returns StubLlmPlanner when ANTHROPIC_API_KEY is unset', () => {
-    const planner = llmPlannerFactory(makeConfig(undefined), clientProvider);
+  it('returns StubLlmPlanner when OPENROUTER_API_KEY is unset', () => {
+    const planner = llmPlannerFactory(makeConfig(undefined), gateway);
 
     expect(planner).toBeInstanceOf(StubLlmPlanner);
   });
 
-  it('returns AnthropicLlmPlanner when ANTHROPIC_API_KEY is set', () => {
-    const planner = llmPlannerFactory(
-      makeConfig('sk-test-key'),
-      clientProvider,
-    );
+  it('returns GatewayLlmPlanner when OPENROUTER_API_KEY is set', () => {
+    const planner = llmPlannerFactory(makeConfig('sk-test-key'), gateway);
 
-    expect(planner).toBeInstanceOf(AnthropicLlmPlanner);
+    expect(planner).toBeInstanceOf(GatewayLlmPlanner);
   });
 });
 

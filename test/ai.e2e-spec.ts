@@ -16,10 +16,10 @@ import { registerUser } from './utils/register-user';
 
 /**
  * Fake `SuggestionGenerator` swapped in via `overrideProvider` — this suite
- * never calls the real Anthropic API. `available` starts `true` so most
+ * never calls the real LLM provider. `available` starts `true` so most
  * tests exercise the happy path; the "AI not configured" test flips it to
  * `false` for the duration of that one request, mirroring what
- * `NullSuggestionGenerator` would report with no `ANTHROPIC_API_KEY` set
+ * `NullSuggestionGenerator` would report with no `OPENROUTER_API_KEY` set
  * (which is the actual case here — this suite never sets that env var).
  */
 class FakeSuggestionGenerator {
@@ -105,8 +105,8 @@ describeWithDocker()('AI layer (e2e)', () => {
       COMPOSIO_WEBHOOK_SECRET: 'test-only-composio-webhook-secret',
       // Deliberately unset — this suite exercises the "AI not configured"
       // path via the overridden SUGGESTION_GENERATOR below, never the real
-      // Anthropic client.
-      ANTHROPIC_API_KEY: '',
+      // LLM gateway.
+      OPENROUTER_API_KEY: '',
     });
 
     // Apply migrations against the fresh test container before boot —
