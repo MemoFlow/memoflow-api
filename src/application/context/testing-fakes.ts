@@ -1,3 +1,4 @@
+import { AI_NOTICE_VERSION } from '../../domain/ai/ai-consent';
 import { User } from '../../domain/users/user.entity';
 import { UserRole } from '../../domain/users/user-role';
 import type { UserRepository } from '../../domain/users/user.repository';
@@ -54,7 +55,8 @@ export function makePipeline(
 /**
  * `UserRepository` fake for the planning workers: only `findById` is real.
  * Every id resolves to an active user unless listed in `disabled` (disabled)
- * or `missing` (no such user).
+ * or `missing` (no such user), and has current AI consent unless listed in
+ * `withoutConsent`.
  */
 export class FakeUserRepository implements UserRepository {
   readonly lookups: string[] = [];
@@ -62,6 +64,8 @@ export class FakeUserRepository implements UserRepository {
   constructor(
     readonly disabled: Set<string> = new Set(),
     readonly missing: Set<string> = new Set(),
+    /** Users who withdrew (or never gave) current AI consent. */
+    readonly withoutConsent: Set<string> = new Set(),
   ) {}
 
   findById(id: string): Promise<User | null> {
@@ -78,6 +82,10 @@ export class FakeUserRepository implements UserRepository {
         level: 1,
         lastActiveAt: null,
         disabledAt: this.disabled.has(id) ? new Date() : null,
+        aiConsentAt: this.withoutConsent.has(id) ? null : new Date(),
+        aiConsentVersion: this.withoutConsent.has(id)
+          ? null
+          : AI_NOTICE_VERSION,
       }),
     );
   }
@@ -85,6 +93,7 @@ export class FakeUserRepository implements UserRepository {
   findByEmail = (): Promise<User | null> => this.unsupported();
   create = (): Promise<User> => this.unsupported();
   updateLastActiveAt = (): Promise<void> => this.unsupported();
+  setAiConsent = (): Promise<void> => this.unsupported();
   setDisabledAt = (): Promise<void> => this.unsupported();
   revokeSessions = (): Promise<number> => this.unsupported();
   verifyEmailWithToken = (): Promise<string | null> => this.unsupported();

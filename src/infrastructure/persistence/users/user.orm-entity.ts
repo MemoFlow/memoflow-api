@@ -52,4 +52,10 @@ export class UserOrmEntity {
 
   @Column({ type: 'int', name: 'token_version', default: 0 })
   tokenVersion: number;
+
+  @Column({ type: 'timestamptz', name: 'ai_consent_at', nullable: true })
+  aiConsentAt: Date | null;
+
+  @Column({ type: 'varchar', name: 'ai_consent_version', nullable: true })
+  aiConsentVersion: string | null;
 }

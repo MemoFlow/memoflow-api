@@ -21,6 +21,7 @@ import { AiQuotaThrottledException } from '../../application/ai/ai-quota-http';
 import { GenerateSuggestionUseCase } from '../../application/ai/generate-suggestion.use-case';
 import { ListSuggestionsUseCase } from '../../application/ai/list-suggestions.use-case';
 import { User } from '../../domain/users/user.entity';
+import { AiConsentGuard } from '../auth/ai-consent.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { EmailVerifiedGuard } from '../auth/email-verified.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -40,11 +41,17 @@ export class SuggestionsController {
   // Generating a suggestion calls the LLM provider (cost + provider rate
   // limits), so cap it tighter than the global default — 10/min per user IP.
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @UseGuards(AiConsentGuard)
   @Post()
   @HttpCode(201)
   @ApiOperation({ summary: 'Generate an AI suggestion for a section' })
   @ApiResponse({ status: 201, type: SuggestionResponseDto })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description:
+      'AI consent missing or for an older notice (error: AI_CONSENT_REQUIRED), or email not verified',
+  })
   @ApiResponse({
     status: 404,
     description:

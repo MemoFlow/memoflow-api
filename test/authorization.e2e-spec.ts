@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
+import { acceptAiConsent } from './utils/ai-consent';
 import { startMongoMemory, MongoTestEnv } from './utils/mongo-memory';
 import {
   describeWithDocker,
@@ -85,6 +86,7 @@ describeWithDocker()('Authorization (e2e)', () => {
       await promoteToAdmin(pg.env, email);
     }
     const token = await login(email);
+    await acceptAiConsent(app, token);
     const me = await http()
       .get('/users/me')
       .set('Authorization', `Bearer ${token}`)

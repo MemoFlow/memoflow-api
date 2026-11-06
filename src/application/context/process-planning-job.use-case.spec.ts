@@ -1,3 +1,4 @@
+import type { PlanningPipeline } from './planning-pipeline';
 import {
   AiQuotaExceededError,
   AiQuotaUnavailableError,
@@ -537,6 +538,65 @@ describe('ProcessPlanningJobUseCase', () => {
       },
     );
 
+    it('fails the job with AI_CONSENT_REQUIRED when consent was withdrawn, before gather, retrieval or planning', async () => {
+      const repository = new InMemoryPlanningJobRepository();
+      repository.seed(makeJob());
+      const gatherer = new StubGatherer();
+      const gather = jest.spyOn(gatherer, 'gather');
+      const planner = new StubPlanner();
+      const plan = jest.spyOn(planner, 'plan');
+      const retriever = new FakeSectionRetriever();
+      const useCase = new ProcessPlanningJobUseCase(
+        repository,
+        gatherer,
+        makePipeline(planner, retriever),
+        new FakePromptRepository([makePlanningPrompt()]),
+        new FakeUserRepository(new Set(), new Set(), new Set(['user-1'])),
+      );
+
+      const { job } = await useCase.execute({ jobId: 'job-1' });
+
+      expect(job.status).toBe(JobStatus.Failed);
+      expect(job.errorCode).toBe('AI_CONSENT_REQUIRED');
+      expect(job.errorMessage).toBe(
+        'AI consent is required. Accept the current AI notice to use AI features.',
+      );
+      expect(gather).not.toHaveBeenCalled();
+      expect(retriever.calls).toHaveLength(0);
+      expect(plan).not.toHaveBeenCalled();
+    });
+
+    it('fails with AI_CONSENT_REQUIRED, no planner call and context_used recorded, when consent is withdrawn during gather or retrieval', async () => {
+      const repository = new InMemoryPlanningJobRepository();
+      repository.seed(makeJob());
+      const planner = new StubPlanner();
+      const plan = jest.spyOn(planner, 'plan');
+      const users = new FakeUserRepository();
+      const pipeline = makePipeline(planner, new FakeSectionRetriever());
+      const prepare: PlanningPipeline['prepare'] =
+        pipeline.prepare.bind(pipeline);
+      jest.spyOn(pipeline, 'prepare').mockImplementation((...args) =>
+        prepare(...args).then((prepared) => {
+          users.withoutConsent.add('user-1');
+          return prepared;
+        }),
+      );
+      const useCase = new ProcessPlanningJobUseCase(
+        repository,
+        new StubGatherer(),
+        pipeline,
+        new FakePromptRepository([makePlanningPrompt()]),
+        users,
+      );
+
+      const { job } = await useCase.execute({ jobId: 'job-1' });
+
+      expect(job.status).toBe(JobStatus.Failed);
+      expect(job.errorCode).toBe('AI_CONSENT_REQUIRED');
+      expect(job.contextUsed).toBeTruthy();
+      expect(plan).not.toHaveBeenCalled();
+    });
+
     it('runs normally for an active user', async () => {
       const repository = new InMemoryPlanningJobRepository();
       repository.seed(makeJob());
@@ -552,7 +612,8 @@ describe('ProcessPlanningJobUseCase', () => {
       const { job } = await useCase.execute({ jobId: 'job-1' });
 
       expect(job.status).toBe(JobStatus.Completed);
-      expect(users.lookups).toEqual(['user-1']);
+      // Once before gathering, once right before the provider call.
+      expect(users.lookups).toEqual(['user-1', 'user-1']);
     });
   });
 

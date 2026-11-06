@@ -1,5 +1,7 @@
 import {
+  Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Param,
@@ -13,15 +15,18 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { AcceptAiConsentUseCase } from '../../application/users/accept-ai-consent.use-case';
 import { DisableUserUseCase } from '../../application/users/disable-user.use-case';
 import { EnableUserUseCase } from '../../application/users/enable-user.use-case';
 import { GetUserProfileUseCase } from '../../application/users/get-user-profile.use-case';
+import { WithdrawAiConsentUseCase } from '../../application/users/withdraw-ai-consent.use-case';
 import { UserRole } from '../../domain/users/user-role';
 import { User } from '../../domain/users/user.entity';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Roles } from '../auth/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { AcceptAiConsentDto } from './dto/accept-ai-consent.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 
 @ApiTags('users')
@@ -33,6 +38,8 @@ export class UsersController {
     private readonly getUserProfileUseCase: GetUserProfileUseCase,
     private readonly disableUserUseCase: DisableUserUseCase,
     private readonly enableUserUseCase: EnableUserUseCase,
+    private readonly acceptAiConsentUseCase: AcceptAiConsentUseCase,
+    private readonly withdrawAiConsentUseCase: WithdrawAiConsentUseCase,
   ) {}
 
   @Get('me')
@@ -41,6 +48,41 @@ export class UsersController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   getMe(@CurrentUser() user: User): UserResponseDto {
     return UserResponseDto.fromDomain(user);
+  }
+
+  // Declared before the `:id` routes so `me` is never captured as an id.
+  @Post('me/ai-consent')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Accept the current AI notice (consent to AI features)',
+  })
+  @ApiResponse({ status: 200, type: UserResponseDto })
+  @ApiResponse({ status: 400, description: 'Invalid body' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 409,
+    description: 'The version is not the current AI notice version',
+  })
+  async acceptAiConsent(
+    @CurrentUser() user: User,
+    @Body() dto: AcceptAiConsentDto,
+  ): Promise<UserResponseDto> {
+    const updated = await this.acceptAiConsentUseCase.execute({
+      userId: user.id,
+      version: dto.version,
+    });
+    return UserResponseDto.fromDomain(updated);
+  }
+
+  @Delete('me/ai-consent')
+  @HttpCode(204)
+  @ApiOperation({
+    summary: 'Withdraw AI consent (idempotent)',
+  })
+  @ApiResponse({ status: 204, description: 'Consent withdrawn' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async withdrawAiConsent(@CurrentUser() user: User): Promise<void> {
+    await this.withdrawAiConsentUseCase.execute(user.id);
   }
 
   @Get(':id')

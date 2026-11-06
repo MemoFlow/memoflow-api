@@ -403,4 +403,32 @@ describe('ProcessPlanningJobUseCase — RabbitMQ transport branch', () => {
     expect(publisher.published).toHaveLength(0);
     expect(scheduler.scheduled).toHaveLength(0);
   });
+
+  it('fails a job whose user withdrew AI consent with AI_CONSENT_REQUIRED before anything is published or scheduled', async () => {
+    const repository = new InMemoryPlanningJobRepository();
+    repository.seed(makeJob());
+    const publisher = new FakeContextRequestPublisher();
+    const scheduler = new FakeGatherTimeoutScheduler();
+    const useCase = new ProcessPlanningJobUseCase(
+      repository,
+      new StubGatherer(),
+      makePipeline(new StubPlanner()),
+      new FakePromptRepository(),
+      new FakeUserRepository(new Set(), new Set(), new Set(['user-1'])),
+      publisher,
+      new FakeConnectorConnectionRepository([makeConnection()]),
+      scheduler,
+      90_000,
+    );
+
+    const { job } = await useCase.execute({ jobId: 'job-1' });
+
+    expect(job.status).toBe(JobStatus.Failed);
+    expect(job.errorCode).toBe('AI_CONSENT_REQUIRED');
+    expect(job.errorMessage).toBe(
+      'AI consent is required. Accept the current AI notice to use AI features.',
+    );
+    expect(publisher.published).toHaveLength(0);
+    expect(scheduler.scheduled).toHaveLength(0);
+  });
 });

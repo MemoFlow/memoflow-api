@@ -1,3 +1,4 @@
+import type { PlanningPipeline } from './planning-pipeline';
 import {
   AiQuotaExceededError,
   AiQuotaUnavailableError,
@@ -712,6 +713,65 @@ describe('HandleContextResultChunkUseCase', () => {
         'The account that submitted this job is not active',
       );
       expect(retriever.calls).toHaveLength(0);
+      expect(plan).not.toHaveBeenCalled();
+    });
+
+    it('fails the job with AI_CONSENT_REQUIRED when consent was withdrawn while it gathered, without retrieval or a provider call', async () => {
+      const repository = new InMemoryPlanningJobRepository();
+      repository.seed(makeJob());
+      const planner = new StubPlanner();
+      const plan = jest.spyOn(planner, 'plan');
+      const retriever = new FakeSectionRetriever();
+      const useCase = new HandleContextResultChunkUseCase(
+        repository,
+        makePipeline(planner, retriever),
+        new FakePromptRepository(makePlanningPrompt()),
+        new FakeUserRepository(new Set(), new Set(), new Set(['user-1'])),
+      );
+
+      const result = await useCase.execute({
+        chunk: statusChunk('completed', {}, 0),
+      });
+
+      expect(result.terminal).toBe(true);
+      expect(result.job?.status).toBe(JobStatus.Failed);
+      expect(result.job?.errorCode).toBe('AI_CONSENT_REQUIRED');
+      expect(result.job?.errorMessage).toBe(
+        'AI consent is required. Accept the current AI notice to use AI features.',
+      );
+      expect(retriever.calls).toHaveLength(0);
+      expect(plan).not.toHaveBeenCalled();
+    });
+
+    it('fails with AI_CONSENT_REQUIRED, no planner call and context_used recorded, when consent is withdrawn during retrieval', async () => {
+      const repository = new InMemoryPlanningJobRepository();
+      repository.seed(makeJob());
+      const planner = new StubPlanner();
+      const plan = jest.spyOn(planner, 'plan');
+      const users = new FakeUserRepository();
+      const pipeline = makePipeline(planner, new FakeSectionRetriever());
+      const prepare: PlanningPipeline['prepare'] =
+        pipeline.prepare.bind(pipeline);
+      jest.spyOn(pipeline, 'prepare').mockImplementation((...args) =>
+        prepare(...args).then((prepared) => {
+          users.withoutConsent.add('user-1');
+          return prepared;
+        }),
+      );
+      const useCase = new HandleContextResultChunkUseCase(
+        repository,
+        pipeline,
+        new FakePromptRepository(makePlanningPrompt()),
+        users,
+      );
+
+      const result = await useCase.execute({
+        chunk: statusChunk('completed', {}, 0),
+      });
+
+      expect(result.job?.status).toBe(JobStatus.Failed);
+      expect(result.job?.errorCode).toBe('AI_CONSENT_REQUIRED');
+      expect(result.job?.contextUsed).toBeTruthy();
       expect(plan).not.toHaveBeenCalled();
     });
 

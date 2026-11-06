@@ -207,6 +207,9 @@ export class HandleContextResultChunkUseCase {
       await assertJobUserActive(this.userRepository, claimed.userId);
       const prepared = await this.planningPipeline.prepare(claimed, assembled);
       contextUsed = prepared.contextUsed;
+      // The user may have withdrawn consent during retrieval: check again
+      // right before the provider call.
+      await assertJobUserActive(this.userRepository, claimed.userId);
       result = await this.planningPipeline.plan(
         resolvedPrompt,
         claimed,

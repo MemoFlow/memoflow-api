@@ -7,6 +7,7 @@ import {
   AiQuotaExceededError,
   AiQuotaUnavailableError,
 } from '../../domain/ai/ai-quota.errors';
+import { AI_CONSENT_REQUIRED_CODE } from '../../domain/ai/ai-consent';
 import {
   collectStrings,
   leaksPrompt,
@@ -27,6 +28,7 @@ import type {
   PlanningResult,
 } from '../../domain/context/llm-planner.port';
 import {
+  JobConsentRequiredError,
   JobUserInactiveError,
   PLANNING_FAILED_MESSAGE,
   PlanningOutputInvalidError,
@@ -168,6 +170,7 @@ export function safeFailureMessage(err: unknown): string {
     err instanceof PlanningOutputInvalidError ||
     err instanceof PlanningOutputRejectedError ||
     err instanceof JobUserInactiveError ||
+    err instanceof JobConsentRequiredError ||
     err instanceof AiQuotaExceededError ||
     err instanceof AiQuotaUnavailableError ||
     err instanceof SuggestionGenerationProviderError ||
@@ -186,25 +189,33 @@ export function failureErrorCode(err: unknown): string {
   if (err instanceof AiQuotaExceededError) return 'AI_QUOTA_EXCEEDED';
   if (err instanceof AiQuotaUnavailableError) return 'AI_QUOTA_UNAVAILABLE';
   if (err instanceof JobUserInactiveError) return USER_INACTIVE_ERROR_CODE;
+  if (err instanceof JobConsentRequiredError) {
+    return AI_CONSENT_REQUIRED_CODE;
+  }
   return 'PROCESSING_FAILED';
 }
 
 /**
  * Failure codes that are expected outcomes (a user over their cap, a user
- * disabled while the job waited), not incidents: they are not sent to Sentry.
+ * disabled or withdrew AI consent while the job waited), not incidents: they are not sent to Sentry.
  * `AI_QUOTA_UNAVAILABLE` is deliberately absent: an unreachable counter store
  * is an incident.
  */
 export function isExpectedFailureCode(
   code: string | null | undefined,
 ): boolean {
-  return code === 'AI_QUOTA_EXCEEDED' || code === USER_INACTIVE_ERROR_CODE;
+  return (
+    code === 'AI_QUOTA_EXCEEDED' ||
+    code === USER_INACTIVE_ERROR_CODE ||
+    code === AI_CONSENT_REQUIRED_CODE
+  );
 }
 
 /**
  * Before a worker gathers, retrieves or calls a provider for a job, its user
- * must still exist and not be disabled. One helper for both planning paths.
- * Throws `JobUserInactiveError`; a repository failure propagates, so callers
+ * must still exist, not be disabled and still have current AI consent (it
+ * may have been withdrawn while the job was queued). One helper for both
+ * planning paths. Throws `JobUserInactiveError` or `JobConsentRequiredError`; a repository failure propagates, so callers
  * catch it and fail the job rather than leave it in flight.
  */
 export async function assertJobUserActive(
@@ -213,6 +224,7 @@ export async function assertJobUserActive(
 ): Promise<void> {
   const user = await userRepository.findById(userId);
   if (!user || user.isDisabled) throw new JobUserInactiveError();
+  if (!user.hasCurrentAiConsent) throw new JobConsentRequiredError();
 }
 
 /** Error name only: messages can echo prompts, context or provider text. */

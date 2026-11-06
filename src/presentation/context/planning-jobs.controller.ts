@@ -20,6 +20,7 @@ import { AiQuotaThrottledException } from '../../application/ai/ai-quota-http';
 import { GetPlanningJobUseCase } from '../../application/context/get-planning-job.use-case';
 import { SubmitPlanningJobUseCase } from '../../application/context/submit-planning-job.use-case';
 import { User } from '../../domain/users/user.entity';
+import { AiConsentGuard } from '../auth/ai-consent.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { EmailVerifiedGuard } from '../auth/email-verified.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -39,6 +40,7 @@ export class PlanningJobsController {
   // Submitting a planning job enqueues LLM + context-engine work, so cap it
   // tighter than the global default — 10/min per user IP.
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @UseGuards(AiConsentGuard)
   @Post()
   @HttpCode(202)
   @ApiOperation({ summary: 'Submit a planning job for async processing' })
@@ -49,6 +51,11 @@ export class PlanningJobsController {
       'Invalid body, e.g. prompt empty or over 5000 characters, or a connector that is not one of your active connections',
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({
+    status: 403,
+    description:
+      'AI consent missing or for an older notice (error: AI_CONSENT_REQUIRED), or email not verified',
+  })
   @ApiResponse({
     status: 404,
     description:

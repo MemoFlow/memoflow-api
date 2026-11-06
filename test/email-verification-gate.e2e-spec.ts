@@ -6,6 +6,7 @@ import {
   loginToken,
   PASSWORD,
 } from './utils/identity-app';
+import { acceptAiConsent } from './utils/ai-consent';
 import { registerUser } from './utils/register-user';
 
 // A separate file (and so a separate module registry) because the flag is
@@ -36,6 +37,9 @@ describeWithDocker()('Email verification gate (e2e)', () => {
     );
     unverified = await loginToken(ctx.app, 'gate-unverified@example.com');
     verified = await loginToken(ctx.app, 'gate-ok@example.com');
+    // Only the verified user consents: the unverified one must be stopped by
+    // the email gate, which runs before the consent gate.
+    await acceptAiConsent(ctx.app, verified);
   }, 240_000);
 
   afterAll(async () => {
@@ -93,6 +97,17 @@ describeWithDocker()('Email verification gate (e2e)', () => {
       .get(`/sections/${SECTION}/suggestions`)
       .set(as(verified));
     expect(res.status).not.toBe(403);
+  });
+
+  it('lets a verified, consenting user past both gates on the AI POST routes', async () => {
+    // An empty body is invalid (400), which proves the guards let it through.
+    const plan = await http().post('/planning-jobs').set(as(verified)).send({});
+    expect(plan.status).toBe(400);
+    const suggestion = await http()
+      .post(`/sections/${SECTION}/suggestions`)
+      .set(as(verified))
+      .send({});
+    expect(suggestion.status).toBe(400);
   });
 
   it('leaves the provider webhook unaffected by the gate', async () => {

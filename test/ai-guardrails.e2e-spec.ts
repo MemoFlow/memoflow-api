@@ -6,6 +6,7 @@ import type {
   LlmCompletion,
   LlmCompletionRequest,
 } from './../src/domain/ai/llm-gateway.port';
+import { acceptAiConsent } from './utils/ai-consent';
 import { startMongoMemory, MongoTestEnv } from './utils/mongo-memory';
 import {
   describeWithDocker,
@@ -79,7 +80,9 @@ describeWithDocker()('AI guardrails (e2e)', () => {
       .post('/auth/login')
       .send({ email: payload.email, password: payload.password })
       .expect(200);
-    return res.body.accessToken as string;
+    const token = res.body.accessToken as string;
+    await acceptAiConsent(app, token);
+    return token;
   }
 
   async function createSection(token: string, content: string) {

@@ -4,6 +4,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { io as ioClient, Socket } from 'socket.io-client';
+import { acceptAiConsent } from './utils/ai-consent';
 import { startMongoMemory, MongoTestEnv } from './utils/mongo-memory';
 import {
   describeWithDocker,
@@ -42,7 +43,9 @@ describeWithDocker()('Context / planning-job WebSocket push (e2e)', () => {
       .send({ email: payload.email, password: payload.password })
       .expect(200);
 
-    return loginRes.body.accessToken as string;
+    const token = loginRes.body.accessToken as string;
+    await acceptAiConsent(app, token);
+    return token;
   }
 
   async function pollUntilTerminal(

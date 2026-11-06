@@ -53,6 +53,10 @@ class InMemoryUserRepository implements UserRepository {
     return Promise.resolve();
   }
 
+  setAiConsent(): Promise<void> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
   setDisabledAt(): Promise<void> {
     return Promise.reject(new Error('not implemented'));
   }

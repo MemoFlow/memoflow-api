@@ -15,6 +15,12 @@ export interface UserRepository {
   updateLastActiveAt(id: string): Promise<void>;
   /** Sets `disabledAt` (or clears it when `null`). */
   setDisabledAt(id: string, disabledAt: Date | null): Promise<void>;
+  /** Sets both AI consent columns, or clears both when given nulls. */
+  setAiConsent(
+    id: string,
+    consentAt: Date | null,
+    version: string | null,
+  ): Promise<void>;
   /**
    * Increments `token_version`, invalidating every access token issued so
    * far (logout everywhere); returns the new version.

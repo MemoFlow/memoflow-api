@@ -14,8 +14,10 @@ import { ResetPasswordUseCase } from './application/auth/reset-password.use-case
 import { SendPasswordResetEmailUseCase } from './application/auth/send-password-reset-email.use-case';
 import { SendVerificationEmailUseCase } from './application/auth/send-verification-email.use-case';
 import { VerifyEmailUseCase } from './application/auth/verify-email.use-case';
+import { AcceptAiConsentUseCase } from './application/users/accept-ai-consent.use-case';
 import { DisableUserUseCase } from './application/users/disable-user.use-case';
 import { EnableUserUseCase } from './application/users/enable-user.use-case';
+import { WithdrawAiConsentUseCase } from './application/users/withdraw-ai-consent.use-case';
 import { GetUserProfileUseCase } from './application/users/get-user-profile.use-case';
 import { GetUserByIdUseCase } from './application/users/get-user-by-id.use-case';
 import { RegisterUserUseCase } from './application/users/register-user.use-case';
@@ -85,6 +87,8 @@ import { UsersController } from './presentation/users/users.controller';
     GetUserProfileUseCase,
     DisableUserUseCase,
     EnableUserUseCase,
+    AcceptAiConsentUseCase,
+    WithdrawAiConsentUseCase,
     JwtStrategy,
   ],
   exports: [USER_REPOSITORY, GetUserByIdUseCase],
