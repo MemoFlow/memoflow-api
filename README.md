@@ -7,8 +7,9 @@ and external connectors. Built with [NestJS 11](https://nestjs.com) on a
 - **PostgreSQL** (primary) — everything relational, via TypeORM with migrations only.
 - **MongoDB** (specialist) — exactly two collections (`document_versions`,
   `planning_jobs`), via Mongoose.
-- **Redis** — BullMQ-backed async job queue (AOF persistence), used by the Context
-  module's planning-job pipeline.
+- **Redis** — BullMQ-backed async job queue (AOF persistence) for the Context module's
+  planning-job pipeline, plus the AI daily quota counters, the suggestion cache and the
+  login attempt counter. The AI quota fails closed: with Redis down, AI is refused.
 
 The full data design lives in [`docs/database-schema.md`](docs/database-schema.md)
 (source of truth) and is visualized in
@@ -42,6 +43,7 @@ npm run start:dev
 | `npm run admin:promote` | promotes an existing user to admin: `ADMIN_EMAIL=<email> npm run admin:promote` and re-enables it if disabled (connects with `POSTGRES_*`; idempotent; works under any `NODE_ENV`) |
 | `npm run templates:load` | owner-run: loads starter template `keyPoints`/`guidance` through the HTTP API; needs `API_BASE_URL`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`. Dry run by default; write with `npm run templates:load -- --apply` |
 | `npm run smoke` | boots the app and polls `/health`; set `SMOKE_BASE_URL` to smoke a deployed environment instead |
+| `npm run ai:smoke` | owner-run live check of the AI layer against a deployed API (`scripts/ai-smoke.ts`): lists free models that support structured output, logs in as a throwaway user, creates a document, requests a suggestion, repeats it (should be a cache hit), runs a planning job, checks the quota counters, then deletes the document. Needs `API_BASE_URL`, `SMOKE_EMAIL`, `SMOKE_PASSWORD` and `OPENROUTER_API_KEY` (without it the run prints `SKIPPED` and exits 2); the key is used only to list models, the API under test needs its own key. Optional `REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD`/`REDIS_TLS` enable a read-only counter check. Flags: `--accept-notice` (accepts the draft AI notice for the smoke user, test accounts only), `--keep` (keeps the document), `--allow-production` (overrides the guard that refuses hosts not clearly non-production), `--allow-insecure-http` (overrides the refusal to send credentials over plain `http://` to a non-local host). The cache step needs the Redis variables to pass; without them it reports `SKIP`, inconclusive. Uses about 3 or more of the daily AI quota; output never includes text or secrets |
 | `npm run migration:generate -- src/infrastructure/persistence/migrations/<Name>` | generate migration from entity diff |
 | `npm run migration:run` / `migration:revert` / `migration:show` | apply / revert / list migrations |
 
@@ -120,7 +122,12 @@ other routes are unaffected. See [`docs/security.md`](docs/security.md#email-ide
 
 AI is opt-in: `POST /sections/:sectionId/suggestions` and `POST /planning-jobs` return
 **403** `AI_CONSENT_REQUIRED` until the user accepts the current AI notice. The notice is a
-draft pending legal review: [`docs/ai-data-notice.md`](docs/ai-data-notice.md).
+draft pending legal review: [`docs/ai-data-notice.md`](docs/ai-data-notice.md). Order of
+checks on those routes: consent, then (for suggestions) ownership, prompt, size limit and
+the suggestion cache, then the daily quota, which is reserved before each provider
+attempt. The end-to-end flow is in [`ARCHITECTURE.md`](ARCHITECTURE.md#request-lifecycles).
+The AI layer is implemented but not yet proven live: see
+[`docs/ROADMAP.md`](docs/ROADMAP.md#ai-rework-on-openrouter---code-complete-not-yet-proven-live).
 
 Protected routes require `Authorization: Bearer <accessToken>`. Full request/response
 shapes are in Swagger (`/docs`).
@@ -173,11 +180,13 @@ Two context-gathering transports exist, selected by `RABBITMQ_URL`:
   context engine (n8n), each chunk relayed live over the WebSocket gateway
   (`planning.chunk`). Once the terminal chunk arrives the job moves to `planning`.
   A job stuck in `gathering` longer than `CONTEXT_GATHER_TIMEOUT_MS` fails with
-  `error_code: CONTEXT_ENGINE_TIMEOUT`. **Live on the `development` environment**,
-  verified end-to-end 2026-07-20 (~600ms round trip; DLQ behavior confirmed) against
-  a CloudAMQP free-tier broker (LavinMQ under the hood, `amqps://` TLS-only) and the
-  external n8n-hosted context engine. Staging and production still need their own
-  `RABBITMQ_URL` provisioned before their first deploys — see
+  `error_code: CONTEXT_ENGINE_TIMEOUT`. Verified end-to-end on `development` on
+  2026-07-20 (~600ms round trip) against a CloudAMQP free-tier broker (LavinMQ under the
+  hood, `amqps://` TLS-only) and the external n8n-hosted context engine. In November
+  2026 the dev broker and n8n were recreated and reconnected; per the owner both are
+  good, but the round trip has not been re-tested from the API side. Staging and
+  production still need their own `RABBITMQ_URL` provisioned before their first
+  deploys — see
   [`docs/contracts/context-engine.md`](docs/contracts/context-engine.md).
 
 A submitted job can optionally be bound to an owned `documentId`/`sectionId` — the
@@ -218,11 +227,13 @@ Beyond the database connection vars, auth requires:
 | --- | --- | --- | --- |
 | `JWT_SECRET` | yes | — | signing key for access tokens; enforced at boot to be at least 32 characters (`@MinLength(32)`), and must be a unique random value per environment outside dev; boot fails on staging/production if it equals the `.env.example` placeholder |
 | `JWT_EXPIRES_IN` | no | `15m` | access token lifetime |
-| `REDIS_HOST` | yes | — | Redis host for the BullMQ planning queue |
+| `REDIS_HOST` | yes | — | Redis host: BullMQ planning queue, AI quota counters, suggestion cache and login attempt counter |
 | `REDIS_PORT` | yes | — | Redis port (`0`–`65535`) |
 | `REDIS_PASSWORD` | no | — | Redis auth password, if required |
 | `POSTGRES_SSL_REJECT_UNAUTHORIZED` | no | `true` | with `POSTGRES_SSL=true`, verify the database server certificate; `false` is for a private-CA database on `development` only — boot fails on staging/production if it is `false` (Neon works with the default) |
 | `REDIS_TLS` | no | `false` | set `true` for managed TLS-only Redis (e.g. Upstash); local docker Redis stays `false` — mirrors `POSTGRES_SSL` |
+| `THROTTLE_TTL` | no | `60000` | global rate-limit window in ms (in-memory, per instance); auth and AI routes have tighter per-route caps |
+| `THROTTLE_LIMIT` | no | `100` | max requests per window under the global rate limit |
 | `CORS_ORIGIN` | no | `*` | frontend origin allowed for cross-origin REST API requests; `*` is dev-only — boot fails on staging/production if it is `*` or blank |
 | `WS_CORS_ORIGIN` | no | `*` | frontend origin allowed to open the planning WebSocket; `*` is dev-only — boot fails on staging/production if it is `*` or blank |
 | `COMPOSIO_API_KEY` | yes | — | authenticates this API to Composio (the OAuth vault + MCP host for connectors) |
@@ -234,14 +245,14 @@ Beyond the database connection vars, auth requires:
 | `CONTEXT_ENGINE_TIMEOUT_MS` | no | `10000` | aborts the context-engine POST after this many ms, failing the planning job fast instead of hanging |
 | `RABBITMQ_URL` | no | — | `amqp://`/`amqps://` broker URL; unset keeps the legacy synchronous `ContextEngineHttpClient`/stub gather path (`CONTEXT_ENGINE_URL` above); set to switch planning jobs onto the async RabbitMQ transport (`docs/contracts/context-engine.md`) |
 | `CONTEXT_GATHER_TIMEOUT_MS` | no | `120000` | only meaningful when `RABBITMQ_URL` is set — fails a job stuck in `gathering` past this many ms with `error_code: CONTEXT_ENGINE_TIMEOUT` |
-| `OPENROUTER_API_KEY` | no | — | powers AI suggestion generation and the planning-job LLM planner via OpenRouter; unset keeps both on their null/stub fallbacks (suggestions endpoint returns 503, planning jobs keep using `StubLlmPlanner`) |
+| `OPENROUTER_API_KEY` | no | — | powers AI suggestion generation and the planning-job LLM planner via OpenRouter; unset keeps both on their null/stub fallbacks (suggestions endpoint returns 503, planning jobs keep using `StubLlmPlanner`). With the default free model, upstream providers may log prompts, which is why AI needs recorded user consent (below) |
 | `OPENROUTER_MODEL` | no | `openrouter/free` | OpenRouter model id used for both suggestions and planning |
 | `OPENROUTER_FALLBACK_MODELS` | no | — | comma-separated model ids tried after `OPENROUTER_MODEL` |
 | `OPENROUTER_MAX_TOKENS` | no | `4096` | max output tokens per LLM call |
-| `OPENROUTER_TIMEOUT_MS` | no | `60000` | aborts an LLM request after this many ms |
-| `OPENROUTER_MAX_RETRIES` | no | `1` | retries per LLM call (0 to 3) for transient failures; all attempts share the call's `OPENROUTER_TIMEOUT_MS` deadline |
+| `OPENROUTER_TIMEOUT_MS` | no | `60000` | aborts an LLM call after this many ms (repair retry and retries included) |
+| `OPENROUTER_MAX_RETRIES` | no | `1` | extra attempts (0 to 3) after a 429 with `Retry-After` of 10s or less, a 5xx or a network failure; timeouts and other 4xx are never retried; all attempts share the call's `OPENROUTER_TIMEOUT_MS` deadline |
 | `AI_MAX_INPUT_CHARS` | no | `40000` | longest section text sent to the model; longer sections get 422 on suggestions, and planning context is cut to this length |
-| `AI_USER_DAILY_LIMIT` | no | `10` | provider attempts per user per UTC day, counted in Redis before each attempt (retries included); over the limit gets 429 with `Retry-After`; `0` blocks all AI use |
+| `AI_USER_DAILY_LIMIT` | no | `10` | provider attempts per user per UTC day, counted in Redis before each attempt (retries included); over the limit gets 429 with `Retry-After` (a planning job fails with `AI_QUOTA_EXCEEDED`); `0` blocks all AI use; if Redis is down AI is refused (503) |
 | `AI_GLOBAL_DAILY_LIMIT` | no | `40` | provider attempts per UTC day across all users, shared by suggestions and planning; same 429 behaviour |
 | `AI_CACHE_TTL_SECONDS` | no | `86400` | how long a validated suggestion is reused for the same user and identical input; a hit makes no provider call and uses no quota; `0` disables the cache |
 | `OPENROUTER_BASE_URL` | no | `https://openrouter.ai/api/v1` | OpenRouter API base URL (operator config; overridable for tests) |
@@ -371,6 +382,10 @@ incident note. Staging and production deploy targets are not yet decided.
 - [`docs/security.md`](docs/security.md) — operational security runbook: monitoring,
   backup/restore, the per-environment deploy security checklist, and notes on SSRF
   and prompt-injection posture.
+- [`docs/ai-data-notice.md`](docs/ai-data-notice.md) — draft AI data notice shown before
+  a user turns on AI (needs legal review and a French version).
+- [`docs/integration/frontend-guide.md`](docs/integration/frontend-guide.md) —
+  frontend walkthrough of auth, documents, the AI consent flow and planning jobs.
 - [`docs/privacy-data-inventory.md`](docs/privacy-data-inventory.md) — internal
   inventory of stored personal data and third-party recipients (not a privacy notice).
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — feature roadmap with per-item specs and

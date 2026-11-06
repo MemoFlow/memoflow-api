@@ -36,7 +36,7 @@
     },
     "connectors": {
       "type": "array",
-      "description": "The user's active, selected connectors. An empty array means no connector context was requested/available.",
+      "description": "The user's active, selected connectors. The API doesn't publish a request with an empty array: a job with no active connectors skips the context engine. Consumers should still tolerate one.",
       "items": { "$ref": "#/$defs/connectorRef" }
     },
     "requested_at": {
