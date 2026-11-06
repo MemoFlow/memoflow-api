@@ -447,12 +447,12 @@ work already flagged as deferred in the sections above, not a numbered feature:
     per-tier broker credentials with restricted queue permissions (see
     [`docs/security.md`](security.md#message-broker)). Generic provider errors and the `featureType` allowlist moved to the
     [AI rework](plans/2026-11-06-ai-rework.md).
-  - ☐ **Template content:** the five starter templates (thesis and internship report) are
-    published on `development`, but their section `keyPoints` and `guidance` aren't stored,
-    since the API doesn't have those fields. Add `key_points` (`jsonb`) and `guidance`
-    (`text`) to `template_sections` with a migration, schema doc and DTO update. Apply doesn't
-    copy them into the document. Then `PATCH` each template, as an admin, from
-    [`plans/2026-11-06-template-content.json`](plans/2026-11-06-template-content.json).
+  - ◐ **Template content:** code done: `template_sections.key_points` (`jsonb`) and `guidance` (`text`),
+    both nullable, with migration, schema doc and DTO fields; apply doesn't copy them into
+    the document. **Remaining, owner action:** after deploy, run `npm run templates:load`
+    (dry run), then `-- --apply`, to `PATCH` the five starter templates from
+    [`plans/2026-11-06-template-content.json`](plans/2026-11-06-template-content.json) and
+    read them back. The content is not loaded on any environment yet.
   - ☐ **Frontend (`memoflow-client`):** forgot, reset and verify pages; handling for
     403 `Email not verified`; leaderboard types to `is_me`; demo login behind a dev-only
     flag. See [`docs/integration/frontend-guide.md`](integration/frontend-guide.md).

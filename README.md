@@ -40,6 +40,7 @@ npm run start:dev
 | `npm run db:up` / `db:down` / `db:reset` | local dev databases (`reset` wipes volumes) |
 | `npm run db:seed` | idempotent dev seed (refuses to run against staging/production) — creates two dev users, `admin@memoflow.dev` / `writer@memoflow.dev` (password `dev-password-123`). **Local development only — never use these credentials on a deployed environment.** |
 | `npm run admin:promote` | promotes an existing user to admin: `ADMIN_EMAIL=<email> npm run admin:promote` and re-enables it if disabled (connects with `POSTGRES_*`; idempotent; works under any `NODE_ENV`) |
+| `npm run templates:load` | owner-run: loads starter template `keyPoints`/`guidance` through the HTTP API; needs `API_BASE_URL`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`. Dry run by default; write with `npm run templates:load -- --apply` |
 | `npm run smoke` | boots the app and polls `/health`; set `SMOKE_BASE_URL` to smoke a deployed environment instead |
 | `npm run migration:generate -- src/infrastructure/persistence/migrations/<Name>` | generate migration from entity diff |
 | `npm run migration:run` / `migration:revert` / `migration:show` | apply / revert / list migrations |

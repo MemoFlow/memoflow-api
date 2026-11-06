@@ -101,6 +101,8 @@ function makeTemplate(overrides: Partial<Template> = {}): Template {
         wordCountMin: 100,
         wordCountMax: 500,
         isRequired: true,
+        keyPoints: ['point a', 'point b'],
+        guidance: 'Some guidance',
       }),
       new TemplateSection({
         id: 'ts-1',
@@ -110,6 +112,8 @@ function makeTemplate(overrides: Partial<Template> = {}): Template {
         wordCountMin: 20,
         wordCountMax: 100,
         isRequired: true,
+        keyPoints: ['point a', 'point b'],
+        guidance: 'Some guidance',
       }),
     ],
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -158,6 +162,19 @@ describe('ApplyTemplateUseCase', () => {
       { title: 'Intro', content: '', status: 'draft', wordCount: 0 },
       { title: 'Body', content: '', status: 'draft', wordCount: 0 },
     ]);
+
+    // key_points / guidance live on the template only: nothing reaches the
+    // document's sections (the template sections above carry both).
+    for (const section of call.sections) {
+      expect(section).not.toHaveProperty('keyPoints');
+      expect(section).not.toHaveProperty('guidance');
+      expect(Object.keys(section).sort()).toEqual([
+        'content',
+        'status',
+        'title',
+        'wordCount',
+      ]);
+    }
 
     expect(result).toMatchObject({
       documentId: 'doc-1',

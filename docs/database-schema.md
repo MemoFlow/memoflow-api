@@ -309,6 +309,8 @@ for the leaderboard).
 | word_count_min | int | |
 | word_count_max | int | |
 | is_required | boolean | |
+| key_points | jsonb | nullable; array of strings (max 50 items of 2000 chars) — per-section hints for what to cover. Guidance to display; **not copied** into documents on apply |
+| guidance | text | nullable; free-text writing guidance (max 5000 chars). Same: display only, not copied on apply |
 
 Composite index **(template_id, order)** — `IDX_template_sections_template_order` —
 satisfies "ordered fetch per template"; `template_id` also has its own plain index

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { CreateTemplateDto } from './create-template.dto';
@@ -86,5 +88,62 @@ describe('UpdateTemplateDto validation', () => {
 
     const sectionsError = errors.find((e) => e.property === 'sections');
     expect(sectionsError?.constraints).toHaveProperty('uniqueSectionOrders');
+  });
+});
+
+describe('section keyPoints / guidance validation', () => {
+  const withSection = (extra: Record<string, unknown>) => ({
+    ...validPayload,
+    sections: [
+      { title: 'Intro', order: 0, wordCountMin: 1, wordCountMax: 2, ...extra },
+    ],
+  });
+  const errorsFor = (cls: typeof CreateTemplateDto, extra: object) =>
+    validate(plainToInstance(cls, withSection(extra as never)));
+
+  it.each([CreateTemplateDto, UpdateTemplateDto])(
+    '%p accepts good values at the limits',
+    async (cls) => {
+      expect(
+        await errorsFor(cls, {
+          keyPoints: Array.from({ length: 50 }, () => 'x'.repeat(2000)),
+          guidance: 'g'.repeat(5000),
+        }),
+      ).toEqual([]);
+    },
+  );
+
+  it('accepts omitted values', async () => {
+    expect(await errorsFor(CreateTemplateDto, {})).toEqual([]);
+  });
+
+  it.each([
+    ['too many key points', { keyPoints: Array(51).fill('x') }],
+    ['an over-long key point', { keyPoints: ['x'.repeat(2001)] }],
+    ['a non-string key point', { keyPoints: [1] }],
+    ['non-array key points', { keyPoints: 'x' }],
+    ['over-long guidance', { guidance: 'g'.repeat(5001) }],
+    ['non-string guidance', { guidance: 5 }],
+  ])('rejects %s', async (_name, extra) => {
+    expect(await errorsFor(CreateTemplateDto, extra)).not.toEqual([]);
+    expect(await errorsFor(UpdateTemplateDto, extra)).not.toEqual([]);
+  });
+
+  it('accepts every template in the starter content file', async () => {
+    const templates = JSON.parse(
+      readFileSync(
+        resolve(
+          __dirname,
+          '../../../../docs/plans/2026-11-06-template-content.json',
+        ),
+        'utf8',
+      ),
+    ) as object[];
+    expect(templates).toHaveLength(5);
+    for (const template of templates) {
+      expect(
+        await validate(plainToInstance(CreateTemplateDto, template)),
+      ).toEqual([]);
+    }
   });
 });

@@ -26,4 +26,10 @@ export class TemplateSectionOrmEntity {
 
   @Column({ type: 'boolean', name: 'is_required', default: false })
   isRequired: boolean;
+
+  @Column({ type: 'jsonb', name: 'key_points', nullable: true })
+  keyPoints: string[] | null;
+
+  @Column({ type: 'text', nullable: true })
+  guidance: string | null;
 }

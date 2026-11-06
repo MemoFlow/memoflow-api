@@ -20,6 +20,12 @@ export class TemplateSectionResponseDto {
   @ApiProperty()
   is_required: boolean;
 
+  @ApiProperty({ type: [String], nullable: true })
+  key_points: string[] | null;
+
+  @ApiProperty({ type: String, nullable: true })
+  guidance: string | null;
+
   static fromEntity(section: TemplateSection): TemplateSectionResponseDto {
     const dto = new TemplateSectionResponseDto();
     dto.id = section.id;
@@ -28,6 +34,8 @@ export class TemplateSectionResponseDto {
     dto.word_count_min = section.wordCountMin;
     dto.word_count_max = section.wordCountMax;
     dto.is_required = section.isRequired;
+    dto.key_points = section.keyPoints;
+    dto.guidance = section.guidance;
     return dto;
   }
 }

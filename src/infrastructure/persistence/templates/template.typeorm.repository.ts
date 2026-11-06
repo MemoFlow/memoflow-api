@@ -184,6 +184,8 @@ export class TemplateTypeOrmRepository implements TemplateRepository {
               wordCountMin: section.wordCountMin,
               wordCountMax: section.wordCountMax,
               isRequired: section.isRequired,
+              keyPoints: section.keyPoints ?? null,
+              guidance: section.guidance ?? null,
             }),
         ),
       createdAt: entity.createdAt,
