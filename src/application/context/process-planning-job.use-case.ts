@@ -1,6 +1,7 @@
 import {
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   Optional,
 } from '@nestjs/common';
@@ -24,7 +25,13 @@ import { PLANNING_JOB_REPOSITORY } from '../../domain/context/planning-job.repos
 import type { PlanningJobRepository } from '../../domain/context/planning-job.repository';
 import { resolveActiveConnectorReferences } from '../../domain/context/resolve-connector-references';
 import { GATHER_TIMEOUT_MS } from './gather-timeout-ms.token';
-import { renderPlanningPrompt, resolvePlanningPrompt } from './planning-prompt';
+import { AI_MAX_INPUT_CHARS } from '../ai/max-input-chars.token';
+import {
+  errorName,
+  planWithGuards,
+  resolvePlanningPrompt,
+  safeFailureMessage,
+} from './planning-prompt';
 
 /** Mirrors `docs/contracts/context-engine.md` §4's default — also the
  * `CONTEXT_GATHER_TIMEOUT_MS` env default in `env.validation.ts`. Used only
@@ -63,6 +70,8 @@ export interface ProcessPlanningJobResult {
  */
 @Injectable()
 export class ProcessPlanningJobUseCase {
+  private readonly logger = new Logger(ProcessPlanningJobUseCase.name);
+
   constructor(
     @Inject(PLANNING_JOB_REPOSITORY)
     private readonly planningJobRepository: PlanningJobRepository,
@@ -84,6 +93,9 @@ export class ProcessPlanningJobUseCase {
     @Optional()
     @Inject(GATHER_TIMEOUT_MS)
     private readonly gatherTimeoutMs?: number,
+    @Optional()
+    @Inject(AI_MAX_INPUT_CHARS)
+    private readonly maxInputChars?: number,
   ) {}
 
   execute(input: ProcessPlanningJobInput): Promise<ProcessPlanningJobResult> {
@@ -127,22 +139,23 @@ export class ProcessPlanningJobUseCase {
         connectors: claimed.connectors,
         prompt: claimed.prompt,
       });
-      const rendered = renderPlanningPrompt(
+      result = await planWithGuards(
+        this.llmPlanner,
         resolvedPrompt,
         claimed.prompt,
         context,
+        this.maxInputChars,
       );
-      result = await this.llmPlanner.plan({
-        prompt: claimed.prompt,
-        context,
-        ...rendered,
-      });
     } catch (err) {
       // A domain failure (gather/plan) is a terminal state, not a queue
       // retry — write `failed` and return it, do not rethrow. `contextUsed`
       // is recorded when gather succeeded but plan subsequently failed.
-      const errorMessage =
-        err instanceof Error ? err.message : 'Planning job processing failed';
+      // Clients read the message: only typed (fixed) messages pass through,
+      // and only the error name is logged.
+      this.logger.error(
+        `Planning job ${claimed.id} failed (${errorName(err)})`,
+      );
+      const errorMessage = safeFailureMessage(err);
       const contextUsed = context ?? null;
       const failed = await this.planningJobRepository.updateStatus(claimed.id, {
         status: JobStatus.Failed,
@@ -225,10 +238,10 @@ export class ProcessPlanningJobUseCase {
     } catch (err) {
       // Can't proceed without the CE ever seeing this job — terminal
       // failure, not a queue retry (mirrors the legacy gather/plan catch).
-      const errorMessage =
-        err instanceof Error
-          ? err.message
-          : 'Failed to publish context gather request';
+      this.logger.error(
+        `Planning job ${claimed.id} gather publish failed (${errorName(err)})`,
+      );
+      const errorMessage = 'Failed to publish context gather request';
       const failed = await this.planningJobRepository.updateStatus(claimed.id, {
         status: JobStatus.Failed,
         errorCode: 'CONTEXT_ENGINE_PUBLISH_FAILED',

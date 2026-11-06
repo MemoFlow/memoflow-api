@@ -7,6 +7,10 @@ import { GenerateSuggestionUseCase } from './application/ai/generate-suggestion.
 import { ListSuggestionsUseCase } from './application/ai/list-suggestions.use-case';
 import { ListPromptsUseCase } from './application/ai/list-prompts.use-case';
 import { ReviewSuggestionUseCase } from './application/ai/review-suggestion.use-case';
+import {
+  AI_MAX_INPUT_CHARS,
+  DEFAULT_AI_MAX_INPUT_CHARS,
+} from './application/ai/max-input-chars.token';
 import { AI_SUGGESTION_REPOSITORY } from './domain/ai/ai-suggestion.repository';
 import { LLM_GATEWAY, LlmGateway } from './domain/ai/llm-gateway.port';
 import { PROMPT_REPOSITORY } from './domain/ai/prompt.repository';
@@ -41,6 +45,11 @@ export function suggestionGeneratorFactory(
   return config.get<string>('OPENROUTER_API_KEY')
     ? new GatewaySuggestionGenerator(gateway)
     : new NullSuggestionGenerator();
+}
+
+/** Resolves `AI_MAX_INPUT_CHARS` with its documented default. */
+export function aiMaxInputCharsFactory(config: ConfigService): number {
+  return config.get<number>('AI_MAX_INPUT_CHARS') ?? DEFAULT_AI_MAX_INPUT_CHARS;
 }
 
 /**
@@ -79,6 +88,11 @@ export function suggestionGeneratorFactory(
       provide: SUGGESTION_GENERATOR,
       inject: [ConfigService, LLM_GATEWAY],
       useFactory: suggestionGeneratorFactory,
+    },
+    {
+      provide: AI_MAX_INPUT_CHARS,
+      inject: [ConfigService],
+      useFactory: aiMaxInputCharsFactory,
     },
     GenerateSuggestionUseCase,
     ListSuggestionsUseCase,

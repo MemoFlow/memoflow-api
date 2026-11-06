@@ -169,8 +169,8 @@ export class PlanningGateway
       // else (e.g. a DB outage) still disconnects but is logged — never
       // the token itself.
       if (!this.isAuthFailure(err)) {
-        const message = err instanceof Error ? err.message : 'unknown error';
-        this.logger.warn(`Socket handshake failed unexpectedly: ${message}`);
+        const name = err instanceof Error ? err.name : 'unknown';
+        this.logger.warn(`Socket handshake failed unexpectedly (${name})`);
       }
       client.disconnect(true);
     }
@@ -294,9 +294,9 @@ export class PlanningGateway
         client.emit('planning.error', { jobId, message: 'not found' });
         return;
       }
-      const errorMessage = err instanceof Error ? err.message : 'unknown';
+      const name = err instanceof Error ? err.name : 'unknown';
       this.logger.error(
-        `Unexpected failure handling subscribe for job ${jobId}: ${errorMessage}`,
+        `Unexpected failure handling subscribe for job ${jobId} (${name})`,
       );
       throw err;
     }

@@ -18,6 +18,13 @@ const DEFAULT_BASE_URL = 'https://openrouter.ai/api/v1';
 const DEFAULT_MODEL = 'openrouter/free';
 const DEFAULT_MAX_TOKENS = 4096;
 const DEFAULT_TIMEOUT_MS = 60_000;
+const DEFAULT_MAX_RETRIES = 1;
+/** Longest Retry-After (seconds) worth waiting for on a 429. */
+const MAX_RETRY_AFTER_SECONDS = 10;
+/** Time that must remain in the deadline after waiting, to retry at all. */
+const MIN_TIME_AFTER_WAIT_MS = 1000;
+const BACKOFF_BASE_MS = 500;
+const BACKOFF_JITTER_MS = 250;
 
 /** Fixed outage message; the use-case surfaces it to clients as-is. */
 const UNAVAILABLE_MESSAGE = 'AI provider temporarily unavailable';
@@ -43,6 +50,26 @@ interface ChatResponseBody {
     completion_tokens?: unknown;
     total_tokens?: unknown;
   };
+}
+
+/**
+ * A failed provider attempt: the typed domain error to surface, plus how it
+ * may be retried. Internal; never escapes the gateway.
+ */
+class AttemptFailure extends Error {
+  constructor(
+    readonly domainError: Error,
+    readonly retry: 'rate-limit' | 'transient' | 'none',
+    readonly retryAfterSeconds?: number,
+  ) {
+    super(domainError.message);
+    this.name = 'AttemptFailure';
+  }
+}
+
+/** Retries left for one `complete()` call (repair retry shares it). */
+interface RetryBudget {
+  left: number;
 }
 
 interface RawCompletion {
@@ -82,7 +109,14 @@ export class OpenRouterGateway implements LlmGateway {
     // One deadline bounds the whole call, repair retry included.
     const deadline = Date.now() + this.timeoutMs();
 
-    const first = await this.callOnce(request, messages, deadline);
+    const budget: RetryBudget = { left: this.maxRetries() };
+
+    const first = await this.callWithRetries(
+      request,
+      messages,
+      deadline,
+      budget,
+    );
     const parsedFirst = parseJsonContent(first.content);
     if (parsedFirst.ok) return toCompletion(first, parsedFirst.value);
 
@@ -96,7 +130,7 @@ export class OpenRouterGateway implements LlmGateway {
         'The AI provider returned an invalid response',
       );
     }
-    const second = await this.callOnce(
+    const second = await this.callWithRetries(
       request,
       [
         ...messages,
@@ -104,6 +138,7 @@ export class OpenRouterGateway implements LlmGateway {
         { role: 'user', content: REPAIR_INSTRUCTION },
       ],
       deadline,
+      budget,
     );
     second.usage = sumUsage(first.usage, second.usage);
     const parsedSecond = parseJsonContent(second.content);
@@ -123,7 +158,64 @@ export class OpenRouterGateway implements LlmGateway {
     );
   }
 
-  private async callOnce(
+  private maxRetries(): number {
+    const configured = this.config.get<number>('OPENROUTER_MAX_RETRIES');
+    return Math.min(3, Math.max(0, configured ?? DEFAULT_MAX_RETRIES));
+  }
+
+  /**
+   * Runs `attempt`, retrying only 429 (with a usable Retry-After), 5xx and
+   * network failures. Timeouts and every other failure surface at once.
+   * Waits must fit in the shared deadline, or the failure surfaces instead.
+   */
+  private async callWithRetries(
+    request: LlmCompletionRequest,
+    messages: ChatMessage[],
+    deadline: number,
+    budget: RetryBudget,
+  ): Promise<RawCompletion> {
+    for (;;) {
+      try {
+        return await this.attempt(request, messages, deadline);
+      } catch (err) {
+        if (!(err instanceof AttemptFailure)) throw err;
+        const waitMs = this.retryDelayMs(err, deadline, budget);
+        if (waitMs === null) throw err.domainError;
+        budget.left -= 1;
+        this.logger.warn(`OpenRouter attempt failed; retrying in ${waitMs}ms`);
+        await sleep(waitMs);
+      }
+    }
+  }
+
+  /** Milliseconds to wait before retrying, or null to give up. */
+  private retryDelayMs(
+    failure: AttemptFailure,
+    deadline: number,
+    budget: RetryBudget,
+  ): number | null {
+    if (budget.left <= 0 || failure.retry === 'none') return null;
+    const remaining = deadline - Date.now();
+    let waitMs: number;
+    if (failure.retry === 'rate-limit') {
+      const seconds = failure.retryAfterSeconds;
+      if (seconds === undefined || seconds > MAX_RETRY_AFTER_SECONDS) {
+        return null;
+      }
+      waitMs = seconds * 1000;
+    } else {
+      waitMs = BACKOFF_BASE_MS + Math.floor(Math.random() * BACKOFF_JITTER_MS);
+    }
+    // A retry that fires with almost no time left would burn a (free-model)
+    // attempt for nothing: require real time left after the wait.
+    return remaining - waitMs >= MIN_TIME_AFTER_WAIT_MS ? waitMs : null;
+  }
+
+  /**
+   * One provider attempt: the only place that talks to OpenRouter, so a
+   * per-attempt hook (e.g. quota reservation) belongs here.
+   */
+  private async attempt(
     request: LlmCompletionRequest,
     messages: ChatMessage[],
     deadline: number,
@@ -171,7 +263,7 @@ export class OpenRouterGateway implements LlmGateway {
         signal,
       });
     } catch (err) {
-      throw this.networkFailure(err);
+      throw this.networkFailure(err, signal);
     }
 
     if (!response.ok) {
@@ -189,7 +281,7 @@ export class OpenRouterGateway implements LlmGateway {
     try {
       text = await response.text();
     } catch (err) {
-      throw this.networkFailure(err);
+      throw this.networkFailure(err, signal);
     }
 
     let parsed: ChatResponseBody;
@@ -252,31 +344,55 @@ export class OpenRouterGateway implements LlmGateway {
     };
   }
 
-  private networkFailure(err: unknown): Error {
+  private networkFailure(err: unknown, signal: AbortSignal): AttemptFailure {
     const name = err instanceof Error ? err.name : 'unknown';
     this.logger.error(`OpenRouter request failed (${name})`);
-    return new SuggestionGeneratorUnavailableError(UNAVAILABLE_MESSAGE);
+    // A timeout means the single deadline is spent: never retried.
+    const timedOut =
+      signal.aborted || name === 'TimeoutError' || name === 'AbortError';
+    return new AttemptFailure(
+      new SuggestionGeneratorUnavailableError(UNAVAILABLE_MESSAGE),
+      timedOut ? 'none' : 'transient',
+    );
   }
 
   private mapStatus(
     status: number | undefined,
     retryAfter: string | null,
     origin: string,
-  ): Error {
+  ): AttemptFailure {
     this.logger.error(
       `OpenRouter error (origin=${origin}, status=${status ?? 'unknown'})`,
     );
     if (status === 429) {
-      return new SuggestionGeneratorRateLimitedError(
-        'The AI provider is rate-limited',
-        parseRetryAfter(retryAfter),
+      const seconds = parseRetryAfter(retryAfter);
+      return new AttemptFailure(
+        new SuggestionGeneratorRateLimitedError(
+          'The AI provider is rate-limited',
+          seconds,
+        ),
+        'rate-limit',
+        seconds,
       );
     }
-    if (status === 408 || (status !== undefined && status >= 500)) {
-      return new SuggestionGeneratorUnavailableError(UNAVAILABLE_MESSAGE);
+    if (status !== undefined && status >= 500) {
+      return new AttemptFailure(
+        new SuggestionGeneratorUnavailableError(UNAVAILABLE_MESSAGE),
+        'transient',
+      );
     }
-    return new SuggestionGenerationProviderError();
+    if (status === 408) {
+      return new AttemptFailure(
+        new SuggestionGeneratorUnavailableError(UNAVAILABLE_MESSAGE),
+        'none',
+      );
+    }
+    return new AttemptFailure(new SuggestionGenerationProviderError(), 'none');
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function toCompletion(raw: RawCompletion, json: unknown): LlmCompletion {

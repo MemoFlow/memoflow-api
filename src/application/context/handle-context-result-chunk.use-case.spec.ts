@@ -467,8 +467,49 @@ describe('HandleContextResultChunkUseCase', () => {
     expect(result.outcome).toBe('applied');
     expect(result.terminal).toBe(true);
     expect(result.job?.status).toBe(JobStatus.Failed);
-    expect(result.job?.errorCode).toBe('MCP_UNAVAILABLE');
-    expect(result.job?.errorMessage).toBe('Trello MCP unreachable');
+    // The engine's own code and text are never stored: clients read them.
+    expect(result.job?.errorCode).toBe('CONTEXT_ENGINE_FAILED');
+    expect(result.job?.errorMessage).toBe('Context gather failed');
+  });
+
+  it('keeps an allowlisted failure code but still stores the fixed message', async () => {
+    const repository = new InMemoryPlanningJobRepository();
+    repository.seed(makeJob());
+    const useCase = new HandleContextResultChunkUseCase(
+      repository,
+      new StubPlanner(),
+      new FakePromptRepository(),
+    );
+
+    const result = await useCase.execute({
+      chunk: statusChunk(
+        'failed',
+        {
+          errorCode: 'CONTEXT_ENGINE_TIMEOUT',
+          message: 'token=abcdef0123456789 leaked',
+        },
+        0,
+      ),
+    });
+
+    expect(result.job?.errorCode).toBe('CONTEXT_ENGINE_TIMEOUT');
+    expect(result.job?.errorMessage).toBe('Context gather failed');
+  });
+
+  it('uses the default code when a failed chunk has none', async () => {
+    const repository = new InMemoryPlanningJobRepository();
+    repository.seed(makeJob());
+    const useCase = new HandleContextResultChunkUseCase(
+      repository,
+      new StubPlanner(),
+      new FakePromptRepository(),
+    );
+
+    const result = await useCase.execute({
+      chunk: statusChunk('failed', {}, 0),
+    });
+
+    expect(result.job?.errorCode).toBe('CONTEXT_ENGINE_FAILED');
   });
 
   it('marks the job failed (PROCESSING_FAILED) when the planner throws after a completed terminal chunk', async () => {
@@ -486,7 +527,7 @@ describe('HandleContextResultChunkUseCase', () => {
 
     expect(result.job?.status).toBe(JobStatus.Failed);
     expect(result.job?.errorCode).toBe('PROCESSING_FAILED');
-    expect(result.job?.errorMessage).toBe('planner exploded');
+    expect(result.job?.errorMessage).toBe('Planning job processing failed');
   });
 
   it('is defensively idempotent against a second terminal chunk with a different sequence (job already past gathering)', async () => {
@@ -559,8 +600,39 @@ describe('HandleContextResultChunkUseCase', () => {
         expect(finalJob.errorCode).toBeNull();
       } else {
         expect(planSpy).not.toHaveBeenCalled();
-        expect(finalJob?.errorCode).toBe('RACE_LOSER');
+        expect(finalJob?.errorCode).toBe('CONTEXT_ENGINE_FAILED');
       }
     },
   );
+
+  it('fails the job with a fixed message when the planner echoes the nonce', async () => {
+    const repository = new InMemoryPlanningJobRepository();
+    repository.seed(makeJob());
+    const planner: LlmPlanner = {
+      plan: (input) =>
+        Promise.resolve({
+          suggestions: [
+            `leak ${/untrusted_([0-9a-f]{32})/.exec(input.system)![1]}`,
+          ],
+          outline: null,
+          sources: [],
+          model: 'm',
+        }),
+    };
+    const useCase = new HandleContextResultChunkUseCase(
+      repository,
+      planner,
+      new FakePromptRepository(),
+    );
+
+    const job = (
+      await useCase.execute({ chunk: statusChunk('completed', {}, 0) })
+    ).job!;
+
+    expect(job.status).toBe(JobStatus.Failed);
+    expect(job.errorMessage).toBe(
+      'The AI planner returned a result that was rejected',
+    );
+    expect(job.result).toBeNull();
+  });
 });

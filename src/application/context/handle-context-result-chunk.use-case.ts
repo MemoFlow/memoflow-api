@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { PROMPT_REPOSITORY } from '../../domain/ai/prompt.repository';
 import type { PromptRepository } from '../../domain/ai/prompt.repository';
 import {
@@ -16,11 +16,30 @@ import {
   PlanningJob,
 } from '../../domain/context/planning-job';
 import { PLANNING_JOB_REPOSITORY } from '../../domain/context/planning-job.repository';
-import { renderPlanningPrompt, resolvePlanningPrompt } from './planning-prompt';
+import { AI_MAX_INPUT_CHARS } from '../ai/max-input-chars.token';
+import {
+  errorName,
+  planWithGuards,
+  resolvePlanningPrompt,
+  safeFailureMessage,
+} from './planning-prompt';
 import type {
   AppendResultChunkData,
   PlanningJobRepository,
 } from '../../domain/context/planning-job.repository';
+
+/** Fixed message recorded when the context engine reports a failure. */
+export const CONTEXT_ENGINE_FAILED_MESSAGE = 'Context gather failed';
+export const DEFAULT_CONTEXT_ENGINE_ERROR_CODE = 'CONTEXT_ENGINE_FAILED';
+/**
+ * Failure codes accepted from a `failed` chunk. `docs/contracts/` only names
+ * `CONTEXT_ENGINE_TIMEOUT` (also used by the no-result timeout) and leaves
+ * `error_code` free-form, so anything else becomes the default code.
+ */
+export const CONTEXT_ENGINE_ERROR_CODES: readonly string[] = [
+  DEFAULT_CONTEXT_ENGINE_ERROR_CODE,
+  'CONTEXT_ENGINE_TIMEOUT',
+];
 
 export interface HandleContextResultChunkInput {
   chunk: ContextResultChunk;
@@ -72,6 +91,8 @@ export interface HandleContextResultChunkResult {
  */
 @Injectable()
 export class HandleContextResultChunkUseCase {
+  private readonly logger = new Logger(HandleContextResultChunkUseCase.name);
+
   constructor(
     @Inject(PLANNING_JOB_REPOSITORY)
     private readonly planningJobRepository: PlanningJobRepository,
@@ -79,6 +100,9 @@ export class HandleContextResultChunkUseCase {
     private readonly llmPlanner: LlmPlanner,
     @Inject(PROMPT_REPOSITORY)
     private readonly promptRepository: PromptRepository,
+    @Optional()
+    @Inject(AI_MAX_INPUT_CHARS)
+    private readonly maxInputChars?: number,
   ) {}
 
   async execute(
@@ -177,21 +201,20 @@ export class HandleContextResultChunkUseCase {
 
     let result: PlanningResult;
     try {
-      const rendered = renderPlanningPrompt(
+      result = await planWithGuards(
+        this.llmPlanner,
         resolvedPrompt,
         claimed.prompt,
         contextUsed,
+        this.maxInputChars,
       );
-      result = await this.llmPlanner.plan({
-        prompt: claimed.prompt,
-        context: contextUsed,
-        ...rendered,
-      });
     } catch (err) {
-      const errorMessage =
-        err instanceof Error
-          ? err.message
-          : 'Planning failed after context gather completed';
+      // Clients read the message: only typed (fixed) messages pass through,
+      // and only the error name is logged.
+      this.logger.error(
+        `Planning job ${claimed.id} failed (${errorName(err)})`,
+      );
+      const errorMessage = safeFailureMessage(err);
       const failed = await this.planningJobRepository.updateStatus(claimed.id, {
         status: JobStatus.Failed,
         errorCode: 'PROCESSING_FAILED',
@@ -240,13 +263,19 @@ export class HandleContextResultChunkUseCase {
     job: PlanningJob,
     status: { errorCode?: string; message?: string },
   ): Promise<PlanningJob | null> {
-    const errorCode = status.errorCode ?? 'CONTEXT_ENGINE_FAILED';
-    const errorMessage = status.message ?? 'Context gather failed';
+    // The context engine's own text is never stored, relayed or reported:
+    // clients read it. Only an allowlisted code survives; the rest is generic.
+    const errorCode =
+      status.errorCode !== undefined &&
+      CONTEXT_ENGINE_ERROR_CODES.includes(status.errorCode)
+        ? status.errorCode
+        : DEFAULT_CONTEXT_ENGINE_ERROR_CODE;
+    this.logger.warn(`Planning job ${job.id} gather failed (${errorCode})`);
     // Atomic CAS (same guard as `claimForPlanning`, failure side) — `null`
     // means this call lost the race.
     return this.planningJobRepository.failIfStillGathering(job.id, {
       errorCode,
-      errorMessage,
+      errorMessage: CONTEXT_ENGINE_FAILED_MESSAGE,
     });
   }
 

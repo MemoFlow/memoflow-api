@@ -40,6 +40,10 @@ export class PlanningJobsController {
   @HttpCode(202)
   @ApiOperation({ summary: 'Submit a planning job for async processing' })
   @ApiResponse({ status: 202, type: PlanningJobResponseDto })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid body, e.g. prompt empty or over 5000 characters',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({
     status: 404,

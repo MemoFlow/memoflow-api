@@ -14,6 +14,12 @@ import { startRedisContainer, RedisTestEnv } from './utils/redis-testcontainer';
 const PASSWORD = 'correct-horse-battery-staple';
 
 /** Stand-in for the external suggestion generator; never calls a real API. */
+/** The text between the untrusted tags, so a reply never echoes the fence
+ * (and with it the nonce), which the output guard rightly rejects. */
+function fencedContent(user: string): string {
+  return user.replace(/<\/?untrusted_[0-9a-f]+>\n?/g, '').replace(/\n$/, '');
+}
+
 class FakeSuggestionGenerator {
   isAvailable(): boolean {
     return true;
@@ -25,7 +31,7 @@ class FakeSuggestionGenerator {
     featureType: string;
   }): Promise<{ suggestedText: string; model: string }> {
     return Promise.resolve({
-      suggestedText: `Better: ${input.user}`,
+      suggestedText: `Better: ${fencedContent(input.user)}`,
       model: 'fake/model-1',
     });
   }

@@ -47,6 +47,16 @@ export class SuggestionsController {
     description:
       'Section not found (or not owned by the caller), or no active prompt configured for the feature type',
   })
+  @ApiResponse({
+    status: 422,
+    description:
+      'Section text exceeds the AI input limit (AI_MAX_INPUT_CHARS), or the model refused to answer',
+  })
+  @ApiResponse({
+    status: 502,
+    description:
+      'The AI provider failed, was truncated, or returned an invalid or rejected response',
+  })
   @ApiResponse({ status: 503, description: 'AI not configured' })
   async create(
     @CurrentUser() user: User,

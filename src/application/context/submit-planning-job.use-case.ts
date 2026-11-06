@@ -68,10 +68,13 @@ export class SubmitPlanningJobUseCase {
         userId: created.userId,
       });
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : 'Failed to enqueue job';
+      // Clients read the stored message and a queue error can carry an
+      // internal address: store a fixed one and log only the error name.
+      const errorMessage = 'Failed to enqueue job';
       this.logger.error(
-        `Failed to enqueue planning job ${created.id}: ${errorMessage}`,
+        `Failed to enqueue planning job ${created.id} (${
+          err instanceof Error ? err.name : 'unknown'
+        })`,
       );
       // No orphaned `pending` job — mark it failed so it never looks like
       // it's silently in flight, then surface 503 to the caller. Guarded in
@@ -85,12 +88,10 @@ export class SubmitPlanningJobUseCase {
           finishedAt: new Date(),
         });
       } catch (updateErr) {
-        const updateErrorMessage =
-          updateErr instanceof Error
-            ? updateErr.message
-            : 'Failed to mark job as failed';
         this.logger.error(
-          `Failed to mark planning job ${created.id} as failed after enqueue failure: ${updateErrorMessage}`,
+          `Failed to mark planning job ${created.id} as failed after enqueue failure (${
+            updateErr instanceof Error ? updateErr.name : 'unknown'
+          })`,
         );
       }
       throw new ServiceUnavailableException(

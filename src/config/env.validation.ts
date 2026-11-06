@@ -319,6 +319,24 @@ export class EnvironmentVariables {
   @Min(1)
   OPENROUTER_TIMEOUT_MS: number = 60_000;
 
+  // Extra attempts after a 429 (with Retry-After), 5xx or network failure.
+  // Conservative: free models count failed attempts against a daily cap.
+  // Timeouts and other 4xx are never retried.
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(3)
+  OPENROUTER_MAX_RETRIES: number = 1;
+
+  // Longest section text (suggestions) and serialised context (planning)
+  // sent to the model, in characters. Over the limit, a suggestion request
+  // gets 422 before any provider call; planning context is cut.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(200_000)
+  AI_MAX_INPUT_CHARS: number = 40_000;
+
   // Operator config only; overridable so tests can target a fake server.
   @IsOptional()
   @IsString()

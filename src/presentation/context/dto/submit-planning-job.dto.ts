@@ -5,14 +5,20 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  MaxLength,
   MinLength,
 } from 'class-validator';
 
 export class SubmitPlanningJobDto {
-  @ApiProperty({ example: 'Draft an outline for chapter 3' })
+  @ApiProperty({
+    example: 'Draft an outline for chapter 3',
+    minLength: 1,
+    maxLength: 5000,
+  })
   @IsString()
   @IsNotEmpty()
   @MinLength(1)
+  @MaxLength(5000)
   prompt: string;
 
   @ApiPropertyOptional({

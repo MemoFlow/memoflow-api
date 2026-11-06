@@ -167,9 +167,7 @@ export class ContextResultsConsumer implements OnModuleInit {
       this.logger.log('RabbitMQ context-results channel connected');
     });
     this.channelWrapper.on('error', (err: Error) => {
-      this.logger.error(
-        `RabbitMQ context-results channel error: ${err.message}`,
-      );
+      this.logger.error(`RabbitMQ context-results channel error (${err.name})`);
     });
     this.channelWrapper
       .consume(
@@ -184,9 +182,7 @@ export class ContextResultsConsumer implements OnModuleInit {
       })
       .catch((err: unknown) => {
         this.logger.error(
-          `RabbitMQ context-results consumer registration failed: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
+          `RabbitMQ context-results consumer registration failed (${errorName(err)})`,
         );
       });
     return Promise.resolve();
@@ -231,9 +227,7 @@ export class ContextResultsConsumer implements OnModuleInit {
       .then(work)
       .catch((err: unknown) => {
         this.logger.error(
-          `Unexpected failure handling context result chunk for job ${jobId}: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
+          `Unexpected failure handling context result chunk for job ${jobId} (${errorName(err)})`,
         );
       })
       .finally(() => {
@@ -293,10 +287,9 @@ export class ContextResultsConsumer implements OnModuleInit {
       // consumer (redeliver -> fail -> redeliver...) — this is a cheap
       // backstop, not a real backoff policy (there's no per-message retry
       // count here, unlike BullMQ); it just spaces requeues out a bit.
-      const errorMessage = err instanceof Error ? err.message : String(err);
       this.logger.error(
         `Transient failure handling context result chunk for job ` +
-          `${chunk.jobId} (sequence ${chunk.sequence}), requeueing: ${errorMessage}`,
+          `${chunk.jobId} (sequence ${chunk.sequence}), requeueing (${errorName(err)})`,
       );
       await this.delay(TRANSIENT_REQUEUE_DELAY_MS);
       this.channelWrapper.nack(msg, false, true);
@@ -358,4 +351,9 @@ export class ContextResultsConsumer implements OnModuleInit {
       });
     }
   }
+}
+
+/** Error name only: messages can echo job or provider content. */
+function errorName(err: unknown): string {
+  return err instanceof Error ? err.name : 'unknown';
 }

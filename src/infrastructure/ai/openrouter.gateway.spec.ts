@@ -75,6 +75,7 @@ describe('OpenRouterGateway (fake HTTP server)', () => {
       OPENROUTER_MODEL: 'primary/model',
       OPENROUTER_TIMEOUT_MS: 2000,
       OPENROUTER_MAX_TOKENS: 777,
+      OPENROUTER_MAX_RETRIES: 0,
       ...extra,
     };
     return new OpenRouterGateway({
@@ -444,5 +445,176 @@ describe('OpenRouterGateway (fake HTTP server)', () => {
       gateway({ OPENROUTER_BASE_URL: 'http://127.0.0.1:1/api/v1' }),
     );
     expect(net.message).not.toContain(API_KEY);
+  });
+
+  describe('retries', () => {
+    const retrying = (extra: Record<string, unknown> = {}) =>
+      gateway({
+        OPENROUTER_MAX_RETRIES: 1,
+        OPENROUTER_TIMEOUT_MS: 10_000,
+        ...extra,
+      });
+    const good = (res: ServerResponse) => json(res, 200, ok('{"a":"fine"}'));
+
+    it('retries a 5xx once after a backoff of 500ms or more, then succeeds', async () => {
+      handler = (_r, res, n) => (n === 1 ? json(res, 503, {}) : good(res));
+      const started = Date.now();
+      const result = await retrying().complete(REQUEST);
+
+      expect(result.json).toEqual({ a: 'fine' });
+      expect(captured).toHaveLength(2);
+      expect(Date.now() - started).toBeGreaterThanOrEqual(480);
+    });
+
+    it('stops after the configured number of retries and surfaces Unavailable', async () => {
+      handler = (_r, res) => json(res, 500, {});
+      const err = await failure(retrying());
+      expect(err).toBeInstanceOf(SuggestionGeneratorUnavailableError);
+      expect(captured).toHaveLength(2);
+    });
+
+    it('honours a higher OPENROUTER_MAX_RETRIES', async () => {
+      handler = (_r, res) => json(res, 502, {});
+      await failure(retrying({ OPENROUTER_MAX_RETRIES: 3 }));
+      expect(captured).toHaveLength(4);
+    });
+
+    it('does not retry when OPENROUTER_MAX_RETRIES is 0', async () => {
+      handler = (_r, res) => json(res, 503, {});
+      await failure(retrying({ OPENROUTER_MAX_RETRIES: 0 }));
+      expect(captured).toHaveLength(1);
+    });
+
+    it('retries a network failure', async () => {
+      handler = (_r, res, n) => (n === 1 ? res.socket?.destroy() : good(res));
+      await expect(retrying().complete(REQUEST)).resolves.toBeDefined();
+      expect(captured).toHaveLength(2);
+    });
+
+    it('retries a 5xx reported inside HTTP 200', async () => {
+      handler = (_r, res, n) =>
+        n === 1 ? json(res, 200, { error: { code: 503 } }) : good(res);
+      await expect(retrying().complete(REQUEST)).resolves.toBeDefined();
+      expect(captured).toHaveLength(2);
+    });
+
+    it('retries a 429 that has a short retry-after, waiting for it', async () => {
+      handler = (_r, res, n) =>
+        n === 1 ? json(res, 429, {}, { 'retry-after': '1' }) : good(res);
+      const started = Date.now();
+      await expect(retrying().complete(REQUEST)).resolves.toBeDefined();
+      expect(captured).toHaveLength(2);
+      expect(Date.now() - started).toBeGreaterThanOrEqual(950);
+    });
+
+    it('does not retry a 429 without retry-after', async () => {
+      handler = (_r, res) => json(res, 429, {});
+      const err = await failure(retrying());
+      expect(err).toBeInstanceOf(SuggestionGeneratorRateLimitedError);
+      expect(captured).toHaveLength(1);
+    });
+
+    it('does not retry a 429 whose retry-after is over 10 seconds', async () => {
+      handler = (_r, res) => json(res, 429, {}, { 'retry-after': '11' });
+      const err = await failure(retrying());
+      expect(err).toBeInstanceOf(SuggestionGeneratorRateLimitedError);
+      expect(
+        (err as SuggestionGeneratorRateLimitedError).retryAfterSeconds,
+      ).toBe(11);
+      expect(captured).toHaveLength(1);
+    });
+
+    it('does not retry a 429 whose retry-after does not fit the deadline', async () => {
+      handler = (_r, res) => json(res, 429, {}, { 'retry-after': '5' });
+      const err = await failure(retrying({ OPENROUTER_TIMEOUT_MS: 3000 }));
+      expect(err).toBeInstanceOf(SuggestionGeneratorRateLimitedError);
+      expect(captured).toHaveLength(1);
+    });
+
+    it('does not retry a 5xx whose backoff does not fit the deadline', async () => {
+      handler = (_r, res) => json(res, 503, {});
+      const err = await failure(retrying({ OPENROUTER_TIMEOUT_MS: 400 }));
+      expect(err).toBeInstanceOf(SuggestionGeneratorUnavailableError);
+      expect(captured).toHaveLength(1);
+    });
+
+    it('does not retry when less than a second would remain after the wait', async () => {
+      handler = (_r, res) => json(res, 503, {});
+      await failure(retrying({ OPENROUTER_TIMEOUT_MS: 1400 }));
+      expect(captured).toHaveLength(1);
+
+      captured = [];
+      handler = (_r, res) => json(res, 429, {}, { 'retry-after': '1' });
+      await failure(retrying({ OPENROUTER_TIMEOUT_MS: 1900 }));
+      expect(captured).toHaveLength(1);
+    });
+
+    it.each([400, 401, 403, 404, 408, 422])(
+      'does not retry a %i',
+      async (status) => {
+        handler = (_r, res) => json(res, status, {});
+        await failure(retrying({ OPENROUTER_MAX_RETRIES: 3 }));
+        expect(captured).toHaveLength(1);
+      },
+    );
+
+    it('does not retry finish_reason length or content_filter', async () => {
+      handler = (_r, res) => json(res, 200, ok('x', {}, 'length'));
+      expect(await failure(retrying())).toBeInstanceOf(
+        SuggestionGenerationTruncatedError,
+      );
+      expect(captured).toHaveLength(1);
+
+      captured = [];
+      handler = (_r, res) => json(res, 200, ok('x', {}, 'content_filter'));
+      expect(await failure(retrying())).toBeInstanceOf(
+        SuggestionGenerationRefusedError,
+      );
+      expect(captured).toHaveLength(1);
+    });
+
+    it('does not retry a timeout, even with retries available', async () => {
+      handler = () => {
+        /* never respond */
+      };
+      const err = await failure(
+        retrying({ OPENROUTER_MAX_RETRIES: 3, OPENROUTER_TIMEOUT_MS: 200 }),
+      );
+      expect(err).toBeInstanceOf(SuggestionGeneratorUnavailableError);
+      expect(captured).toHaveLength(1);
+    });
+
+    it('shares the retry budget with the repair retry', async () => {
+      // 503 (retried), prose, then the repair attempt succeeds.
+      handler = (_r, res, n) => {
+        if (n === 1) json(res, 503, {});
+        else if (n === 2) json(res, 200, ok('prose'));
+        else good(res);
+      };
+      await expect(retrying().complete(REQUEST)).resolves.toBeDefined();
+      expect(captured).toHaveLength(3);
+
+      // 503 (retried), prose, then a 503 on the repair: budget is spent.
+      captured = [];
+      handler = (_r, res, n) => {
+        if (n === 2) json(res, 200, ok('prose'));
+        else json(res, 503, {});
+      };
+      const err = await failure(retrying());
+      expect(err).toBeInstanceOf(SuggestionGeneratorUnavailableError);
+      expect(captured).toHaveLength(3);
+    });
+
+    it('bounds all attempts by the single deadline', async () => {
+      handler = (_r, res, n) => {
+        if (n === 1) json(res, 503, {});
+        // the retry hangs and must abort at the shared deadline
+      };
+      const started = Date.now();
+      const err = await failure(retrying({ OPENROUTER_TIMEOUT_MS: 2200 }));
+      expect(err).toBeInstanceOf(SuggestionGeneratorUnavailableError);
+      expect(captured).toHaveLength(2);
+      expect(Date.now() - started).toBeLessThan(2900);
+    });
   });
 });

@@ -280,7 +280,7 @@ describe('ProcessPlanningJobUseCase', () => {
     const { job } = await useCase.execute({ jobId: 'job-1' });
 
     expect(job.status).toBe(JobStatus.Failed);
-    expect(job.errorMessage).toContain('nope');
+    expect(job.errorMessage).toBe('Planning job processing failed');
     expect(job.promptVersion).toBe('v1');
     expect(planSpy).not.toHaveBeenCalled();
   });
@@ -345,7 +345,8 @@ describe('ProcessPlanningJobUseCase', () => {
     expect(processed).toBe(true);
     expect(job.status).toBe(JobStatus.Failed);
     expect(job.errorCode).toBe('PROCESSING_FAILED');
-    expect(job.errorMessage).toBe('connector unavailable');
+    // A raw error message never reaches the job (clients read it).
+    expect(job.errorMessage).toBe('Planning job processing failed');
   });
 
   it('is idempotent: an already-completed job is returned unchanged with processed=false, and gather/plan are never called', async () => {
@@ -429,5 +430,35 @@ describe('ProcessPlanningJobUseCase', () => {
     await expect(useCase.execute({ jobId: 'missing' })).rejects.toThrow(
       'Planning job missing not found',
     );
+  });
+
+  it('fails the job with a fixed message when the planner echoes the nonce', async () => {
+    const repository = new InMemoryPlanningJobRepository();
+    repository.seed(makeJob());
+    const planner: LlmPlanner = {
+      plan: (input) =>
+        Promise.resolve({
+          suggestions: [
+            `leak ${/untrusted_([0-9a-f]{32})/.exec(input.system)![1]}`,
+          ],
+          outline: null,
+          sources: [],
+          model: 'm',
+        }),
+    };
+    const useCase = new ProcessPlanningJobUseCase(
+      repository,
+      new StubGatherer(),
+      planner,
+      new FakePromptRepository([makePlanningPrompt()]),
+    );
+
+    const job = (await useCase.execute({ jobId: 'job-1' })).job;
+
+    expect(job.status).toBe(JobStatus.Failed);
+    expect(job.errorMessage).toBe(
+      'The AI planner returned a result that was rejected',
+    );
+    expect(job.result).toBeNull();
   });
 });
