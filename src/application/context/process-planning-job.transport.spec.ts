@@ -1,5 +1,4 @@
-import { Prompt } from '../../domain/ai/prompt.entity';
-import { PromptRepository } from '../../domain/ai/prompt.repository';
+import { InMemoryPromptRepository } from '../ai/testing-fakes';
 import { ConnectorConnection } from '../../domain/connectors/connector-connection.entity';
 import { ConnectorConnectionRepository } from '../../domain/connectors/connector-connection.repository';
 import { ConnectorProvider } from '../../domain/connectors/connector-provider';
@@ -118,11 +117,7 @@ class InMemoryPlanningJobRepository implements PlanningJobRepository {
   }
 }
 
-class FakePromptRepository implements PromptRepository {
-  findActiveByFeatureType(): Promise<Prompt | null> {
-    return Promise.resolve(null);
-  }
-}
+class FakePromptRepository extends InMemoryPromptRepository {}
 
 class StubGatherer implements ContextGatherer {
   gather(): Promise<Record<string, unknown>> {

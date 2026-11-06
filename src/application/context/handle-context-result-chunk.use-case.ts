@@ -16,14 +16,11 @@ import {
   PlanningJob,
 } from '../../domain/context/planning-job';
 import { PLANNING_JOB_REPOSITORY } from '../../domain/context/planning-job.repository';
+import { renderPlanningPrompt, resolvePlanningPrompt } from './planning-prompt';
 import type {
   AppendResultChunkData,
   PlanningJobRepository,
 } from '../../domain/context/planning-job.repository';
-
-/** Feature type of the active prompt whose version is recorded on the job —
- * mirrors `ProcessPlanningJobUseCase`. */
-const PLANNING_FEATURE_TYPE = 'planning';
 
 export interface HandleContextResultChunkInput {
   chunk: ContextResultChunk;
@@ -175,16 +172,20 @@ export class HandleContextResultChunkUseCase {
       return null;
     }
 
-    const activePrompt = await this.promptRepository.findActiveByFeatureType(
-      PLANNING_FEATURE_TYPE,
-    );
-    const promptVersion = activePrompt?.version ?? null;
+    const resolvedPrompt = await resolvePlanningPrompt(this.promptRepository);
+    const promptVersion = resolvedPrompt.promptVersion;
 
     let result: PlanningResult;
     try {
+      const rendered = renderPlanningPrompt(
+        resolvedPrompt,
+        claimed.prompt,
+        contextUsed,
+      );
       result = await this.llmPlanner.plan({
         prompt: claimed.prompt,
         context: contextUsed,
+        ...rendered,
       });
     } catch (err) {
       const errorMessage =
@@ -210,7 +211,8 @@ export class HandleContextResultChunkUseCase {
       );
     }
 
-    const resultDoc: Record<string, unknown> = { ...result };
+    const { model, ...resultFields } = result;
+    const resultDoc: Record<string, unknown> = { ...resultFields };
     const completed = await this.planningJobRepository.updateStatus(
       claimed.id,
       {
@@ -218,6 +220,7 @@ export class HandleContextResultChunkUseCase {
         result: resultDoc,
         finishedAt: new Date(),
         promptVersion,
+        model,
         contextUsed,
       },
     );
@@ -227,6 +230,7 @@ export class HandleContextResultChunkUseCase {
         status: JobStatus.Completed,
         result: resultDoc,
         promptVersion,
+        model,
         contextUsed,
       }
     );

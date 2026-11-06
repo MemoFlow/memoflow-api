@@ -1,8 +1,9 @@
 import { Prompt } from '../../domain/ai/prompt.entity';
-import { PromptRepository } from '../../domain/ai/prompt.repository';
+import { InMemoryPromptRepository, makePrompt } from '../ai/testing-fakes';
 import { ContextResultChunk } from '../../domain/context/context-result-chunk';
 import {
   LlmPlanner,
+  PlanInput,
   PlanningResult,
 } from '../../domain/context/llm-planner.port';
 import { JobStatus, PlanningJob } from '../../domain/context/planning-job';
@@ -52,6 +53,7 @@ class InMemoryPlanningJobRepository implements PlanningJobRepository {
         patch.promptVersion !== undefined
           ? patch.promptVersion
           : existing.promptVersion,
+      model: patch.model !== undefined ? patch.model : existing.model,
       contextUsed:
         patch.contextUsed !== undefined
           ? patch.contextUsed
@@ -144,31 +146,29 @@ class InMemoryPlanningJobRepository implements PlanningJobRepository {
   }
 }
 
-class FakePromptRepository implements PromptRepository {
-  constructor(private readonly prompt: Prompt | null = null) {}
-  findActiveByFeatureType(): Promise<Prompt | null> {
-    return Promise.resolve(this.prompt);
+class FakePromptRepository extends InMemoryPromptRepository {
+  constructor(prompt: Prompt | null = null) {
+    super(prompt ? [prompt] : []);
   }
 }
 
 function makePlanningPrompt(): Prompt {
-  return new Prompt({
-    id: 'prompt-1',
+  return makePrompt({
     featureType: 'planning',
     version: 'v2',
-    template: 'Plan this: {{prompt}}',
-    isActive: true,
-    createdAt: new Date('2026-01-01T00:00:00.000Z'),
-    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    systemTemplate: 'SYS <untrusted_{{nonce}}>',
+    template: 'Plan this: {{prompt}} | {{context}} | {{nonce}}',
+    userInvocable: false,
   });
 }
 
 class StubPlanner implements LlmPlanner {
-  plan(input: { prompt: string }): Promise<PlanningResult> {
+  plan(input: PlanInput): Promise<PlanningResult> {
     return Promise.resolve({
       suggestions: [`(stub plan) ${input.prompt}`],
       outline: null,
       sources: [],
+      model: null,
     });
   }
 }
@@ -364,15 +364,70 @@ describe('HandleContextResultChunkUseCase', () => {
         { provider: 'notion', content: '{"pages":[]}', tokenEstimate: null },
       ],
     });
-    expect(planSpy).toHaveBeenCalledWith({
-      prompt: 'Plan my chapter',
-      context: result.job?.contextUsed,
-    });
+    expect(planSpy).toHaveBeenCalledTimes(1);
+    const planInput = planSpy.mock.calls[0][0];
+    expect(planInput.prompt).toBe('Plan my chapter');
+    expect(planInput.context).toEqual(result.job?.contextUsed);
+    // Rendered from the active prompt: placeholders filled, nonce shared.
+    const nonce = /^SYS <untrusted_([0-9a-f]{32})>$/.exec(
+      planInput.system,
+    )?.[1];
+    expect(nonce).toBeDefined();
+    expect(planInput.user).toBe(
+      `Plan this: Plan my chapter | ${JSON.stringify(result.job?.contextUsed)} | ${nonce}`,
+    );
     expect(result.job?.result).toEqual({
       suggestions: ['(stub plan) Plan my chapter'],
       outline: null,
       sources: [],
     });
+  });
+
+  it('falls back to the built-in planning prompt with a null promptVersion when none is active', async () => {
+    const repository = new InMemoryPlanningJobRepository();
+    repository.seed(makeJob());
+    const planner = new StubPlanner();
+    const planSpy = jest.spyOn(planner, 'plan');
+    const useCase = new HandleContextResultChunkUseCase(
+      repository,
+      planner,
+      new FakePromptRepository(),
+    );
+
+    const result = await useCase.execute({
+      chunk: statusChunk('completed', {}, 0),
+    });
+
+    expect(result.job?.status).toBe(JobStatus.Completed);
+    expect(result.job?.promptVersion).toBeNull();
+    const planInput = planSpy.mock.calls[0][0];
+    expect(planInput.system).toContain("MemoFlow's writing assistant");
+    expect(planInput.user).toContain('Request:\n<untrusted_');
+    expect(planInput.user).toContain('Plan my chapter');
+    expect(planInput.system + planInput.user).not.toMatch(/\{\{/);
+  });
+
+  it('marks the job failed when the active prompt cannot be rendered', async () => {
+    const repository = new InMemoryPlanningJobRepository();
+    repository.seed(makeJob());
+    const planner = new StubPlanner();
+    const planSpy = jest.spyOn(planner, 'plan');
+    const useCase = new HandleContextResultChunkUseCase(
+      repository,
+      planner,
+      new FakePromptRepository(
+        Object.assign(makePlanningPrompt(), { template: 'Bad {{nope}}' }),
+      ),
+    );
+
+    const result = await useCase.execute({
+      chunk: statusChunk('completed', {}, 0),
+    });
+
+    expect(result.job?.status).toBe(JobStatus.Failed);
+    expect(result.job?.errorCode).toBe('PROCESSING_FAILED');
+    expect(result.job?.promptVersion).toBe('v2');
+    expect(planSpy).not.toHaveBeenCalled();
   });
 
   it('a non-terminal status chunk never triggers termination even though type is status', async () => {

@@ -1,8 +1,7 @@
+import { InMemoryPromptRepository } from '../../../application/ai/testing-fakes';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as Sentry from '@sentry/nestjs';
 import { Job } from 'bullmq';
-import { Prompt } from '../../../domain/ai/prompt.entity';
-import { PromptRepository } from '../../../domain/ai/prompt.repository';
 import { ConnectorConnection } from '../../../domain/connectors/connector-connection.entity';
 import { ConnectorConnectionRepository } from '../../../domain/connectors/connector-connection.repository';
 import { ContextGatherer } from '../../../domain/context/context-gatherer.port';
@@ -111,11 +110,7 @@ class InMemoryPlanningJobRepository implements PlanningJobRepository {
   }
 }
 
-class FakePromptRepository implements PromptRepository {
-  findActiveByFeatureType(): Promise<Prompt | null> {
-    return Promise.resolve(null);
-  }
-}
+class FakePromptRepository extends InMemoryPromptRepository {}
 
 class UnreachableGatherer implements ContextGatherer {
   gather(): Promise<Record<string, unknown>> {

@@ -25,6 +25,8 @@ export const AUTH_LOGOUT_EVENT = 'auth.logout';
 export const AUTH_EMAIL_VERIFIED_EVENT = 'auth.email_verified';
 export const CONNECTOR_REVOKED_EVENT = 'connector.revoked';
 export const SUGGESTION_REVIEWED_EVENT = 'suggestion.reviewed';
+export const PROMPT_CREATED_EVENT = 'prompt.created';
+export const PROMPT_ACTIVATED_EVENT = 'prompt.activated';
 
 export interface AuthLoginEventPayload {
   userId: string;
@@ -51,4 +53,12 @@ export interface SuggestionReviewedEventPayload {
   userId: string;
   suggestionId: string;
   decision: string;
+}
+
+/** Shared by the admin prompt events; `userId` is the acting admin. */
+export interface PromptAuditEventPayload {
+  userId: string;
+  promptId: string;
+  featureType: string;
+  version: string;
 }

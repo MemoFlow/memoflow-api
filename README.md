@@ -86,9 +86,12 @@ via `@nestjs/jwt` and validated by Passport-JWT.
 | `POST` | `/documents/:documentId/versions/:versionId/restore` | JWT | replaces the document's current sections with the version's snapshot; writes nothing to Mongo |
 | `POST` | `/planning-jobs` | JWT | submits a planning prompt (optionally bound to an owned `documentId`/`sectionId`); returns **202** + `{ job_id, status: "pending" }` |
 | `GET` | `/planning-jobs/:id` | JWT | fetch a planning job by id, owner-scoped |
-| `POST` | `/sections/:sectionId/suggestions` | JWT | generates an AI suggestion for a section; 404 if the section isn't owned by the caller or no active prompt exists for `featureType`; 503 if AI isn't configured |
+| `POST` | `/sections/:sectionId/suggestions` | JWT | generates an AI suggestion for a section; 404 if the section isn't owned by the caller or `featureType` isn't a user-invocable type with an active prompt (`suggestion`, `rewrite`, `summarize`, `expand`; `planning` and unknown types get the same 404); 503 if AI is unavailable (not configured, provider outage or a misconfigured prompt) |
 | `GET` | `/sections/:sectionId/suggestions` | JWT | lists a section's AI suggestions, newest first |
 | `PATCH` | `/suggestions/:id` | JWT | accepts or rejects a **pending** suggestion; 409 if already reviewed |
+| `GET` | `/admin/prompts` | JWT (admin) | lists prompts, optionally filtered by `feature_type` |
+| `POST` | `/admin/prompts` | JWT (admin) | creates an inactive prompt version (`feature_type`, `version`, `system_template`, `user_template`); 409 if that version exists |
+| `POST` | `/admin/prompts/:id/activate` | JWT (admin) | makes a prompt the active one for its feature type |
 | `POST` | `/connectors/:provider/connect` | JWT | starts a Composio OAuth connection for a provider; returns `{ redirect_url, connection_id, status }` |
 | `GET` | `/connectors` | JWT | lists the caller's connector connections; reconciles any `initiated` connection against Composio first |
 | `GET` | `/connectors/:id` | JWT | fetch a connector connection by id, owner-scoped; reconciles if `initiated` |

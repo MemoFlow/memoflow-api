@@ -188,10 +188,11 @@ Slices 3 and 7 of the AI rework revisit this section.
 **Result: provisional.** Item 39 passed the original provider adapters. The gateway code
 that replaced them hasn't had that review yet; slices 3 and 7 do it.
 
-- Both call sites pass a fixed `system` prompt and the content as the `user`
-  message, through the `LlmGateway` port. `GatewaySuggestionGenerator.generate`
-  sends `input.promptTemplate` as the user message; `GatewayLlmPlanner.plan` renders
-  the prompt + gathered context into one string and sends that as the user message.
+- The use-cases render the active prompt's `system_template` and user template with a
+  random per-request nonce, and the adapters forward them unchanged as the `system` and
+  `user` messages through the `LlmGateway` port. Document and connector text goes only
+  in the user message, inside `<untrusted_{{nonce}}>` tags; system templates accept no
+  other placeholder. Admins author the prompts, so they're trusted with the system text.
 - Both requests set a `json_schema` `response_format` and the reply is parsed
   with `JSON.parse` into a typed shape; malformed output throws rather than being
   interpreted as instructions. Neither file ever `eval`s or execs the model's output.
@@ -222,7 +223,8 @@ under `NODE_ENV=test` so e2e suites don't trip it.
 - Admins can publish templates; edit, unpublish or delete any template, including
   system templates; view any user via `GET /users/:id` (including `disabled_at`) and
   any template's `created_by`; and disable/enable accounts
-  (`POST /users/:id/disable`, `/enable`; an admin can't disable their own account).
+  (`POST /users/:id/disable`, `/enable`; an admin can't disable their own account); and
+  list, create and activate AI prompts (`/admin/prompts`).
 - Non-admins can create, edit and delete their own unpublished templates. They can't
   publish, or edit a template once it's published, but can delete their own.
 - The first admin is created out-of-band: `ADMIN_EMAIL=<email> npm run admin:promote`

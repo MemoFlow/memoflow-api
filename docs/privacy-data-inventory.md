@@ -21,7 +21,7 @@
 | Activity profile | `last_active_at`, `xp`, `level` | PG `users` | Leaderboard and "last seen". |
 | User content | document title/type/status/style; section title and text; user-created templates (title, style, template sections); which template a document used | PG `documents`, `sections`, `templates`, `template_sections`, `document_templates` | The product itself. `sections.content` is free text and may contain anything the user types. |
 | Version history | full section snapshots, optional user label, user and document ids | Mongo `document_versions` | Restore points. Copies section text. |
-| AI usage | prompt, selected connectors, context gathered from connected apps, result, error text, user/document/section ids; per-suggestion original and suggested text, feature type, status | Mongo `planning_jobs` (incl. `context_used`, `data_chunks`); PG `ai_suggestions` | Planning jobs and suggestions. `context_used` / `data_chunks` can hold content pulled from the user's connected apps. |
+| AI usage | prompt, selected connectors, context gathered from connected apps, result, error text, model, user/document/section ids; per-suggestion original and suggested text, feature type, status, model that served it | Mongo `planning_jobs` (incl. `context_used`, `data_chunks`); PG `ai_suggestions` | Planning jobs and suggestions. `context_used` / `data_chunks` can hold content pulled from the user's connected apps. |
 | Connected apps | provider name, Composio connected-account id, status, connect time | PG `connector_connections` | Reference to a connection held at Composio. No provider tokens here. |
 | Gamification | milestones awarded, mission progress | PG `milestones`, `mission_progress` | XP and daily missions. |
 | Account creation time | `created_at` | PG `users` | When the account was registered; shown to admins as `registered_at` on the lead routes. Accounts that predate the column carry the migration time. |
@@ -30,13 +30,13 @@
 | Lead signals | signal type (`export_paywall_hit`), first and last seen, occurrence count | PG `lead_signals` | Behaviour reported by the frontend, used as a scoring input. Client-reported, so a heuristic. |
 | Lead score (profiling) | score, tier (`hot`/`warm`/`cold`), per-rule breakdown, computed time | PG `lead_scores` | Automated score derived from onboarding answers, signals and connected-app status, used to suggest an outreach action. Visible only on admin routes, never returned to the user; admins see it next to the user's email and display name. Not refreshed as time passes. |
 | Login attempt counter | SHA-256 hash of the normalized email, attempt count; expires after 15 minutes | Redis (`login-attempts:<hash>`) | Per-account login throttle. The address itself isn't stored; the hash can still be matched against a known address. |
-| Audit trail | user id, action, small metadata, `ip` (unused), time | PG `audit_logs` | Security events: `auth.login`, `auth.login_failed`, `auth.logout`, `connector.revoked`, `suggestion.reviewed` (`src/domain/audit/audit-events.ts`). A failed login stores the **typed email** in metadata, even when it matches no account (`src/application/auth/login-user.use-case.ts`). |
+| Audit trail | user id, action, small metadata, `ip` (unused), time | PG `audit_logs` | Security events: `auth.login`, `auth.login_failed`, `auth.logout`, `connector.revoked`, `suggestion.reviewed`, `prompt.created`, `prompt.activated` (`src/domain/audit/audit-events.ts`). A failed login stores the **typed email** in metadata, even when it matches no account (`src/application/auth/login-user.use-case.ts`). |
 
 Tables with no user data (verified against the migrations and `scripts/seed.ts`):
 
 | Table | Reason |
 | --- | --- |
-| `prompts` | System prompt templates, seeded by `scripts/seed.ts`; no public controller. |
+| `prompts` | System and user prompt templates, shipped by migration and managed by admins through `/admin/prompts`; no user data. |
 | `daily_missions` | System-defined mission catalogue (code, description, reward, criteria). |
 
 All other tables and both Mongo collections in the schema doc appear above.

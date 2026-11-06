@@ -150,7 +150,7 @@ async function waitForApiConsumerReady(
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const conn = await amqplib.connect(url);
+    const conn = await connectFakeCe(url);
     try {
       const ch = await conn.createChannel();
       ch.on('error', () => undefined);
@@ -349,9 +349,9 @@ async function preflightRabbitMq(
 }
 
 /**
- * Opens a fake-CE amqplib connection, retrying a transient broker-side
- * connect reset (`connect ECONNRESET`) the same way `preflightRabbitMq`
- * does — the raw `amqplib.connect` is otherwise a single unguarded attempt.
+ * Opens a fake-CE amqplib connection, retrying a transient connect failure
+ * the same way `preflightRabbitMq` does — the raw `amqplib.connect` is
+ * otherwise a single unguarded attempt.
  */
 async function connectFakeCe(
   url: string,
@@ -373,12 +373,10 @@ async function connectFakeCe(
   );
 }
 
-// Retry transient failures in this suite. The rabbitmq:3.13-alpine container
-// intermittently resets connections under CI load (`connect ECONNRESET`) —
-// a broker-side socket reset no client-side error handler can prevent. A
-// retry re-runs the affected test against the same (now-settled) broker; a
-// genuine bug still fails all attempts. `registerAndLogin` tolerates a 409 so
-// the re-run is idempotent. Scoped to this file only (its own Jest worker).
+// Retry transient failures in this suite: a retry re-runs the affected test
+// against the same broker, while a genuine bug still fails all attempts.
+// `registerAndLogin` tolerates a 409 so the re-run is idempotent. Scoped to this
+// file only (its own Jest worker).
 jest.retryTimes(2, { logErrorsBeforeRetry: true });
 
 // Boots the full AppModule against Testcontainers PostgreSQL + Redis + a
@@ -503,6 +501,10 @@ describeWithDocker()('RabbitMQ context-engine transport (e2e)', () => {
     // amqp-connection-manager connects in the background and asserts the
     // topology in each channel's setup), so wait for readiness explicitly.
     await app.init();
+    // Keep one listening server for the whole suite. Otherwise supertest opens
+    // and closes a server on a new random port for every request, which showed
+    // up in CI as `connect ECONNRESET 127.0.0.1:<different port each time>`.
+    await app.listen(0, '127.0.0.1');
     await waitForApiConsumerReady(rabbitmqUrl);
     // Hook budget must exceed container startup (120s, .withStartupTimeout
     // above) + worst-case preflight (15 attempts x (5s connect timeout + 2s

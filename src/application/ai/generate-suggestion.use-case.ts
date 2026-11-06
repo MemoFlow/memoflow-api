@@ -1,7 +1,9 @@
+import { randomBytes } from 'node:crypto';
 import {
   BadGatewayException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   ServiceUnavailableException,
   UnprocessableEntityException,
@@ -9,6 +11,7 @@ import {
 import { AiSuggestion } from '../../domain/ai/ai-suggestion.entity';
 import { AI_SUGGESTION_REPOSITORY } from '../../domain/ai/ai-suggestion.repository';
 import type { AiSuggestionRepository } from '../../domain/ai/ai-suggestion.repository';
+import { renderPrompt } from '../../domain/ai/prompt-render';
 import { PROMPT_REPOSITORY } from '../../domain/ai/prompt.repository';
 import type { PromptRepository } from '../../domain/ai/prompt.repository';
 import {
@@ -32,15 +35,12 @@ export interface GenerateSuggestionInput {
   featureType: string;
 }
 
-/** Replaces every `{{content}}` placeholder in a prompt template. */
-function renderPromptTemplate(template: string, content: string): string {
-  return template.replace(/\{\{\s*content\s*\}\}/g, content);
-}
-
 /**
  * Generates (and persists) an AI suggestion for a section:
  * 1. the section must exist and its document be owned by the caller — 404;
- * 2. an active prompt for `featureType` must exist — 404;
+ * 2. an active, user-invocable prompt for `featureType` must exist — 404
+ *    (the same message when the prompt is internal, e.g. `planning`, so a
+ *    client can't tell it exists);
  * 3. the generator must be available (an API key configured) — 503;
  * 4. the actual generation call is wrapped so typed provider errors map to
  *    the right HTTP status (422 refusal, 502 truncated/other provider
@@ -48,6 +48,8 @@ function renderPromptTemplate(template: string, content: string): string {
  */
 @Injectable()
 export class GenerateSuggestionUseCase {
+  private readonly logger = new Logger(GenerateSuggestionUseCase.name);
+
   constructor(
     @Inject(SECTION_REPOSITORY)
     private readonly sectionRepository: SectionRepository,
@@ -72,7 +74,7 @@ export class GenerateSuggestionUseCase {
     const prompt = await this.promptRepository.findActiveByFeatureType(
       input.featureType,
     );
-    if (!prompt) {
+    if (!prompt || !prompt.userInvocable) {
       throw new NotFoundException(
         `No active prompt configured for feature type "${input.featureType}"`,
       );
@@ -82,16 +84,29 @@ export class GenerateSuggestionUseCase {
       throw new ServiceUnavailableException('AI not configured');
     }
 
-    const renderedTemplate = renderPromptTemplate(
-      prompt.template,
-      section.content,
-    );
+    // Fresh per request so document text can't predict the delimiter.
+    const vars = {
+      content: section.content,
+      nonce: randomBytes(16).toString('hex'),
+    };
+    let system: string;
+    let user: string;
+    try {
+      system = renderPrompt(prompt.systemTemplate, vars);
+      user = renderPrompt(prompt.template, vars);
+    } catch {
+      // Only metadata is logged: the error text may echo template content.
+      this.logger.error(
+        `Active prompt cannot be rendered (feature_type=${prompt.featureType}, version=${prompt.version})`,
+      );
+      throw new ServiceUnavailableException('AI prompt is misconfigured');
+    }
 
-    let generated: { suggestedText: string };
+    let generated: { suggestedText: string; model: string | null };
     try {
       generated = await this.suggestionGenerator.generate({
-        promptTemplate: renderedTemplate,
-        originalText: section.content,
+        system,
+        user,
         featureType: input.featureType,
       });
     } catch (err) {
@@ -105,6 +120,7 @@ export class GenerateSuggestionUseCase {
       originalText: section.content,
       suggestedText: generated.suggestedText,
       promptVersion: prompt.version,
+      model: generated.model,
     });
   }
 

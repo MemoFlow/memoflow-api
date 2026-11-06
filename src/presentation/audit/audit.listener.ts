@@ -10,6 +10,8 @@ import {
   AUTH_PASSWORD_RESET_COMPLETED_EVENT,
   AUTH_PASSWORD_RESET_REQUESTED_EVENT,
   CONNECTOR_REVOKED_EVENT,
+  PROMPT_ACTIVATED_EVENT,
+  PROMPT_CREATED_EVENT,
   SUGGESTION_REVIEWED_EVENT,
 } from '../../domain/audit/audit-events';
 import type {
@@ -17,6 +19,7 @@ import type {
   AuthLoginEventPayload,
   AuthLoginFailedEventPayload,
   ConnectorRevokedEventPayload,
+  PromptAuditEventPayload,
   SuggestionReviewedEventPayload,
 } from '../../domain/audit/audit-events';
 
@@ -113,6 +116,24 @@ export class AuditListener {
     await this.safeRecord(SUGGESTION_REVIEWED_EVENT, payload.userId, {
       suggestionId: payload.suggestionId,
       decision: payload.decision,
+    });
+  }
+
+  @OnEvent(PROMPT_CREATED_EVENT)
+  async onPromptCreated(payload: PromptAuditEventPayload): Promise<void> {
+    await this.safeRecord(PROMPT_CREATED_EVENT, payload.userId, {
+      promptId: payload.promptId,
+      featureType: payload.featureType,
+      version: payload.version,
+    });
+  }
+
+  @OnEvent(PROMPT_ACTIVATED_EVENT)
+  async onPromptActivated(payload: PromptAuditEventPayload): Promise<void> {
+    await this.safeRecord(PROMPT_ACTIVATED_EVENT, payload.userId, {
+      promptId: payload.promptId,
+      featureType: payload.featureType,
+      version: payload.version,
     });
   }
 

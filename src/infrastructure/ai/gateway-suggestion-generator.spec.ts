@@ -19,13 +19,13 @@ const completion = (json: unknown): LlmCompletion => ({
 });
 
 const input = {
-  promptTemplate: 'Improve this: Hello world',
-  originalText: 'Hello world',
+  system: 'You are a writing assistant.',
+  user: 'Improve this: Hello world',
   featureType: 'suggestion',
 };
 
 describe('GatewaySuggestionGenerator', () => {
-  it('maps the gateway JSON to { suggestedText } and sends the prompt as user message', async () => {
+  it('maps the gateway JSON to { suggestedText, model } and sends system and user as given', async () => {
     const complete = jest
       .fn()
       .mockResolvedValue(completion({ suggested_text: 'Better text.' }));
@@ -33,9 +33,11 @@ describe('GatewaySuggestionGenerator', () => {
 
     await expect(generator.generate(input)).resolves.toEqual({
       suggestedText: 'Better text.',
+      model: 'some/model',
     });
     expect(complete).toHaveBeenCalledWith(
       expect.objectContaining({
+        system: 'You are a writing assistant.',
         user: 'Improve this: Hello world',
         jsonSchema: expect.objectContaining({ name: 'suggestion' }),
       }),

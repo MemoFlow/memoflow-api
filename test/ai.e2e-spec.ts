@@ -1,10 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { getRepositoryToken } from '@nestjs/typeorm';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { Repository } from 'typeorm';
-import type { PromptOrmEntity } from '../src/infrastructure/persistence/ai/prompt.orm-entity';
 import { startMongoMemory, MongoTestEnv } from './utils/mongo-memory';
 import {
   describeWithDocker,
@@ -12,6 +9,7 @@ import {
   PgTestEnv,
 } from './utils/pg-testcontainer';
 import { startRedisContainer, RedisTestEnv } from './utils/redis-testcontainer';
+import { promoteToAdmin } from './utils/promote-admin';
 import { registerUser } from './utils/register-user';
 
 /**
@@ -24,18 +22,23 @@ import { registerUser } from './utils/register-user';
  */
 class FakeSuggestionGenerator {
   available = true;
-  lastInput: { promptTemplate: string; originalText: string } | null = null;
+  lastInput: { system: string; user: string; featureType: string } | null =
+    null;
 
   isAvailable(): boolean {
     return this.available;
   }
 
   generate(input: {
-    promptTemplate: string;
-    originalText: string;
-  }): Promise<{ suggestedText: string }> {
+    system: string;
+    user: string;
+    featureType: string;
+  }): Promise<{ suggestedText: string; model: string }> {
     this.lastInput = input;
-    return Promise.resolve({ suggestedText: `Better: ${input.originalText}` });
+    return Promise.resolve({
+      suggestedText: `Better: ${input.user}`,
+      model: 'fake/model-1',
+    });
   }
 }
 
@@ -48,7 +51,6 @@ describeWithDocker()('AI layer (e2e)', () => {
   let pg: PgTestEnv;
   let mongo: MongoTestEnv;
   let redis: RedisTestEnv;
-  let promptRepository: Repository<PromptOrmEntity>;
   let fakeGenerator: FakeSuggestionGenerator;
 
   async function registerAndLogin(email: string): Promise<string> {
@@ -131,8 +133,6 @@ describeWithDocker()('AI layer (e2e)', () => {
     const { AppModule } = await import('./../src/app.module');
     const { SUGGESTION_GENERATOR } =
       await import('./../src/domain/ai/suggestion-generator.port');
-    const { PromptOrmEntity: PromptOrmEntityCtor } =
-      await import('./../src/infrastructure/persistence/ai/prompt.orm-entity');
 
     fakeGenerator = new FakeSuggestionGenerator();
 
@@ -152,20 +152,6 @@ describeWithDocker()('AI layer (e2e)', () => {
       }),
     );
     await app.init();
-
-    promptRepository = app.get<Repository<PromptOrmEntity>>(
-      getRepositoryToken(PromptOrmEntityCtor as typeof PromptOrmEntity),
-    );
-    // No public write path for prompts (repository-internal lookup only,
-    // per CLAUDE.md) — seed the one this suite needs directly.
-    await promptRepository.save(
-      promptRepository.create({
-        featureType: 'suggestion',
-        version: 'v1',
-        template: 'Improve this: {{content}}',
-        isActive: true,
-      }),
-    );
   }, 180_000);
 
   afterAll(async () => {
@@ -173,6 +159,190 @@ describeWithDocker()('AI layer (e2e)', () => {
     await pg?.container.stop();
     await mongo?.server.stop();
     await redis?.container.stop();
+  });
+
+  describe('admin prompts (migration + /admin/prompts)', () => {
+    let adminToken: string;
+    let userToken: string;
+
+    beforeAll(async () => {
+      userToken = await registerAndLogin('prompts-user@example.com');
+      await registerAndLogin('prompts-admin@example.com');
+      await promoteToAdmin(pg.env, 'prompts-admin@example.com');
+      const res = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({
+          email: 'prompts-admin@example.com',
+          password: 'correct-horse-battery-staple',
+        })
+        .expect(200);
+      adminToken = res.body.accessToken as string;
+    });
+
+    const body = {
+      feature_type: 'rewrite',
+      version: 'v3',
+      system_template: 'Sys <untrusted_{{nonce}}>',
+      user_template: '<untrusted_{{nonce}}>{{content}}</untrusted_{{nonce}}>',
+    };
+
+    interface PromptBody {
+      id: string;
+      feature_type: string;
+      version: string;
+      is_active: boolean;
+      user_invocable: boolean;
+    }
+
+    async function listPrompts(featureType?: string): Promise<PromptBody[]> {
+      const res = await request(app.getHttpServer())
+        .get('/admin/prompts')
+        .query(featureType ? { feature_type: featureType } : {})
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      return res.body as PromptBody[];
+    }
+
+    it('migration leaves all five feature types with an active v2 prompt', async () => {
+      const prompts = await listPrompts();
+      const active = prompts.filter((p) => p.is_active);
+      expect(active.map((p) => p.feature_type).sort()).toEqual([
+        'expand',
+        'planning',
+        'rewrite',
+        'suggestion',
+        'summarize',
+      ]);
+      expect(active.every((p) => p.version === 'v2')).toBe(true);
+      expect(
+        Object.fromEntries(
+          active.map((p) => [p.feature_type, p.user_invocable]),
+        ),
+      ).toEqual({
+        expand: true,
+        planning: false,
+        rewrite: true,
+        suggestion: true,
+        summarize: true,
+      });
+    });
+
+    it('rejects unauthenticated callers (401) and non-admins (403)', async () => {
+      await request(app.getHttpServer()).get('/admin/prompts').expect(401);
+      await request(app.getHttpServer())
+        .get('/admin/prompts')
+        .set('Authorization', `Bearer ${userToken}`)
+        .expect(403);
+      await request(app.getHttpServer())
+        .post('/admin/prompts')
+        .set('Authorization', `Bearer ${userToken}`)
+        .send(body)
+        .expect(403);
+      await request(app.getHttpServer())
+        .post('/admin/prompts/00000000-0000-0000-0000-000000000000/activate')
+        .set('Authorization', `Bearer ${userToken}`)
+        .expect(403);
+    });
+
+    it('filters the list by feature_type', async () => {
+      const prompts = await listPrompts('planning');
+      expect(prompts).toHaveLength(1);
+      expect(prompts[0].feature_type).toBe('planning');
+    });
+
+    it('400s on an invalid body, an unknown type, a bad placeholder and a missing required one', async () => {
+      const post = (payload: object) =>
+        request(app.getHttpServer())
+          .post('/admin/prompts')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send(payload);
+
+      await post({ ...body, version: undefined }).expect(400);
+      await post({ ...body, version: 'x'.repeat(51) }).expect(400);
+      await post({ ...body, system_template: 'x'.repeat(20001) }).expect(400);
+      await post({ ...body, feature_type: 'poem' }).expect(400);
+      await post({ ...body, system_template: 'Sys {{content}}' }).expect(400);
+      await post({ ...body, system_template: 'Sys {{context}}' }).expect(400);
+      await post({ ...body, user_template: '{{content}} {{foo-bar}}' }).expect(
+        400,
+      );
+      await post({ ...body, user_template: '{{content}} {{oops' }).expect(400);
+      await post({ ...body, user_template: '{{content}} {{context}}' }).expect(
+        400,
+      );
+      await post({ ...body, system_template: 'Sys {{prompt}}' }).expect(400);
+      await post({ ...body, user_template: 'no placeholder' }).expect(400);
+      // The client cannot set user_invocable.
+      await post({ ...body, version: 'v-extra', user_invocable: false }).expect(
+        201,
+      );
+      const created = (await listPrompts('rewrite')).find(
+        (p) => p.version === 'v-extra',
+      );
+      expect(created?.user_invocable).toBe(true);
+    });
+
+    it('creates an inactive prompt, 409s on a duplicate version, and activating switches the active one', async () => {
+      const createRes = await request(app.getHttpServer())
+        .post('/admin/prompts')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(body)
+        .expect(201);
+      const created = createRes.body as PromptBody;
+      expect(created).toMatchObject({
+        feature_type: 'rewrite',
+        version: 'v3',
+        is_active: false,
+        user_invocable: true,
+      });
+
+      await request(app.getHttpServer())
+        .post('/admin/prompts')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send(body)
+        .expect(409);
+
+      expect(
+        (await listPrompts('rewrite')).filter((p) => p.is_active),
+      ).toHaveLength(1);
+
+      const activated = await request(app.getHttpServer())
+        .post(`/admin/prompts/${created.id}/activate`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(200);
+      expect((activated.body as PromptBody).is_active).toBe(true);
+
+      const rewrite = await listPrompts('rewrite');
+      const active = rewrite.filter((p) => p.is_active);
+      expect(active).toHaveLength(1);
+      expect(active[0].id).toBe(created.id);
+      // Other feature types are untouched.
+      expect(
+        (await listPrompts('suggestion')).filter((p) => p.is_active),
+      ).toHaveLength(1);
+
+      // A user now gets the new version.
+      const token = await registerAndLogin('prompts-rewrite@example.com');
+      const documentId = await createDocument(token);
+      const sectionId = await createSection(token, documentId);
+      const sugg = await request(app.getHttpServer())
+        .post(`/sections/${sectionId}/suggestions`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ featureType: 'rewrite' })
+        .expect(201);
+      expect(sugg.body).toMatchObject({ prompt_version: 'v3' });
+    });
+
+    it('404s activating a missing prompt and 400s a non-uuid id', async () => {
+      await request(app.getHttpServer())
+        .post('/admin/prompts/00000000-0000-0000-0000-000000000000/activate')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(404);
+      await request(app.getHttpServer())
+        .post('/admin/prompts/not-a-uuid/activate')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .expect(400);
+    });
   });
 
   describe('POST /sections/:sectionId/suggestions', () => {
@@ -196,20 +366,69 @@ describeWithDocker()('AI layer (e2e)', () => {
         .send({ featureType: 'suggestion' })
         .expect(201);
 
+      // The prompt comes from the PromptSystem migration (v2), not a fixture.
       expect(res.body).toMatchObject({
         section_id: sectionId,
         feature_type: 'suggestion',
         original_text: 'This is a rough draft paragraph.',
-        suggested_text: 'Better: This is a rough draft paragraph.',
         status: 'pending',
-        prompt_version: 'v1',
+        prompt_version: 'v2',
+        model: 'fake/model-1',
       });
       expect(res.body.id).toEqual(expect.any(String));
-      expect(fakeGenerator.lastInput).toEqual({
-        promptTemplate: 'Improve this: This is a rough draft paragraph.',
-        originalText: 'This is a rough draft paragraph.',
-        featureType: 'suggestion',
+      const input = fakeGenerator.lastInput!;
+      expect(input.featureType).toBe('suggestion');
+      const nonce = /<untrusted_([0-9a-f]{32})>/.exec(input.system)?.[1];
+      expect(nonce).toBeDefined();
+      expect(input.system).toContain("MemoFlow's writing assistant");
+      expect(input.user).toBe(
+        `<untrusted_${nonce}>\nThis is a rough draft paragraph.\n</untrusted_${nonce}>`,
+      );
+      expect(res.body.suggested_text).toBe(`Better: ${input.user}`);
+    });
+
+    it('keeps $-sequences in the section content literal in the rendered prompt', async () => {
+      const token = await registerAndLogin('suggest-dollar@example.com');
+      const documentId = await createDocument(token);
+      const sectionId = await createSection(token, documentId, {
+        content: 'Pay $& and $1 and {{nonce}}',
       });
+
+      await request(app.getHttpServer())
+        .post(`/sections/${sectionId}/suggestions`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ featureType: 'suggestion' })
+        .expect(201);
+
+      expect(fakeGenerator.lastInput!.user).toContain(
+        '\nPay $& and $1 and {{nonce}}\n',
+      );
+    });
+
+    it('rejects the internal planning prompt with the same 404 as an unknown type', async () => {
+      const token = await registerAndLogin('suggest-planning@example.com');
+      const documentId = await createDocument(token);
+      const sectionId = await createSection(token, documentId);
+      fakeGenerator.lastInput = null;
+
+      const planning = await request(app.getHttpServer())
+        .post(`/sections/${sectionId}/suggestions`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ featureType: 'planning' })
+        .expect(404);
+      const unknown = await request(app.getHttpServer())
+        .post(`/sections/${sectionId}/suggestions`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ featureType: 'unknown' })
+        .expect(404);
+
+      expect((planning.body as { message: string }).message).toBe(
+        (unknown.body as { message: string }).message.replace(
+          'unknown',
+          'planning',
+        ),
+      );
+      expect(fakeGenerator.lastInput).toBeNull();
     });
 
     it('returns 404 for a section not owned by the caller', async () => {

@@ -210,6 +210,18 @@ recomputed automatically on any `PATCH` that changes `content`.
 one, extra one, or a duplicate all reject). This is the **only** way a section's
 `order` changes — it's never settable via create or update.
 
+### AI suggestions — `POST /sections/:sectionId/suggestions` (JWT, verified email) → `201`
+```json
+// request
+{ "featureType": "rewrite" }
+```
+`featureType` is one of `suggestion`, `rewrite`, `summarize`, `expand`. Any other value
+(including `planning`, which is internal) returns `404`, the same as a section that isn't
+yours. `503` if AI is unavailable right now. The response (`SuggestionResponseDto`) includes
+`prompt_version` and `model` (the model that served the call; `null` on suggestions
+created before models were recorded). `GET /sections/:sectionId/suggestions` lists them
+newest first, with the same fields.
+
 ## 6. Planning jobs (async + real-time)
 
 Submitting a job kicks off async context-gathering + planning; you get a `job_id`
@@ -221,12 +233,14 @@ immediately and follow progress over the WebSocket (REST polling is the fallback
 { "prompt": "Draft an outline for chapter 3", "connectors": ["trello", "notion"] }
 // response (PlanningJobResponseDto)
 { "job_id": "…", "status": "pending", "prompt": "…", "connectors": ["trello","notion"],
-  "result": null, "error_code": null, "error_message": null,
+  "model": null, "result": null, "error_code": null, "error_message": null,
   "created_at": "…", "started_at": null, "finished_at": null }
 ```
 `503` if the job couldn't be enqueued.
 
 ### Poll — `GET /planning-jobs/:id` (JWT) → `200` `PlanningJobResponseDto`
+`model` is `null` until the job has run, and when no model is known.
+
 `status` ∈ `pending | running | gathering | planning | completed | failed`. `running`
 is the legacy synchronous context-gather path; `gathering`/`planning` only appear
 when the environment has the async RabbitMQ transport enabled (live on

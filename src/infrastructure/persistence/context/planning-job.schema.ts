@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument } from 'mongoose';
+import { HydratedDocument, SchemaDefinition } from 'mongoose';
 import { JobStatus } from '../../../domain/context/planning-job';
 
 /**
@@ -88,3 +88,12 @@ export type PlanningJobDocument = HydratedDocument<PlanningJobOdmEntity>;
 
 export const PlanningJobSchema =
   SchemaFactory.createForClass(PlanningJobOdmEntity);
+
+// Model that served the planning call (the router may pick another than
+// configured); null until the job runs or when the planner doesn't report
+// one. Added on the schema rather than as a class property: `model` is also
+// the name of a method on Mongoose documents, so a class field would clash
+// with `HydratedDocument`. Read it with `doc.get('model')`.
+PlanningJobSchema.add({
+  model: { type: String, default: null },
+} as SchemaDefinition);

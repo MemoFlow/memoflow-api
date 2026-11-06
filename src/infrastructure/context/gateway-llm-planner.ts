@@ -3,11 +3,9 @@ import { LLM_GATEWAY } from '../../domain/ai/llm-gateway.port';
 import type { LlmGateway } from '../../domain/ai/llm-gateway.port';
 import {
   LlmPlanner,
+  PlanInput,
   PlanningResult,
 } from '../../domain/context/llm-planner.port';
-
-const SYSTEM_PROMPT =
-  'You are a planning assistant. Reply only with a JSON object matching the provided schema.';
 
 const PLANNING_OUTPUT_SCHEMA = {
   type: 'object',
@@ -36,10 +34,7 @@ interface PlanningOutputShape {
 export class GatewayLlmPlanner implements LlmPlanner {
   constructor(@Inject(LLM_GATEWAY) private readonly gateway: LlmGateway) {}
 
-  async plan(input: {
-    prompt: string;
-    context: Record<string, unknown>;
-  }): Promise<PlanningResult> {
+  async plan(input: PlanInput): Promise<PlanningResult> {
     if (!this.gateway.isAvailable()) {
       throw new Error(
         'LLM planner requested without OPENROUTER_API_KEY configured',
@@ -47,18 +42,18 @@ export class GatewayLlmPlanner implements LlmPlanner {
     }
 
     const completion = await this.gateway.complete({
-      system: SYSTEM_PROMPT,
-      user: `${input.prompt}\n\nContext:\n${JSON.stringify(input.context)}`,
+      system: input.system,
+      user: input.user,
       jsonSchema: {
         name: 'planning_result',
         schema: PLANNING_OUTPUT_SCHEMA,
       },
     });
 
-    return this.toPlanningResult(completion.json);
+    return this.toPlanningResult(completion.json, completion.model);
   }
 
-  private toPlanningResult(parsed: unknown): PlanningResult {
+  private toPlanningResult(parsed: unknown, model: string): PlanningResult {
     const shape = parsed as Partial<PlanningOutputShape> | null;
     if (
       typeof shape !== 'object' ||
@@ -73,6 +68,7 @@ export class GatewayLlmPlanner implements LlmPlanner {
       suggestions: shape.suggestions,
       outline: shape.outline ?? null,
       sources: shape.sources,
+      model,
     };
   }
 }

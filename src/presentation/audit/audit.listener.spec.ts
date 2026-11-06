@@ -3,6 +3,8 @@ import {
   AUTH_LOGIN_FAILED_EVENT,
   AUTH_LOGOUT_EVENT,
   CONNECTOR_REVOKED_EVENT,
+  PROMPT_ACTIVATED_EVENT,
+  PROMPT_CREATED_EVENT,
   SUGGESTION_REVIEWED_EVENT,
 } from '../../domain/audit/audit-events';
 import { RecordAuditEventUseCase } from '../../application/audit/record-audit-event.use-case';
@@ -120,4 +122,32 @@ describe('AuditListener', () => {
       listener.onAuthLogin({ userId: 'user-1' }),
     ).resolves.toBeUndefined();
   });
+
+  it.each([
+    ['onPromptCreated', PROMPT_CREATED_EVENT],
+    ['onPromptActivated', PROMPT_ACTIVATED_EVENT],
+  ] as const)(
+    '%s records the acting admin and the prompt',
+    async (method, action) => {
+      const useCase = makeUseCase();
+      useCase.execute.mockResolvedValue(undefined as never);
+      const listener = new AuditListener(
+        useCase as unknown as RecordAuditEventUseCase,
+      );
+
+      await listener[method]({
+        userId: 'admin-1',
+        promptId: 'p-1',
+        featureType: 'suggestion',
+        version: 'v3',
+      });
+
+      expect(useCase.execute).toHaveBeenCalledWith({
+        action,
+        userId: 'admin-1',
+        metadata: { promptId: 'p-1', featureType: 'suggestion', version: 'v3' },
+        ip: null,
+      });
+    },
+  );
 });

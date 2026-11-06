@@ -8,9 +8,6 @@ import {
   SuggestionGenerator,
 } from '../../domain/ai/suggestion-generator.port';
 
-const SYSTEM_PROMPT =
-  'You are a writing assistant. Reply only with a JSON object matching the provided schema.';
-
 const SUGGESTION_OUTPUT_SCHEMA = {
   type: 'object',
   properties: {
@@ -38,8 +35,8 @@ export class GatewaySuggestionGenerator implements SuggestionGenerator {
     input: GenerateSuggestionInput,
   ): Promise<GenerateSuggestionOutput> {
     const completion = await this.gateway.complete({
-      system: SYSTEM_PROMPT,
-      user: input.promptTemplate,
+      system: input.system,
+      user: input.user,
       jsonSchema: {
         name: 'suggestion',
         schema: SUGGESTION_OUTPUT_SCHEMA,
@@ -56,6 +53,6 @@ export class GatewaySuggestionGenerator implements SuggestionGenerator {
         'The AI provider returned a response that did not match the expected schema',
       );
     }
-    return { suggestedText: json.suggested_text };
+    return { suggestedText: json.suggested_text, model: completion.model };
   }
 }

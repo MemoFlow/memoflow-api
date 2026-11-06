@@ -2,12 +2,13 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 
 export class CreateSuggestionDto {
-  // Free-form (not @IsIn-restricted) so new prompt feature types can be
-  // seeded without a code change here — the 404 from "no active prompt
-  // configured for this feature type" is the real guard against typos.
+  // Not @IsIn-restricted: an unknown or internal type (e.g. `planning`)
+  // gets the same 404 as a type with no active prompt.
   @ApiProperty({
     example: 'suggestion',
-    description: 'Must match the `feature_type` of an active prompt.',
+    enum: ['suggestion', 'rewrite', 'summarize', 'expand'],
+    description:
+      'One of suggestion, rewrite, summarize, expand. Any other value, including internal types, returns 404.',
   })
   @IsString()
   @IsNotEmpty()

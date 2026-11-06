@@ -58,18 +58,21 @@ pg: PostgreSQL (primary — TypeORM, migrations only) {
     suggested_text: text
     status: varchar
     prompt_version: varchar
+    model: "varchar?"
     created_at: timestamptz
     updated_at: timestamptz
   }
 
-  # No public controller — repository-internal active-prompt lookup, seeded via
-  # scripts/seed.ts.
+  # Admin-managed via /admin/prompts; v2 prompts ship by migration. Unique
+  # (feature_type, version); partial unique on feature_type WHERE is_active.
   prompts: {
     shape: sql_table
     id: uuid {constraint: primary_key}
     feature_type: varchar
     version: varchar
+    system_template: text
     template: text
+    user_invocable: boolean
     is_active: boolean
     created_at: timestamptz
     updated_at: timestamptz
@@ -260,6 +263,7 @@ mongo: MongoDB (specialist — Mongoose) {
     prompt: string
     connectors: "string[] (unused until item 7)"
     prompt_version: "string? (recorded once the job runs)"
+    model: "string? (recorded once the job runs)"
     context_used: "object? (recorded once the job runs)"
     result: object
     error_code: "string?"

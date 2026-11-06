@@ -7,7 +7,7 @@ function fakeId(hex: string) {
 }
 
 function fakeDoc(overrides: Record<string, unknown> = {}) {
-  return {
+  const doc: Record<string, unknown> = {
     _id: fakeId('507f1f77bcf86cd799439011'),
     user_id: 'user-1',
     document_id: null,
@@ -23,6 +23,9 @@ function fakeDoc(overrides: Record<string, unknown> = {}) {
     finished_at: null,
     ...overrides,
   };
+  // Mongoose documents expose `get(path)`; `model` is read through it.
+  doc.get = (path: string) => doc[path];
+  return doc;
 }
 
 function castError() {
@@ -131,6 +134,28 @@ describe('PlanningJobMongooseRepository', () => {
       );
       expect(result?.status).toBe(JobStatus.Completed);
       expect(result?.result).toEqual({ outline: ['A', 'B'] });
+    });
+
+    it('persists and maps the model', async () => {
+      const exec = jest
+        .fn()
+        .mockResolvedValue(fakeDoc({ model: 'some/model' }));
+      const model = {
+        findByIdAndUpdate: jest.fn().mockReturnValue({ exec }),
+      };
+      const repository = new PlanningJobMongooseRepository(model as any);
+
+      const result = await repository.updateStatus('507f1f77bcf86cd799439011', {
+        status: JobStatus.Completed,
+        model: 'some/model',
+      });
+
+      expect(model.findByIdAndUpdate).toHaveBeenCalledWith(
+        '507f1f77bcf86cd799439011',
+        { status: JobStatus.Completed, model: 'some/model' },
+        { new: true },
+      );
+      expect(result?.model).toBe('some/model');
     });
 
     it('returns null when the job does not exist', async () => {
