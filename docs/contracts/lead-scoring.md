@@ -1,7 +1,7 @@
 # Onboarding and Lead Scoring API Contract
 
-> **Status: implemented on `feature/lead-scoring` (not yet merged or deployed).** Routes
-> are live only in environments that have this branch. The shapes are frozen: additive
+> **Status: merged to `development` (PR #67), not yet promoted to staging or production.**
+> Routes are live only in environments that have this code. The shapes are frozen: additive
 > changes only, and any breaking change is announced first.
 > **Audience:** the MemoFlow frontend team.
 

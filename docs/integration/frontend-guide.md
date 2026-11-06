@@ -277,7 +277,7 @@ socket.on('planning.error',     (p) => {/* { jobId, message } — e.g. subscribe
 
 The "Personnalise ton espace" answers, marketing consent, paywall signals and the admin
 lead views are specified in [`../contracts/lead-scoring.md`](../contracts/lead-scoring.md)
-(implemented on `feature/lead-scoring`, shapes frozen, additive changes only). Routes:
+(merged to `development`, not yet on staging or production, shapes frozen, additive changes only). Routes:
 `GET/PUT /onboarding/me`, `PUT /onboarding/me/consent`, `POST /lead-signals`, and admin
 `GET /leads`, `GET /leads/stats`, `GET /leads/:id`. Score and tier appear only on admin
 routes; never show a user their own score.
