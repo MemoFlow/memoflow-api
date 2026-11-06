@@ -12,6 +12,9 @@ export class TemplateSection {
   wordCountMin: number;
   wordCountMax: number;
   isRequired: boolean;
+  /** Authoring hints shown with the section; never copied into documents. */
+  keyPoints: string[] | null;
+  guidance: string | null;
 
   constructor(props: {
     id: string;
@@ -21,6 +24,8 @@ export class TemplateSection {
     wordCountMin: number;
     wordCountMax: number;
     isRequired: boolean;
+    keyPoints: string[] | null;
+    guidance: string | null;
   }) {
     this.id = props.id;
     this.templateId = props.templateId;
@@ -29,5 +34,7 @@ export class TemplateSection {
     this.wordCountMin = props.wordCountMin;
     this.wordCountMax = props.wordCountMax;
     this.isRequired = props.isRequired;
+    this.keyPoints = props.keyPoints;
+    this.guidance = props.guidance;
   }
 }

@@ -11,6 +11,8 @@ export interface TemplateSectionInput {
   wordCountMin: number;
   wordCountMax: number;
   isRequired?: boolean;
+  keyPoints?: string[] | null;
+  guidance?: string | null;
 }
 
 export function toTemplateSectionData(
@@ -22,5 +24,7 @@ export function toTemplateSectionData(
     wordCountMin: section.wordCountMin,
     wordCountMax: section.wordCountMax,
     isRequired: section.isRequired ?? false,
+    keyPoints: section.keyPoints ?? null,
+    guidance: section.guidance ?? null,
   };
 }

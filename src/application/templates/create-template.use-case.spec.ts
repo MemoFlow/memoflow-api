@@ -34,6 +34,8 @@ class InMemoryTemplateRepository implements TemplateRepository {
             wordCountMin: section.wordCountMin,
             wordCountMax: section.wordCountMax,
             isRequired: section.isRequired,
+            keyPoints: section.keyPoints,
+            guidance: section.guidance,
           }),
       ),
       createdAt: now,

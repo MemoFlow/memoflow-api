@@ -57,6 +57,8 @@ class InMemoryTemplateRepository implements TemplateRepository {
                 wordCountMin: section.wordCountMin,
                 wordCountMax: section.wordCountMax,
                 isRequired: section.isRequired,
+                keyPoints: section.keyPoints,
+                guidance: section.guidance,
               }),
           )
         : existing.sections,
@@ -133,6 +135,8 @@ describe('UpdateTemplateUseCase', () => {
         wordCountMin: 10,
         wordCountMax: 100,
         isRequired: false,
+        keyPoints: null,
+        guidance: null,
       },
     ]);
     expect(result.sections).toHaveLength(1);

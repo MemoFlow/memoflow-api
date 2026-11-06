@@ -186,6 +186,201 @@ describeWithDocker()('Templates (e2e)', () => {
     ]);
   });
 
+  it('POST /templates stores keyPoints and guidance and returns them (omitted -> null), also on GET', async () => {
+    const token = await registerAndLogin('template-content-create@example.com');
+
+    const res = await request(app.getHttpServer())
+      .post('/templates')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        title: 'With Content',
+        docType: 'blog',
+        scope: 'personal',
+        sections: [
+          {
+            title: 'Intro',
+            order: 0,
+            wordCountMin: 20,
+            wordCountMax: 100,
+            keyPoints: ['Hook', 'Context'],
+            guidance: 'Keep it short',
+          },
+          { title: 'Body', order: 1, wordCountMin: 20, wordCountMax: 100 },
+        ],
+      })
+      .expect(201);
+
+    expect(res.body.sections[0]).toMatchObject({
+      key_points: ['Hook', 'Context'],
+      guidance: 'Keep it short',
+    });
+    expect(res.body.sections[1]).toMatchObject({
+      key_points: null,
+      guidance: null,
+    });
+
+    const getRes = await request(app.getHttpServer())
+      .get(`/templates/${res.body.id as string}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(getRes.body.sections[0]).toMatchObject({
+      key_points: ['Hook', 'Context'],
+      guidance: 'Keep it short',
+    });
+    expect(getRes.body.sections[1]).toMatchObject({
+      key_points: null,
+      guidance: null,
+    });
+  });
+
+  it('PATCH /templates/:id replaces keyPoints and guidance with the new sections, and omitting them clears them', async () => {
+    const token = await registerAndLogin('template-content-update@example.com');
+    const created = await request(app.getHttpServer())
+      .post('/templates')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        ...templatePayload(),
+        sections: [
+          {
+            title: 'Intro',
+            order: 0,
+            wordCountMin: 1,
+            wordCountMax: 2,
+            keyPoints: ['Old'],
+            guidance: 'Old guidance',
+          },
+        ],
+      })
+      .expect(201);
+    const id = created.body.id as string;
+
+    const updated = await request(app.getHttpServer())
+      .patch(`/templates/${id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        sections: [
+          {
+            title: 'Intro',
+            order: 0,
+            wordCountMin: 1,
+            wordCountMax: 2,
+            keyPoints: ['New 1', 'New 2'],
+            guidance: 'New guidance',
+          },
+        ],
+      })
+      .expect(200);
+    expect(updated.body.sections[0]).toMatchObject({
+      key_points: ['New 1', 'New 2'],
+      guidance: 'New guidance',
+    });
+
+    const cleared = await request(app.getHttpServer())
+      .patch(`/templates/${id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        sections: [
+          { title: 'Intro', order: 0, wordCountMin: 1, wordCountMax: 2 },
+        ],
+      })
+      .expect(200);
+    expect(cleared.body.sections[0]).toMatchObject({
+      key_points: null,
+      guidance: null,
+    });
+
+    // A patch that doesn't touch sections leaves them as they are.
+    await request(app.getHttpServer())
+      .patch(`/templates/${id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        sections: [
+          {
+            title: 'Intro',
+            order: 0,
+            wordCountMin: 1,
+            wordCountMax: 2,
+            keyPoints: ['Kept'],
+          },
+        ],
+      })
+      .expect(200);
+    const renamed = await request(app.getHttpServer())
+      .patch(`/templates/${id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Renamed only' })
+      .expect(200);
+    expect(renamed.body.sections[0].key_points).toEqual(['Kept']);
+  });
+
+  it('POST and PATCH /templates return 400 for over-limit keyPoints or guidance', async () => {
+    const token = await registerAndLogin('template-content-limits@example.com');
+    const id = await createTemplate(token);
+    const section = {
+      title: 'Intro',
+      order: 0,
+      wordCountMin: 1,
+      wordCountMax: 2,
+    };
+    const bad = [
+      { ...section, keyPoints: Array(51).fill('x') },
+      { ...section, keyPoints: ['x'.repeat(2001)] },
+      { ...section, guidance: 'g'.repeat(5001) },
+    ];
+
+    for (const invalid of bad) {
+      await request(app.getHttpServer())
+        .post('/templates')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ ...templatePayload(), sections: [invalid] })
+        .expect(400);
+      await request(app.getHttpServer())
+        .patch(`/templates/${id}`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ sections: [invalid] })
+        .expect(400);
+    }
+  });
+
+  it('POST /templates/:id/apply does not copy keyPoints or guidance into the document sections', async () => {
+    const token = await registerAndLogin('template-content-apply@example.com');
+    const created = await request(app.getHttpServer())
+      .post('/templates')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        ...templatePayload(),
+        sections: [
+          {
+            title: 'Intro',
+            order: 0,
+            wordCountMin: 1,
+            wordCountMax: 2,
+            keyPoints: ['Hook'],
+            guidance: 'Be brief',
+          },
+        ],
+      })
+      .expect(201);
+    const documentId = await createDocument(token);
+
+    await request(app.getHttpServer())
+      .post(`/templates/${created.body.id as string}/apply`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ documentId })
+      .expect(201);
+
+    const sectionsRes = await request(app.getHttpServer())
+      .get(`/documents/${documentId}/sections`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(sectionsRes.body).toHaveLength(1);
+    expect(sectionsRes.body[0]).toMatchObject({ title: 'Intro', content: '' });
+    expect(JSON.stringify(sectionsRes.body)).not.toContain('Hook');
+    expect(JSON.stringify(sectionsRes.body)).not.toContain('Be brief');
+    expect(sectionsRes.body[0]).not.toHaveProperty('key_points');
+    expect(sectionsRes.body[0]).not.toHaveProperty('guidance');
+  });
+
   it('POST /templates returns 400 when sections is missing', async () => {
     const token = await registerAndLogin('template-invalid@example.com');
 

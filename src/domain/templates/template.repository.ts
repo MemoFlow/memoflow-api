@@ -8,6 +8,8 @@ export interface TemplateSectionData {
   wordCountMin: number;
   wordCountMax: number;
   isRequired: boolean;
+  keyPoints: string[] | null;
+  guidance: string | null;
 }
 
 export interface CreateTemplateData {
