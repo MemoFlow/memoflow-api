@@ -105,7 +105,7 @@ Third-party dependencies, kept behind internal abstractions so the rest of the s
 ## Request lifecycles
 
 **In-document AI feature (rephrase / tone / structure):**
-client selects text → Core API `AI` module validates and rate-limits → calls the LLM through the provider gateway with the active prompt version → logs the suggestion (`ai_suggestions`) → returns the suggestion for inline accept/reject.
+client selects text → Core API `AI` module validates, rate-limits and reserves daily AI quota (Redis; a per-user response cache can answer repeats without a provider call) → calls the LLM through the provider gateway with the active prompt version → logs the suggestion (`ai_suggestions`) → returns the suggestion for inline accept/reject.
 
 **Connector-driven planning:**
 client requests a plan → Core API validates JWT and connector permissions → enqueues a BullMQ planning job, returns `202` + jobId → Context module worker fetches connector data, assembles context, calls the LLM → writes `planning_jobs` result in MongoDB → Core API pushes the result to the browser over WebSocket.

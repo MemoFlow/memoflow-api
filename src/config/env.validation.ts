@@ -337,6 +337,28 @@ export class EnvironmentVariables {
   @Max(200_000)
   AI_MAX_INPUT_CHARS: number = 40_000;
 
+  // Daily caps on provider attempts (UTC day, Redis counters). Free models
+  // count failed attempts too, so every attempt, retries included, reserves a
+  // unit first. Over a cap: 429 on the routes, a failed planning job on the
+  // worker. 0 blocks all AI use. Redis down means AI is refused (fail closed).
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  AI_USER_DAILY_LIMIT: number = 10;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  AI_GLOBAL_DAILY_LIMIT: number = 40;
+
+  // How long validated suggestion output is reused for the same user and
+  // identical input, in seconds. 0 disables the cache. Redis trouble just
+  // means a miss (fail open).
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  AI_CACHE_TTL_SECONDS: number = 86_400;
+
   // Operator config only; overridable so tests can target a fake server.
   @IsOptional()
   @IsString()

@@ -11,6 +11,7 @@ import {
 import { startRedisContainer, RedisTestEnv } from './utils/redis-testcontainer';
 import { promoteToAdmin } from './utils/promote-admin';
 import { registerUser } from './utils/register-user';
+import { stopContainer } from './utils/stop-container';
 
 /** The text between the untrusted tags, so a reply never echoes the fence
  * (and with it the nonce), which the output guard rightly rejects. */
@@ -40,10 +41,15 @@ class FakeSuggestionGenerator {
     return this.available;
   }
 
+  cacheScope(): string {
+    return 'fake/model-1';
+  }
+
   generate(input: {
     system: string;
     user: string;
     featureType: string;
+    userId: string;
   }): Promise<{ suggestedText: string; model: string }> {
     this.lastInput = input;
     return Promise.resolve({
@@ -120,6 +126,9 @@ describeWithDocker()('AI layer (e2e)', () => {
       // path via the overridden SUGGESTION_GENERATOR below, never the real
       // LLM gateway.
       OPENROUTER_API_KEY: '',
+      // The fake generator records the last input, so every request must
+      // reach it: no response cache.
+      AI_CACHE_TTL_SECONDS: '0',
     });
 
     // Apply migrations against the fresh test container before boot —
@@ -167,9 +176,9 @@ describeWithDocker()('AI layer (e2e)', () => {
 
   afterAll(async () => {
     await app?.close();
-    await pg?.container.stop();
+    await stopContainer(pg?.container);
     await mongo?.server.stop();
-    await redis?.container.stop();
+    await stopContainer(redis?.container);
   });
 
   describe('admin prompts (migration + /admin/prompts)', () => {

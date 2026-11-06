@@ -248,7 +248,7 @@ describe('PlanningPipeline.plan', () => {
   ) {
     const pipeline: PlanningPipeline = makePipeline(planner, retriever);
     const prepared = await pipeline.prepare(job, connectorContext);
-    return pipeline.plan(resolved, job.prompt, prepared);
+    return pipeline.plan(resolved, job, prepared);
   }
 
   it('renders redacted, numbered sources inside the fenced context, and not into the system message', async () => {

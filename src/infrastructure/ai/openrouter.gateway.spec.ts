@@ -17,6 +17,7 @@ import { OpenRouterGateway } from './openrouter.gateway';
 
 const API_KEY = 'sk-or-super-secret-key';
 const REQUEST = {
+  beforeAttempt: () => Promise.resolve(),
   system: 'sys',
   user: 'usr',
   jsonSchema: {
@@ -616,5 +617,106 @@ describe('OpenRouterGateway (fake HTTP server)', () => {
       expect(captured).toHaveLength(2);
       expect(Date.now() - started).toBeLessThan(2900);
     });
+  });
+
+  describe('beforeAttempt hook', () => {
+    const withHook = (hook: jest.Mock) => ({ ...REQUEST, beforeAttempt: hook });
+    const retrying = () =>
+      gateway({ OPENROUTER_MAX_RETRIES: 2, OPENROUTER_TIMEOUT_MS: 10_000 });
+    const good = (res: ServerResponse) => json(res, 200, ok('{"a":"fine"}'));
+
+    it('runs once before a single call', async () => {
+      handler = (_r, res) => good(res);
+      const hook = jest.fn().mockResolvedValue(undefined);
+
+      await gateway().complete(withHook(hook));
+
+      expect(hook).toHaveBeenCalledTimes(1);
+      expect(captured).toHaveLength(1);
+    });
+
+    it('runs before each attempt of a retry', async () => {
+      handler = (_r, res, n) => (n < 3 ? json(res, 503, {}) : good(res));
+      const order: string[] = [];
+      const hook = jest.fn(() => {
+        // Called before the request for this attempt is received.
+        order.push(`hook after ${captured.length} requests`);
+        return Promise.resolve();
+      });
+
+      await retrying().complete(withHook(hook));
+
+      expect(captured).toHaveLength(3);
+      expect(hook).toHaveBeenCalledTimes(3);
+      expect(order).toEqual([
+        'hook after 0 requests',
+        'hook after 1 requests',
+        'hook after 2 requests',
+      ]);
+    });
+
+    it('runs again for the repair retry', async () => {
+      handler = (_r, res, n) =>
+        json(res, 200, ok(n === 1 ? 'not json' : '{"a":"fixed"}'));
+      const hook = jest.fn().mockResolvedValue(undefined);
+
+      await gateway().complete(withHook(hook));
+
+      expect(captured).toHaveLength(2);
+      expect(hook).toHaveBeenCalledTimes(2);
+    });
+
+    it('stops everything when the hook throws, with the error unchanged and no provider call', async () => {
+      handler = (_r, res) => good(res);
+      const quotaError = new Error('quota spent');
+      const hook = jest.fn().mockRejectedValue(quotaError);
+
+      const err = await failure2(retrying(), withHook(hook));
+
+      expect(err).toBe(quotaError);
+      expect(hook).toHaveBeenCalledTimes(1);
+      expect(captured).toHaveLength(0);
+    });
+
+    it('stops retrying when the hook throws on a later attempt', async () => {
+      handler = (_r, res) => json(res, 503, {});
+      const quotaError = new Error('quota spent');
+      const hook = jest
+        .fn()
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValue(quotaError);
+
+      const err = await failure2(retrying(), withHook(hook));
+
+      expect(err).toBe(quotaError);
+      expect(hook).toHaveBeenCalledTimes(2);
+      expect(captured).toHaveLength(1);
+    });
+
+    it('stops the repair retry when the hook throws on it', async () => {
+      handler = (_r, res) => json(res, 200, ok('not json'));
+      const quotaError = new Error('quota spent');
+      const hook = jest
+        .fn()
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValue(quotaError);
+
+      const err = await failure2(gateway(), withHook(hook));
+
+      expect(err).toBe(quotaError);
+      expect(captured).toHaveLength(1);
+    });
+
+    async function failure2(
+      g: OpenRouterGateway,
+      request: typeof REQUEST,
+    ): Promise<Error> {
+      try {
+        await g.complete(request);
+      } catch (e) {
+        return e as Error;
+      }
+      throw new Error('expected failure');
+    }
   });
 });

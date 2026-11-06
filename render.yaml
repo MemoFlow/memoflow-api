@@ -84,8 +84,10 @@ services:
       # OpenRouter API key for the AI layer — optional at boot; AI
       # suggestion/planning endpoints return 503 without it. Set manually in
       # the Render dashboard. OPENROUTER_MODEL/_FALLBACK_MODELS/_MAX_TOKENS/
-      # _TIMEOUT_MS/_MAX_RETRIES/_BASE_URL and AI_MAX_INPUT_CHARS have code
-      # defaults and are intentionally omitted here.
+      # _TIMEOUT_MS/_MAX_RETRIES/_BASE_URL, AI_MAX_INPUT_CHARS and the quota and
+      # cache settings (AI_USER_DAILY_LIMIT, AI_GLOBAL_DAILY_LIMIT,
+      # AI_CACHE_TTL_SECONDS) have code defaults and are intentionally omitted
+      # here.
       - key: OPENROUTER_API_KEY
         sync: false
 

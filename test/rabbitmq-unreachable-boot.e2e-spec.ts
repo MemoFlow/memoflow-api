@@ -21,6 +21,7 @@ import {
   PgTestEnv,
 } from './utils/pg-testcontainer';
 import { startRedisContainer, RedisTestEnv } from './utils/redis-testcontainer';
+import { stopContainer } from './utils/stop-container';
 
 /** Reserves a free local TCP port (nothing listens on it afterwards). */
 function getFreePort(): Promise<number> {
@@ -130,9 +131,9 @@ describeWithDocker()('RabbitMQ unreachable at boot (e2e)', () => {
   afterAll(async () => {
     await app?.close().catch(() => undefined);
     await rabbitmq?.stop().catch(() => undefined);
-    await pg?.container.stop().catch(() => undefined);
+    await stopContainer(pg?.container).catch(() => undefined);
     await mongo?.server.stop().catch(() => undefined);
-    await redis?.container.stop().catch(() => undefined);
+    await stopContainer(redis?.container).catch(() => undefined);
   }, 60_000);
 
   it('completes app.init() and serves /health', async () => {

@@ -1,3 +1,7 @@
+import {
+  AiQuotaExceededError,
+  AiQuotaUnavailableError,
+} from '../../domain/ai/ai-quota.errors';
 import { Prompt } from '../../domain/ai/prompt.entity';
 import {
   ContextGatherer,
@@ -16,7 +20,11 @@ import {
 } from '../../domain/context/planning-job.repository';
 import { ProcessPlanningJobUseCase } from './process-planning-job.use-case';
 import { InMemoryPromptRepository, makePrompt } from '../ai/testing-fakes';
-import { makePipeline } from './testing-fakes';
+import {
+  FakeSectionRetriever,
+  FakeUserRepository,
+  makePipeline,
+} from './testing-fakes';
 
 class InMemoryPlanningJobRepository implements PlanningJobRepository {
   private readonly jobs = new Map<string, PlanningJob>();
@@ -203,6 +211,7 @@ describe('ProcessPlanningJobUseCase', () => {
       new StubGatherer(),
       makePipeline(new StubPlanner()),
       new FakePromptRepository([makePlanningPrompt()]),
+      new FakeUserRepository(),
     );
 
     const { processed, job } = await useCase.execute({ jobId: 'job-1' });
@@ -231,6 +240,7 @@ describe('ProcessPlanningJobUseCase', () => {
       new StubGatherer(),
       makePipeline(new StubPlanner()),
       new FakePromptRepository([]),
+      new FakeUserRepository(),
     );
 
     const { job } = await useCase.execute({ jobId: 'job-1' });
@@ -248,6 +258,7 @@ describe('ProcessPlanningJobUseCase', () => {
       new StubGatherer(),
       makePipeline(planner),
       new FakePromptRepository([makePlanningPrompt()]),
+      new FakeUserRepository(),
     );
 
     await useCase.execute({ jobId: 'job-1' });
@@ -269,6 +280,7 @@ describe('ProcessPlanningJobUseCase', () => {
       new StubGatherer(),
       makePipeline(planner),
       new FakePromptRepository([]),
+      new FakeUserRepository(),
     );
 
     const { job } = await useCase.execute({ jobId: 'job-1' });
@@ -290,6 +302,7 @@ describe('ProcessPlanningJobUseCase', () => {
       new StubGatherer(),
       makePipeline(planner),
       new FakePromptRepository([makePlanningPrompt({ template: '{{nope}}' })]),
+      new FakeUserRepository(),
     );
 
     const { job } = await useCase.execute({ jobId: 'job-1' });
@@ -313,6 +326,7 @@ describe('ProcessPlanningJobUseCase', () => {
       new StubGatherer(),
       makePipeline(new ThrowingPlanner()),
       new FakePromptRepository([makePlanningPrompt()]),
+      new FakeUserRepository(),
     );
 
     const { job } = await useCase.execute({ jobId: 'job-1' });
@@ -337,6 +351,7 @@ describe('ProcessPlanningJobUseCase', () => {
       gatherer,
       makePipeline(new StubPlanner()),
       new FakePromptRepository([makePlanningPrompt()]),
+      new FakeUserRepository(),
     );
 
     await useCase.execute({ jobId: 'job-1' });
@@ -356,6 +371,7 @@ describe('ProcessPlanningJobUseCase', () => {
       new ThrowingGatherer(),
       makePipeline(new StubPlanner()),
       new FakePromptRepository([makePlanningPrompt()]),
+      new FakeUserRepository(),
     );
 
     const { processed, job } = await useCase.execute({ jobId: 'job-1' });
@@ -382,6 +398,7 @@ describe('ProcessPlanningJobUseCase', () => {
       gatherer,
       makePipeline(new StubPlanner()),
       new FakePromptRepository([makePlanningPrompt()]),
+      new FakeUserRepository(),
     );
 
     const { processed, job } = await useCase.execute({ jobId: 'job-1' });
@@ -405,6 +422,7 @@ describe('ProcessPlanningJobUseCase', () => {
       new StubGatherer(),
       makePipeline(new StubPlanner()),
       new FakePromptRepository([makePlanningPrompt()]),
+      new FakeUserRepository(),
     );
 
     const { processed, job } = await useCase.execute({ jobId: 'job-1' });
@@ -427,6 +445,7 @@ describe('ProcessPlanningJobUseCase', () => {
       gatherer,
       makePipeline(new StubPlanner()),
       new FakePromptRepository([makePlanningPrompt()]),
+      new FakeUserRepository(),
     );
 
     const { processed, job } = await useCase.execute({ jobId: 'job-1' });
@@ -443,6 +462,7 @@ describe('ProcessPlanningJobUseCase', () => {
       new StubGatherer(),
       makePipeline(new StubPlanner()),
       new FakePromptRepository([makePlanningPrompt()]),
+      new FakeUserRepository(),
     );
 
     await expect(useCase.execute({ jobId: 'missing' })).rejects.toThrow(
@@ -469,6 +489,7 @@ describe('ProcessPlanningJobUseCase', () => {
       new StubGatherer(),
       makePipeline(planner),
       new FakePromptRepository([makePlanningPrompt()]),
+      new FakeUserRepository(),
     );
 
     const job = (await useCase.execute({ jobId: 'job-1' })).job;
@@ -478,5 +499,113 @@ describe('ProcessPlanningJobUseCase', () => {
       'The AI planner returned a result that was rejected',
     );
     expect(job.result).toBeNull();
+  });
+
+  describe('inactive user', () => {
+    it.each([
+      ['disabled', new FakeUserRepository(new Set(['user-1']))],
+      ['deleted', new FakeUserRepository(new Set(), new Set(['user-1']))],
+    ])(
+      'fails the job with USER_INACTIVE for a %s user, before gather, retrieval or planning',
+      async (_name, users) => {
+        const repository = new InMemoryPlanningJobRepository();
+        repository.seed(makeJob());
+        const gatherer = new StubGatherer();
+        const gather = jest.spyOn(gatherer, 'gather');
+        const planner = new StubPlanner();
+        const plan = jest.spyOn(planner, 'plan');
+        const retriever = new FakeSectionRetriever();
+        const useCase = new ProcessPlanningJobUseCase(
+          repository,
+          gatherer,
+          makePipeline(planner, retriever),
+          new FakePromptRepository([makePlanningPrompt()]),
+          users,
+        );
+
+        const { processed, job } = await useCase.execute({ jobId: 'job-1' });
+
+        expect(processed).toBe(true);
+        expect(job.status).toBe(JobStatus.Failed);
+        expect(job.errorCode).toBe('USER_INACTIVE');
+        expect(job.errorMessage).toBe(
+          'The account that submitted this job is not active',
+        );
+        expect(gather).not.toHaveBeenCalled();
+        expect(retriever.calls).toHaveLength(0);
+        expect(plan).not.toHaveBeenCalled();
+      },
+    );
+
+    it('runs normally for an active user', async () => {
+      const repository = new InMemoryPlanningJobRepository();
+      repository.seed(makeJob());
+      const users = new FakeUserRepository();
+      const useCase = new ProcessPlanningJobUseCase(
+        repository,
+        new StubGatherer(),
+        makePipeline(new StubPlanner()),
+        new FakePromptRepository([makePlanningPrompt()]),
+        users,
+      );
+
+      const { job } = await useCase.execute({ jobId: 'job-1' });
+
+      expect(job.status).toBe(JobStatus.Completed);
+      expect(users.lookups).toEqual(['user-1']);
+    });
+  });
+
+  describe('quota failures', () => {
+    it.each([
+      [
+        new AiQuotaExceededError(60),
+        'AI_QUOTA_EXCEEDED',
+        'Daily AI usage limit reached. Try again later.',
+      ],
+      [
+        new AiQuotaUnavailableError(),
+        'AI_QUOTA_UNAVAILABLE',
+        'AI usage limits are temporarily unavailable',
+      ],
+    ])(
+      'records %p as %s with a fixed message',
+      async (error, code, message) => {
+        const repository = new InMemoryPlanningJobRepository();
+        repository.seed(makeJob());
+        const planner: LlmPlanner = { plan: () => Promise.reject(error) };
+        const useCase = new ProcessPlanningJobUseCase(
+          repository,
+          new StubGatherer(),
+          makePipeline(planner),
+          new FakePromptRepository([makePlanningPrompt()]),
+          new FakeUserRepository(),
+        );
+
+        const { job } = await useCase.execute({ jobId: 'job-1' });
+
+        expect(job.status).toBe(JobStatus.Failed);
+        expect(job.errorCode).toBe(code);
+        expect(job.errorMessage).toBe(message);
+      },
+    );
+
+    it('passes the job owner to the planner', async () => {
+      const repository = new InMemoryPlanningJobRepository();
+      repository.seed(makeJob({ userId: 'user-9' }));
+      const planner = new StubPlanner();
+      const plan = jest.spyOn(planner, 'plan');
+      const useCase = new ProcessPlanningJobUseCase(
+        repository,
+        new StubGatherer(),
+        makePipeline(planner),
+        new FakePromptRepository([makePlanningPrompt()]),
+        new FakeUserRepository(),
+      );
+
+      await useCase.execute({ jobId: 'job-1' });
+
+      expect(plan.mock.calls[0][0].userId).toBe('user-9');
+    });
   });
 });

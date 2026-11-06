@@ -1,3 +1,7 @@
+import {
+  AiQuotaExceededError,
+  AiQuotaUnavailableError,
+} from '../../domain/ai/ai-quota.errors';
 import { PROMPT_DEFINITIONS_V3 } from '../../domain/ai/prompt-definitions';
 import { InMemoryPromptRepository } from '../ai/testing-fakes';
 import {
@@ -10,6 +14,7 @@ import type {
   PlanningResult,
 } from '../../domain/context/llm-planner.port';
 import {
+  JobUserInactiveError,
   PlanningOutputInvalidError,
   PlanningOutputRejectedError,
 } from '../../domain/context/planning-errors';
@@ -17,6 +22,7 @@ import {
   planWithGuards,
   renderPlanningPrompt,
   resolvePlanningPrompt,
+  failureErrorCode,
   safeFailureMessage,
 } from './planning-prompt';
 import type { GuardedPlanRequest } from './planning-prompt';
@@ -88,6 +94,7 @@ describe('planWithGuards', () => {
     extra: Partial<GuardedPlanRequest> = {},
   ) =>
     planWithGuards(planner, resolved, {
+      userId: 'user-1',
       prompt,
       context: { chunks: [] },
       renderedContext: '',
@@ -156,6 +163,7 @@ describe('planWithGuards', () => {
     };
     await expect(
       planWithGuards(planner, resolvedQuoted, {
+        userId: 'user-1',
         prompt: 'r',
         context: { chunks: [{ content: sentence }] },
         renderedContext: '',
@@ -209,10 +217,42 @@ describe('safeFailureMessage', () => {
     );
   });
 
+  it('passes the quota and inactive-user messages through', () => {
+    expect(safeFailureMessage(new AiQuotaExceededError(5))).toBe(
+      'Daily AI usage limit reached. Try again later.',
+    );
+    expect(safeFailureMessage(new AiQuotaUnavailableError())).toBe(
+      'AI usage limits are temporarily unavailable',
+    );
+    expect(safeFailureMessage(new JobUserInactiveError())).toBe(
+      'The account that submitted this job is not active',
+    );
+  });
+
   it('hides everything else', () => {
     expect(safeFailureMessage(new Error('prompt text: secret'))).toBe(
       'Planning job processing failed',
     );
     expect(safeFailureMessage('string')).toBe('Planning job processing failed');
+  });
+});
+
+describe('failureErrorCode', () => {
+  it('maps quota and inactive-user errors to their own codes', () => {
+    expect(failureErrorCode(new AiQuotaExceededError(5))).toBe(
+      'AI_QUOTA_EXCEEDED',
+    );
+    expect(failureErrorCode(new AiQuotaUnavailableError())).toBe(
+      'AI_QUOTA_UNAVAILABLE',
+    );
+    expect(failureErrorCode(new JobUserInactiveError())).toBe('USER_INACTIVE');
+  });
+
+  it('uses PROCESSING_FAILED for everything else', () => {
+    expect(failureErrorCode(new PlanningOutputInvalidError())).toBe(
+      'PROCESSING_FAILED',
+    );
+    expect(failureErrorCode(new Error('x'))).toBe('PROCESSING_FAILED');
+    expect(failureErrorCode('x')).toBe('PROCESSING_FAILED');
   });
 });

@@ -8,6 +8,7 @@ import {
   startPgContainer,
   PgTestEnv,
 } from './utils/pg-testcontainer';
+import { stopContainer } from './utils/stop-container';
 
 // Booting AppModule requires a live PostgreSQL (TypeORM connects at init),
 // which Testcontainers can only provide when a Docker daemon is present.
@@ -41,7 +42,7 @@ describeWithDocker()('AppController (e2e)', () => {
 
   afterAll(async () => {
     await app?.close();
-    await pg?.container.stop();
+    await stopContainer(pg?.container);
     await mongo?.server.stop();
   });
 

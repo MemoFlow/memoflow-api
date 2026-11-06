@@ -1,3 +1,7 @@
+import {
+  AiQuotaExceededError,
+  AiQuotaUnavailableError,
+} from '../../domain/ai/ai-quota.errors';
 import { Prompt } from '../../domain/ai/prompt.entity';
 import { InMemoryPromptRepository, makePrompt } from '../ai/testing-fakes';
 import { ContextResultChunk } from '../../domain/context/context-result-chunk';
@@ -14,7 +18,11 @@ import {
   UpdatePlanningJobStatusData,
 } from '../../domain/context/planning-job.repository';
 import { HandleContextResultChunkUseCase } from './handle-context-result-chunk.use-case';
-import { makePipeline } from './testing-fakes';
+import {
+  FakeSectionRetriever,
+  FakeUserRepository,
+  makePipeline,
+} from './testing-fakes';
 
 class InMemoryPlanningJobRepository implements PlanningJobRepository {
   private readonly jobs = new Map<string, PlanningJob>();
@@ -237,6 +245,7 @@ describe('HandleContextResultChunkUseCase', () => {
       repository,
       makePipeline(new StubPlanner()),
       new FakePromptRepository(),
+      new FakeUserRepository(),
     );
 
     const result = await useCase.execute({ chunk: dataChunk() });
@@ -252,6 +261,7 @@ describe('HandleContextResultChunkUseCase', () => {
       repository,
       makePipeline(new StubPlanner()),
       new FakePromptRepository(),
+      new FakeUserRepository(),
     );
 
     const result = await useCase.execute({
@@ -268,6 +278,7 @@ describe('HandleContextResultChunkUseCase', () => {
       repository,
       makePipeline(new StubPlanner()),
       new FakePromptRepository(),
+      new FakeUserRepository(),
     );
 
     const result = await useCase.execute({ chunk: dataChunk({ sequence: 5 }) });
@@ -282,6 +293,7 @@ describe('HandleContextResultChunkUseCase', () => {
       repository,
       makePipeline(new StubPlanner()),
       new FakePromptRepository(),
+      new FakeUserRepository(),
     );
 
     const result = await useCase.execute({ chunk: dataChunk() });
@@ -306,6 +318,7 @@ describe('HandleContextResultChunkUseCase', () => {
       repository,
       makePipeline(new StubPlanner()),
       new FakePromptRepository(),
+      new FakeUserRepository(),
     );
 
     await useCase.execute({ chunk: dataChunk() });
@@ -322,6 +335,7 @@ describe('HandleContextResultChunkUseCase', () => {
       repository,
       makePipeline(new StubPlanner()),
       new FakePromptRepository(),
+      new FakeUserRepository(),
     );
 
     const result = await useCase.execute({
@@ -342,6 +356,7 @@ describe('HandleContextResultChunkUseCase', () => {
       repository,
       makePipeline(planner),
       new FakePromptRepository(makePlanningPrompt()),
+      new FakeUserRepository(),
     );
 
     await useCase.execute({ chunk: dataChunk({ sequence: 0 }) });
@@ -418,6 +433,7 @@ describe('HandleContextResultChunkUseCase', () => {
       repository,
       makePipeline(planner),
       new FakePromptRepository(),
+      new FakeUserRepository(),
     );
 
     const result = await useCase.execute({
@@ -444,6 +460,7 @@ describe('HandleContextResultChunkUseCase', () => {
       new FakePromptRepository(
         Object.assign(makePlanningPrompt(), { template: 'Bad {{nope}}' }),
       ),
+      new FakeUserRepository(),
     );
 
     const result = await useCase.execute({
@@ -465,6 +482,7 @@ describe('HandleContextResultChunkUseCase', () => {
       repository,
       makePipeline(planner),
       new FakePromptRepository(),
+      new FakeUserRepository(),
     );
 
     await useCase.execute({ chunk: statusChunk('started', {}, 0) });
@@ -480,6 +498,7 @@ describe('HandleContextResultChunkUseCase', () => {
       repository,
       makePipeline(new StubPlanner()),
       new FakePromptRepository(),
+      new FakeUserRepository(),
     );
 
     const result = await useCase.execute({
@@ -505,6 +524,7 @@ describe('HandleContextResultChunkUseCase', () => {
       repository,
       makePipeline(new StubPlanner()),
       new FakePromptRepository(),
+      new FakeUserRepository(),
     );
 
     const result = await useCase.execute({
@@ -529,6 +549,7 @@ describe('HandleContextResultChunkUseCase', () => {
       repository,
       makePipeline(new StubPlanner()),
       new FakePromptRepository(),
+      new FakeUserRepository(),
     );
 
     const result = await useCase.execute({
@@ -545,6 +566,7 @@ describe('HandleContextResultChunkUseCase', () => {
       repository,
       makePipeline(new ThrowingPlanner()),
       new FakePromptRepository(),
+      new FakeUserRepository(),
     );
 
     const result = await useCase.execute({
@@ -563,6 +585,7 @@ describe('HandleContextResultChunkUseCase', () => {
       repository,
       makePipeline(new StubPlanner()),
       new FakePromptRepository(),
+      new FakeUserRepository(),
     );
 
     await useCase.execute({ chunk: statusChunk('completed', {}, 0) });
@@ -587,6 +610,7 @@ describe('HandleContextResultChunkUseCase', () => {
         repository,
         makePipeline(planner),
         new FakePromptRepository(makePlanningPrompt()),
+        new FakeUserRepository(),
       );
 
       // Both fire "at the same time" (no earlier terminal chunk has run
@@ -649,6 +673,7 @@ describe('HandleContextResultChunkUseCase', () => {
       repository,
       makePipeline(planner),
       new FakePromptRepository(),
+      new FakeUserRepository(),
     );
 
     const job = (
@@ -660,5 +685,56 @@ describe('HandleContextResultChunkUseCase', () => {
       'The AI planner returned a result that was rejected',
     );
     expect(job.result).toBeNull();
+  });
+
+  describe('finalising', () => {
+    it('fails the job with USER_INACTIVE when the user was disabled while it gathered, without retrieval or a provider call', async () => {
+      const repository = new InMemoryPlanningJobRepository();
+      repository.seed(makeJob());
+      const planner = new StubPlanner();
+      const plan = jest.spyOn(planner, 'plan');
+      const retriever = new FakeSectionRetriever();
+      const useCase = new HandleContextResultChunkUseCase(
+        repository,
+        makePipeline(planner, retriever),
+        new FakePromptRepository(makePlanningPrompt()),
+        new FakeUserRepository(new Set(['user-1'])),
+      );
+
+      const result = await useCase.execute({
+        chunk: statusChunk('completed', {}, 0),
+      });
+
+      expect(result.terminal).toBe(true);
+      expect(result.job?.status).toBe(JobStatus.Failed);
+      expect(result.job?.errorCode).toBe('USER_INACTIVE');
+      expect(result.job?.errorMessage).toBe(
+        'The account that submitted this job is not active',
+      );
+      expect(retriever.calls).toHaveLength(0);
+      expect(plan).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [new AiQuotaExceededError(60), 'AI_QUOTA_EXCEEDED'],
+      [new AiQuotaUnavailableError(), 'AI_QUOTA_UNAVAILABLE'],
+    ])('records %p as %s', async (error, code) => {
+      const repository = new InMemoryPlanningJobRepository();
+      repository.seed(makeJob());
+      const useCase = new HandleContextResultChunkUseCase(
+        repository,
+        makePipeline({ plan: () => Promise.reject(error) }),
+        new FakePromptRepository(makePlanningPrompt()),
+        new FakeUserRepository(),
+      );
+
+      const result = await useCase.execute({
+        chunk: statusChunk('completed', {}, 0),
+      });
+
+      expect(result.job?.status).toBe(JobStatus.Failed);
+      expect(result.job?.errorCode).toBe(code);
+      expect(result.job?.errorMessage).toBe(error.message);
+    });
   });
 });

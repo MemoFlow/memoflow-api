@@ -1,4 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { AI_QUOTA } from '../../domain/ai/ai-quota.port';
+import type { AiQuota } from '../../domain/ai/ai-quota.port';
 import { LLM_GATEWAY } from '../../domain/ai/llm-gateway.port';
 import type { LlmGateway } from '../../domain/ai/llm-gateway.port';
 import { PlanningOutputInvalidError } from '../../domain/context/planning-errors';
@@ -37,7 +39,10 @@ interface PlanningOutputShape {
  */
 @Injectable()
 export class GatewayLlmPlanner implements LlmPlanner {
-  constructor(@Inject(LLM_GATEWAY) private readonly gateway: LlmGateway) {}
+  constructor(
+    @Inject(LLM_GATEWAY) private readonly gateway: LlmGateway,
+    @Inject(AI_QUOTA) private readonly quota: AiQuota,
+  ) {}
 
   async plan(input: PlanInput): Promise<PlanningResult> {
     if (!this.gateway.isAvailable()) {
@@ -53,6 +58,9 @@ export class GatewayLlmPlanner implements LlmPlanner {
         name: 'planning_result',
         schema: PLANNING_OUTPUT_SCHEMA,
       },
+      // One unit per provider attempt, retries included. A quota error
+      // propagates out of the gateway unchanged; the job records it.
+      beforeAttempt: () => this.quota.reserve(input.userId),
     });
 
     return this.toPlanningResult(completion.json, completion.model);

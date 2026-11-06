@@ -290,7 +290,15 @@ limits, guardrails, caching and AI data consent.
   citations. `result.sources` is `{ id, type, title }[]` and unknown citations are removed;
   `context_used.retrieval` holds metadata only. Invocable v3 prompts gain `{{context}}` (document title and
   neighbouring headings). Word variants are not matched.
-- Slices 5–7 — pending. See the plan.
+- **Slice 5, quota and caching — ✅ done.** A daily AI quota in Redis (`AI_USER_DAILY_LIMIT` 10 per user,
+  `AI_GLOBAL_DAILY_LIMIT` 40 overall, UTC day) is reserved before each provider attempt; over the limit the
+  routes return 429 with `Retry-After`, and AI is blocked (503) if Redis is unavailable. Suggestions are
+  cached per user for `AI_CACHE_TTL_SECONDS` (default 86400, 0 disables); hits use no quota and make no
+  provider call, and cache failures fall through to the provider. Active prompts are cached in memory for
+  60 seconds and cleared on activation. The planning worker re-checks the user (`USER_INACTIVE`,
+  `AI_QUOTA_EXCEEDED`, `AI_QUOTA_UNAVAILABLE` error codes) and `connectors` must be the user's active
+  providers (400, max 10, unique, up to 64 characters).
+- Slices 6–7 — pending. See the plan.
 
 ## 6. Gamification (PG) — ✅ done
 

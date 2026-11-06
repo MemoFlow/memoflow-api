@@ -17,6 +17,10 @@ export class NullSuggestionGenerator implements SuggestionGenerator {
     return false;
   }
 
+  cacheScope(): string {
+    return 'none';
+  }
+
   generate(): Promise<GenerateSuggestionOutput> {
     return Promise.reject(new SuggestionGeneratorUnavailableError());
   }

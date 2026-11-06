@@ -10,6 +10,7 @@ import {
   PgTestEnv,
 } from './utils/pg-testcontainer';
 import { promoteToAdmin } from './utils/promote-admin';
+import { stopContainer } from './utils/stop-container';
 
 // Booting AppModule requires a live PostgreSQL (Testcontainers, so Docker).
 // Migrations run against the fresh container first, so the CreateLeadScoring
@@ -204,7 +205,7 @@ describeWithDocker()('Leads (e2e)', () => {
 
   afterAll(async () => {
     await app?.close();
-    await pg?.container.stop();
+    await stopContainer(pg?.container);
     await mongo?.server.stop();
   });
 

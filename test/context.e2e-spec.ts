@@ -10,6 +10,7 @@ import {
 } from './utils/pg-testcontainer';
 import { startRedisContainer, RedisTestEnv } from './utils/redis-testcontainer';
 import { registerUser } from './utils/register-user';
+import { stopContainer } from './utils/stop-container';
 
 // Booting AppModule requires a live PostgreSQL (users/auth) and Redis
 // (BullMQ planning queue), both provided by Testcontainers — gated
@@ -111,9 +112,9 @@ describeWithDocker()('Context / planning jobs (e2e)', () => {
 
   afterAll(async () => {
     await app?.close();
-    await pg?.container.stop();
+    await stopContainer(pg?.container);
     await mongo?.server.stop();
-    await redis?.container.stop();
+    await stopContainer(redis?.container);
   });
 
   it('POST /planning-jobs requires a token (401 without one)', async () => {

@@ -3,6 +3,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as Sentry from '@sentry/nestjs';
 import type { ChannelWrapper } from 'amqp-connection-manager';
 import type { ConsumeMessage } from 'amqplib';
+import { isExpectedFailureCode } from '../../application/context/planning-prompt';
 import { HandleContextResultChunkUseCase } from '../../application/context/handle-context-result-chunk.use-case';
 import {
   ChunkPhase,
@@ -255,7 +256,11 @@ export class ContextResultsConsumer implements OnModuleInit {
       // `HandleContextResultChunkUseCase`); a losing racer (e.g. a
       // gather-timeout racing a slow failure chunk) gets `terminal: false`
       // and is correctly skipped here.
-      if (result.terminal && result.job?.status === JobStatus.Failed) {
+      if (
+        result.terminal &&
+        result.job?.status === JobStatus.Failed &&
+        !isExpectedFailureCode(result.job.errorCode)
+      ) {
         Sentry.captureException(
           new Error(result.job.errorMessage ?? 'Context result chunk failed'),
           {

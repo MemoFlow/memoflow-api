@@ -11,10 +11,14 @@ import {
   PlanningJob,
 } from '../../domain/context/planning-job';
 import { PLANNING_JOB_REPOSITORY } from '../../domain/context/planning-job.repository';
+import { USER_REPOSITORY } from '../../domain/users/user.repository';
+import type { UserRepository } from '../../domain/users/user.repository';
 import type { ValidatedPlanningResult } from './planning-citations';
 import { PlanningPipeline } from './planning-pipeline';
 import {
+  assertJobUserActive,
   errorName,
+  failureErrorCode,
   resolvePlanningPrompt,
   safeFailureMessage,
 } from './planning-prompt';
@@ -94,6 +98,8 @@ export class HandleContextResultChunkUseCase {
     private readonly planningPipeline: PlanningPipeline,
     @Inject(PROMPT_REPOSITORY)
     private readonly promptRepository: PromptRepository,
+    @Inject(USER_REPOSITORY)
+    private readonly userRepository: UserRepository,
   ) {}
 
   async execute(
@@ -196,11 +202,14 @@ export class HandleContextResultChunkUseCase {
     let contextUsed: Record<string, unknown> = assembled;
     let result: ValidatedPlanningResult;
     try {
+      // Before retrieval or any provider call: the user may have been
+      // disabled or deleted while the job was gathering.
+      await assertJobUserActive(this.userRepository, claimed.userId);
       const prepared = await this.planningPipeline.prepare(claimed, assembled);
       contextUsed = prepared.contextUsed;
       result = await this.planningPipeline.plan(
         resolvedPrompt,
-        claimed.prompt,
+        claimed,
         prepared,
       );
     } catch (err) {
@@ -210,9 +219,10 @@ export class HandleContextResultChunkUseCase {
         `Planning job ${claimed.id} failed (${errorName(err)})`,
       );
       const errorMessage = safeFailureMessage(err);
+      const errorCode = failureErrorCode(err);
       const failed = await this.planningJobRepository.updateStatus(claimed.id, {
         status: JobStatus.Failed,
-        errorCode: 'PROCESSING_FAILED',
+        errorCode,
         errorMessage,
         finishedAt: new Date(),
         promptVersion,
@@ -222,6 +232,7 @@ export class HandleContextResultChunkUseCase {
         failed ?? {
           ...claimed,
           status: JobStatus.Failed,
+          errorCode,
           errorMessage,
           promptVersion,
           contextUsed,

@@ -1,10 +1,20 @@
-import { LlmCompletion, LlmGateway } from '../../domain/ai/llm-gateway.port';
+import { FakeAiQuota } from '../../application/ai/testing-fakes';
+import { AiQuotaExceededError } from '../../domain/ai/ai-quota.errors';
+import {
+  LlmCompletion,
+  LlmCompletionRequest,
+  LlmGateway,
+} from '../../domain/ai/llm-gateway.port';
 import { SuggestionGenerationTruncatedError } from '../../domain/ai/suggestion-generation.errors';
 import { PlanningOutputInvalidError } from '../../domain/context/planning-errors';
 import { GatewayLlmPlanner } from './gateway-llm-planner';
 
 function makeGateway(complete: jest.Mock, available = true): LlmGateway {
-  return { isAvailable: () => available, complete };
+  return {
+    isAvailable: () => available,
+    modelIdentity: () => '["some/model"]',
+    complete,
+  };
 }
 
 const completion = (json: unknown): LlmCompletion => ({
@@ -13,7 +23,7 @@ const completion = (json: unknown): LlmCompletion => ({
   finishReason: 'stop',
 });
 
-const base = { system: 'SYS', user: 'USER' };
+const base = { userId: 'user-1', system: 'SYS', user: 'USER' };
 
 describe('GatewayLlmPlanner', () => {
   it('maps the gateway JSON to a PlanningResult', async () => {
@@ -24,9 +34,13 @@ describe('GatewayLlmPlanner', () => {
         sources: ['notion'],
       }),
     );
-    const planner = new GatewayLlmPlanner(makeGateway(complete));
+    const planner = new GatewayLlmPlanner(
+      makeGateway(complete),
+      new FakeAiQuota(),
+    );
 
     const result = await planner.plan({
+      userId: 'user-1',
       prompt: 'Plan my chapter',
       context: { notion: { pages: [] } },
       system: 'SYS',
@@ -48,7 +62,10 @@ describe('GatewayLlmPlanner', () => {
     const complete = jest
       .fn()
       .mockResolvedValue(completion({ suggestions: [], sources: [] }));
-    const planner = new GatewayLlmPlanner(makeGateway(complete));
+    const planner = new GatewayLlmPlanner(
+      makeGateway(complete),
+      new FakeAiQuota(),
+    );
 
     await expect(
       planner.plan({ prompt: 'x', context: {}, ...base }),
@@ -61,7 +78,10 @@ describe('GatewayLlmPlanner', () => {
   });
 
   it('throws when the gateway is unavailable', async () => {
-    const planner = new GatewayLlmPlanner(makeGateway(jest.fn(), false));
+    const planner = new GatewayLlmPlanner(
+      makeGateway(jest.fn(), false),
+      new FakeAiQuota(),
+    );
 
     await expect(
       planner.plan({ prompt: 'x', context: {}, ...base }),
@@ -72,7 +92,10 @@ describe('GatewayLlmPlanner', () => {
     const complete = jest
       .fn()
       .mockResolvedValue(completion({ wrong_key: 'oops' }));
-    const planner = new GatewayLlmPlanner(makeGateway(complete));
+    const planner = new GatewayLlmPlanner(
+      makeGateway(complete),
+      new FakeAiQuota(),
+    );
 
     await expect(
       planner.plan({ prompt: 'x', context: {}, ...base }),
@@ -83,11 +106,44 @@ describe('GatewayLlmPlanner', () => {
     const complete = jest
       .fn()
       .mockRejectedValue(new SuggestionGenerationTruncatedError());
-    const planner = new GatewayLlmPlanner(makeGateway(complete));
+    const planner = new GatewayLlmPlanner(
+      makeGateway(complete),
+      new FakeAiQuota(),
+    );
 
     await expect(
       planner.plan({ prompt: 'x', context: {}, ...base }),
     ).rejects.toThrow(SuggestionGenerationTruncatedError);
+  });
+
+  it('reserves quota for the job owner on each provider attempt, not for the plan call itself', async () => {
+    const quota = new FakeAiQuota();
+    const complete = jest.fn((request: LlmCompletionRequest) =>
+      request
+        .beforeAttempt()
+        .then(() =>
+          completion({ suggestions: [], outline: null, sources: [] }),
+        ),
+    );
+    const planner = new GatewayLlmPlanner(makeGateway(complete), quota);
+
+    await planner.plan({ prompt: 'x', context: {}, ...base });
+
+    expect(quota.reserved).toEqual(['user-1']);
+  });
+
+  it('lets a quota error from the hook through unchanged', async () => {
+    const complete = jest.fn((request: LlmCompletionRequest) =>
+      request.beforeAttempt().then(() => completion({})),
+    );
+    const planner = new GatewayLlmPlanner(
+      makeGateway(complete),
+      new FakeAiQuota(0),
+    );
+
+    await expect(
+      planner.plan({ prompt: 'x', context: {}, ...base }),
+    ).rejects.toBeInstanceOf(AiQuotaExceededError);
   });
 
   describe('output validation', () => {
@@ -95,6 +151,7 @@ describe('GatewayLlmPlanner', () => {
     const plan = (json: unknown) =>
       new GatewayLlmPlanner(
         makeGateway(jest.fn().mockResolvedValue(completion(json))),
+        new FakeAiQuota(),
       ).plan({ prompt: 'x', context: {}, ...base });
 
     it.each([

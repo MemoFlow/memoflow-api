@@ -151,11 +151,12 @@ export class PlanningPipeline {
   /** Steps 5 and 6. Throws the guard errors `planWithGuards` throws. */
   async plan(
     resolved: PromptTexts,
-    prompt: string,
+    job: Pick<PlanningPipelineJob, 'userId' | 'prompt'>,
     prepared: PreparedPlanningContext,
   ): Promise<ValidatedPlanningResult> {
     const result = await planWithGuards(this.planner, resolved, {
-      prompt,
+      userId: job.userId,
+      prompt: job.prompt,
       context: prepared.connectorContext,
       renderedContext: prepared.renderedContext,
       sourceStrings: prepared.sourceStrings,

@@ -22,6 +22,12 @@ export interface LlmCompletionRequest {
   jsonSchema: LlmJsonSchema;
   /** Overrides the configured default output token cap. */
   maxTokens?: number;
+  /**
+   * Required, so no call can go unmetered by omission. Awaited before EVERY provider attempt (retries and the repair retry
+   * included). If it throws, the error propagates unchanged and no further
+   * attempt is made. The gateway knows nothing about what it does.
+   */
+  beforeAttempt: () => Promise<void>;
 }
 
 export interface LlmUsage {
@@ -42,5 +48,10 @@ export interface LlmCompletion {
 export interface LlmGateway {
   /** Whether a provider key is configured. */
   isAvailable(): boolean;
+  /**
+   * Stable description of the configured model and its fallbacks, in routing
+   * order. Used to scope cached output.
+   */
+  modelIdentity(): string;
   complete(request: LlmCompletionRequest): Promise<LlmCompletion>;
 }

@@ -10,6 +10,7 @@ import {
 } from './utils/pg-testcontainer';
 import { promoteToAdmin, setUserRole } from './utils/promote-admin';
 import { startRedisContainer, RedisTestEnv } from './utils/redis-testcontainer';
+import { stopContainer } from './utils/stop-container';
 
 const PASSWORD = 'correct-horse-battery-staple';
 
@@ -28,6 +29,10 @@ function fencedContent(user: string): string {
 class FakeSuggestionGenerator {
   isAvailable(): boolean {
     return true;
+  }
+
+  cacheScope(): string {
+    return 'fake/model-1';
   }
 
   generate(input: {
@@ -187,9 +192,9 @@ describeWithDocker()('Authorization (e2e)', () => {
 
   afterAll(async () => {
     await app?.close();
-    await pg?.container.stop();
+    await stopContainer(pg?.container);
     await mongo?.server.stop();
-    await redis?.container.stop();
+    await stopContainer(redis?.container);
   });
 
   describe('template publishing', () => {

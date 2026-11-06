@@ -21,7 +21,7 @@ import {
   UpdatePlanningJobStatusData,
 } from '../../domain/context/planning-job.repository';
 import { ProcessPlanningJobUseCase } from './process-planning-job.use-case';
-import { makePipeline } from './testing-fakes';
+import { FakeUserRepository, makePipeline } from './testing-fakes';
 
 class InMemoryPlanningJobRepository implements PlanningJobRepository {
   private readonly jobs = new Map<string, PlanningJob>();
@@ -240,6 +240,7 @@ describe('ProcessPlanningJobUseCase — RabbitMQ transport branch', () => {
       new StubGatherer(),
       makePipeline(new StubPlanner()),
       new FakePromptRepository(),
+      new FakeUserRepository(),
       publisher,
       connectorRepo,
     );
@@ -275,6 +276,7 @@ describe('ProcessPlanningJobUseCase — RabbitMQ transport branch', () => {
       new StubGatherer(),
       makePipeline(new StubPlanner()),
       new FakePromptRepository(),
+      new FakeUserRepository(),
       publisher,
       connectorRepo,
       scheduler,
@@ -297,6 +299,7 @@ describe('ProcessPlanningJobUseCase — RabbitMQ transport branch', () => {
       new StubGatherer(),
       makePipeline(new StubPlanner()),
       new FakePromptRepository(),
+      new FakeUserRepository(),
       publisher,
       connectorRepo,
       scheduler,
@@ -324,6 +327,7 @@ describe('ProcessPlanningJobUseCase — RabbitMQ transport branch', () => {
       new StubGatherer(),
       makePipeline(new StubPlanner()),
       new FakePromptRepository(),
+      new FakeUserRepository(),
       publisher,
       new FakeConnectorConnectionRepository([]),
     );
@@ -342,6 +346,7 @@ describe('ProcessPlanningJobUseCase — RabbitMQ transport branch', () => {
       new StubGatherer(),
       makePipeline(new StubPlanner()),
       new FakePromptRepository(),
+      new FakeUserRepository(),
       new FakeContextRequestPublisher(),
       new FakeConnectorConnectionRepository([]),
     );
@@ -360,6 +365,7 @@ describe('ProcessPlanningJobUseCase — RabbitMQ transport branch', () => {
       new StubGatherer(),
       makePipeline(new StubPlanner()),
       new FakePromptRepository(),
+      new FakeUserRepository(),
       publisher,
       new FakeConnectorConnectionRepository([]),
     );
@@ -367,5 +373,34 @@ describe('ProcessPlanningJobUseCase — RabbitMQ transport branch', () => {
     await useCase.execute({ jobId: 'job-1' });
 
     expect(publisher.published[0].connectors).toEqual([]);
+  });
+
+  it("fails an inactive user's job with USER_INACTIVE before anything is published or scheduled", async () => {
+    const repository = new InMemoryPlanningJobRepository();
+    repository.seed(makeJob());
+    const publisher = new FakeContextRequestPublisher();
+    const scheduler = new FakeGatherTimeoutScheduler();
+    const useCase = new ProcessPlanningJobUseCase(
+      repository,
+      new StubGatherer(),
+      makePipeline(new StubPlanner()),
+      new FakePromptRepository(),
+      new FakeUserRepository(new Set(['user-1'])),
+      publisher,
+      new FakeConnectorConnectionRepository([makeConnection()]),
+      scheduler,
+      90_000,
+    );
+
+    const { processed, job } = await useCase.execute({ jobId: 'job-1' });
+
+    expect(processed).toBe(true);
+    expect(job.status).toBe(JobStatus.Failed);
+    expect(job.errorCode).toBe('USER_INACTIVE');
+    expect(job.errorMessage).toBe(
+      'The account that submitted this job is not active',
+    );
+    expect(publisher.published).toHaveLength(0);
+    expect(scheduler.scheduled).toHaveLength(0);
   });
 });

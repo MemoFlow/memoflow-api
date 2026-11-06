@@ -13,6 +13,7 @@ import {
 import { promoteToAdmin } from './utils/promote-admin';
 import { startRedisContainer, RedisTestEnv } from './utils/redis-testcontainer';
 import { registerUser } from './utils/register-user';
+import { stopContainer } from './utils/stop-container';
 
 // Same Docker-availability gate as `context.e2e-spec.ts` — this suite boots
 // the full AppModule (PostgreSQL + Redis via Testcontainers, in-memory
@@ -217,9 +218,9 @@ describeWithDocker()('Context / planning-job WebSocket push (e2e)', () => {
 
   afterAll(async () => {
     await app?.close();
-    await pg?.container.stop();
+    await stopContainer(pg?.container);
     await mongo?.server.stop();
-    await redis?.container.stop();
+    await stopContainer(redis?.container);
   });
 
   it('pushes planning.completed to the submitting client in real time, without polling', async () => {

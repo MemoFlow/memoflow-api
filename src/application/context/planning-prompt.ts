@@ -4,6 +4,10 @@ import {
   PromptTexts,
 } from '../../domain/ai/prompt-definitions';
 import {
+  AiQuotaExceededError,
+  AiQuotaUnavailableError,
+} from '../../domain/ai/ai-quota.errors';
+import {
   collectStrings,
   leaksPrompt,
   prepareUntrustedText,
@@ -17,14 +21,17 @@ import {
   SuggestionGeneratorRateLimitedError,
   SuggestionGeneratorUnavailableError,
 } from '../../domain/ai/suggestion-generation.errors';
+import type { UserRepository } from '../../domain/users/user.repository';
 import type {
   LlmPlanner,
   PlanningResult,
 } from '../../domain/context/llm-planner.port';
 import {
+  JobUserInactiveError,
   PLANNING_FAILED_MESSAGE,
   PlanningOutputInvalidError,
   PlanningOutputRejectedError,
+  USER_INACTIVE_ERROR_CODE,
 } from '../../domain/context/planning-errors';
 
 /** Feature type of the planning prompt. */
@@ -102,6 +109,8 @@ function planningResultStrings(result: PlanningResult): string[] {
 }
 
 export interface GuardedPlanRequest {
+  /** The job owner, whose quota the planner's provider attempts use. */
+  userId: string;
   prompt: string;
   /** Raw connector context, for planners that read it directly (the stub). */
   context: Record<string, unknown>;
@@ -131,6 +140,7 @@ export async function planWithGuards(
     request.renderedContext,
   );
   const result = await planner.plan({
+    userId: request.userId,
     prompt: request.prompt,
     context: request.context,
     ...rendered,
@@ -157,6 +167,9 @@ export function safeFailureMessage(err: unknown): string {
   if (
     err instanceof PlanningOutputInvalidError ||
     err instanceof PlanningOutputRejectedError ||
+    err instanceof JobUserInactiveError ||
+    err instanceof AiQuotaExceededError ||
+    err instanceof AiQuotaUnavailableError ||
     err instanceof SuggestionGenerationProviderError ||
     err instanceof SuggestionGenerationRefusedError ||
     err instanceof SuggestionGenerationTruncatedError ||
@@ -166,6 +179,40 @@ export function safeFailureMessage(err: unknown): string {
     return err.message;
   }
   return PLANNING_FAILED_MESSAGE;
+}
+
+/** The `error_code` to record on a job that failed with `err`. */
+export function failureErrorCode(err: unknown): string {
+  if (err instanceof AiQuotaExceededError) return 'AI_QUOTA_EXCEEDED';
+  if (err instanceof AiQuotaUnavailableError) return 'AI_QUOTA_UNAVAILABLE';
+  if (err instanceof JobUserInactiveError) return USER_INACTIVE_ERROR_CODE;
+  return 'PROCESSING_FAILED';
+}
+
+/**
+ * Failure codes that are expected outcomes (a user over their cap, a user
+ * disabled while the job waited), not incidents: they are not sent to Sentry.
+ * `AI_QUOTA_UNAVAILABLE` is deliberately absent: an unreachable counter store
+ * is an incident.
+ */
+export function isExpectedFailureCode(
+  code: string | null | undefined,
+): boolean {
+  return code === 'AI_QUOTA_EXCEEDED' || code === USER_INACTIVE_ERROR_CODE;
+}
+
+/**
+ * Before a worker gathers, retrieves or calls a provider for a job, its user
+ * must still exist and not be disabled. One helper for both planning paths.
+ * Throws `JobUserInactiveError`; a repository failure propagates, so callers
+ * catch it and fail the job rather than leave it in flight.
+ */
+export async function assertJobUserActive(
+  userRepository: UserRepository,
+  userId: string,
+): Promise<void> {
+  const user = await userRepository.findById(userId);
+  if (!user || user.isDisabled) throw new JobUserInactiveError();
 }
 
 /** Error name only: messages can echo prompts, context or provider text. */

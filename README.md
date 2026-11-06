@@ -85,9 +85,9 @@ via `@nestjs/jwt` and validated by Passport-JWT.
 | `GET` | `/documents/:documentId/versions` | JWT | lists the document's version metadata (no sections payload), newest first |
 | `GET` | `/documents/:documentId/versions/:versionId` | JWT | fetch a version's full sections snapshot, owner-scoped |
 | `POST` | `/documents/:documentId/versions/:versionId/restore` | JWT | replaces the document's current sections with the version's snapshot; writes nothing to Mongo |
-| `POST` | `/planning-jobs` | JWT | submits a planning prompt (max 5000 characters, else 400; optionally bound to an owned `documentId`/`sectionId`); returns **202** + `{ job_id, status: "pending" }` |
+| `POST` | `/planning-jobs` | JWT | submits a planning prompt (max 5000 characters, else 400; optionally bound to an owned `documentId`/`sectionId`; optional `connectors` must be your active providers, max 10, unique, up to 64 characters each, else 400; 429 with `Retry-After` when the daily AI limit is spent; 503 if the usage limits are unavailable); returns **202** + `{ job_id, status: "pending" }` |
 | `GET` | `/planning-jobs/:id` | JWT | fetch a planning job by id, owner-scoped |
-| `POST` | `/sections/:sectionId/suggestions` | JWT | generates an AI suggestion for a section; 404 if the section isn't owned by the caller or `featureType` isn't a user-invocable type with an active prompt (`suggestion`, `rewrite`, `summarize`, `expand`; `planning` and unknown types get the same 404); 422 if the section text exceeds `AI_MAX_INPUT_CHARS`; 502 if the model's reply fails validation or the provider fails; 503 if AI is unavailable (not configured, provider outage or a misconfigured prompt) |
+| `POST` | `/sections/:sectionId/suggestions` | JWT | generates an AI suggestion for a section; 404 if the section isn't owned by the caller or `featureType` isn't a user-invocable type with an active prompt (`suggestion`, `rewrite`, `summarize`, `expand`; `planning` and unknown types get the same 404); 422 if the section text exceeds `AI_MAX_INPUT_CHARS`; 429 with `Retry-After` when the daily AI limit is spent (per user or in total); 502 if the model's reply fails validation or the provider fails; 503 if AI is unavailable (not configured, provider outage, a misconfigured prompt or the usage limits unavailable) |
 | `GET` | `/sections/:sectionId/suggestions` | JWT | lists a section's AI suggestions, newest first |
 | `PATCH` | `/suggestions/:id` | JWT | accepts or rejects a **pending** suggestion; 409 if already reviewed |
 | `GET` | `/admin/prompts` | JWT (admin) | lists prompts, optionally filtered by `feature_type` |
@@ -235,6 +235,9 @@ Beyond the database connection vars, auth requires:
 | `OPENROUTER_TIMEOUT_MS` | no | `60000` | aborts an LLM request after this many ms |
 | `OPENROUTER_MAX_RETRIES` | no | `1` | retries per LLM call (0 to 3) for transient failures; all attempts share the call's `OPENROUTER_TIMEOUT_MS` deadline |
 | `AI_MAX_INPUT_CHARS` | no | `40000` | longest section text sent to the model; longer sections get 422 on suggestions, and planning context is cut to this length |
+| `AI_USER_DAILY_LIMIT` | no | `10` | provider attempts per user per UTC day, counted in Redis before each attempt (retries included); over the limit gets 429 with `Retry-After`; `0` blocks all AI use |
+| `AI_GLOBAL_DAILY_LIMIT` | no | `40` | provider attempts per UTC day across all users, shared by suggestions and planning; same 429 behaviour |
+| `AI_CACHE_TTL_SECONDS` | no | `86400` | how long a validated suggestion is reused for the same user and identical input; a hit makes no provider call and uses no quota; `0` disables the cache |
 | `OPENROUTER_BASE_URL` | no | `https://openrouter.ai/api/v1` | OpenRouter API base URL (operator config; overridable for tests) |
 | `RESEND_API_KEY` | staging/production | — | Resend API key for transactional email (verification, password reset); unset in development/test sends nothing (a "skipped" line is logged) |
 | `EMAIL_FROM` | staging/production | `onboarding@resend.dev` when only the key is set | From address, e.g. `MemoFlow <no-reply@your-domain>`; must belong to a verified sending domain |

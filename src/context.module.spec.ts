@@ -1,3 +1,4 @@
+import { FakeAiQuota } from './application/ai/testing-fakes';
 import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ContextEnginePort } from './domain/context/context-engine.port';
@@ -54,13 +55,21 @@ describe('llmPlannerFactory', () => {
   const gateway = {} as LlmGateway;
 
   it('returns StubLlmPlanner when OPENROUTER_API_KEY is unset', () => {
-    const planner = llmPlannerFactory(makeConfig(undefined), gateway);
+    const planner = llmPlannerFactory(
+      makeConfig(undefined),
+      gateway,
+      new FakeAiQuota(),
+    );
 
     expect(planner).toBeInstanceOf(StubLlmPlanner);
   });
 
   it('returns GatewayLlmPlanner when OPENROUTER_API_KEY is set', () => {
-    const planner = llmPlannerFactory(makeConfig('sk-test-key'), gateway);
+    const planner = llmPlannerFactory(
+      makeConfig('sk-test-key'),
+      gateway,
+      new FakeAiQuota(),
+    );
 
     expect(planner).toBeInstanceOf(GatewayLlmPlanner);
   });

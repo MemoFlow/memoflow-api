@@ -1,5 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  ArrayMaxSize,
+  ArrayUnique,
   IsArray,
   IsNotEmpty,
   IsOptional,
@@ -24,11 +26,16 @@ export class SubmitPlanningJobDto {
   @ApiPropertyOptional({
     example: ['notion', 'github'],
     description:
-      'Connector ids to gather context from (unused until roadmap item 7).',
+      'Providers of your active connections to gather context from (e.g. "notion"), at most 10, each at most 64 characters. 400 if any is not one of your active connections.',
+    maxItems: 10,
+    maxLength: 64,
   })
   @IsOptional()
   @IsArray()
+  @ArrayMaxSize(10)
+  @ArrayUnique()
   @IsString({ each: true })
+  @MaxLength(64, { each: true })
   connectors?: string[];
 
   @ApiPropertyOptional({
