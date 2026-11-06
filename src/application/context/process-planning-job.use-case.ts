@@ -24,6 +24,7 @@ import { resolveActiveConnectorReferences } from '../../domain/context/resolve-c
 import { GATHER_TIMEOUT_MS } from './gather-timeout-ms.token';
 import type { ValidatedPlanningResult } from './planning-citations';
 import { PlanningPipeline } from './planning-pipeline';
+import { runClaimedPlanning } from './run-claimed-planning';
 import {
   assertJobUserActive,
   errorName,
@@ -261,6 +262,33 @@ export class ProcessPlanningJobUseCase {
           claimed.connectors,
         )
       : [];
+
+    if (connectors.length === 0) {
+      // Nothing to gather (submitted without connectors, or every one went
+      // inactive since): the engine is not required to answer an empty
+      // request, so don't wait on it. Take the same gathering -> planning
+      // CAS a terminal chunk would, then run the shared planning phase.
+      const planning = await this.planningJobRepository.claimForPlanning(
+        claimed.id,
+        {},
+      );
+      if (!planning) {
+        const existing = await this.planningJobRepository.findById(claimed.id);
+        return { processed: false, job: existing ?? claimed };
+      }
+      const finished = await runClaimedPlanning(
+        {
+          planningJobRepository: this.planningJobRepository,
+          planningPipeline: this.planningPipeline,
+          promptRepository: this.promptRepository,
+          userRepository: this.userRepository,
+          logger: this.logger,
+        },
+        planning,
+        {},
+      );
+      return { processed: true, job: finished };
+    }
 
     try {
       await contextRequestPublisher.publishGatherRequest({

@@ -78,6 +78,7 @@ class InMemoryPlanningJobRepository implements PlanningJobRepository {
         patch.promptVersion !== undefined
           ? patch.promptVersion
           : existing.promptVersion,
+      model: patch.model !== undefined ? patch.model : existing.model,
       contextUsed:
         patch.contextUsed !== undefined
           ? patch.contextUsed
@@ -109,8 +110,21 @@ class InMemoryPlanningJobRepository implements PlanningJobRepository {
     return Promise.reject(new Error('not implemented — transport suite'));
   }
 
-  claimForPlanning(): Promise<PlanningJob | null> {
-    return Promise.reject(new Error('not implemented — transport suite'));
+  claimForPlanning(
+    id: string,
+    contextUsed: Record<string, unknown>,
+  ): Promise<PlanningJob | null> {
+    const existing = this.jobs.get(id);
+    if (!existing || existing.status !== JobStatus.Gathering) {
+      return Promise.resolve(null);
+    }
+    const claimed = new PlanningJob({
+      ...existing,
+      status: JobStatus.Planning,
+      contextUsed,
+    });
+    this.jobs.set(id, claimed);
+    return Promise.resolve(claimed);
   }
 
   failIfStillGathering(): Promise<PlanningJob | null> {
@@ -269,7 +283,9 @@ describe('ProcessPlanningJobUseCase — RabbitMQ transport branch', () => {
     const repository = new InMemoryPlanningJobRepository();
     repository.seed(makeJob());
     const publisher = new FakeContextRequestPublisher();
-    const connectorRepo = new FakeConnectorConnectionRepository([]);
+    const connectorRepo = new FakeConnectorConnectionRepository([
+      makeConnection(),
+    ]);
     const scheduler = new FakeGatherTimeoutScheduler();
     const useCase = new ProcessPlanningJobUseCase(
       repository,
@@ -292,7 +308,9 @@ describe('ProcessPlanningJobUseCase — RabbitMQ transport branch', () => {
     const repository = new InMemoryPlanningJobRepository();
     repository.seed(makeJob());
     const publisher = new FakeContextRequestPublisher(true);
-    const connectorRepo = new FakeConnectorConnectionRepository([]);
+    const connectorRepo = new FakeConnectorConnectionRepository([
+      makeConnection(),
+    ]);
     const scheduler = new FakeGatherTimeoutScheduler();
     const useCase = new ProcessPlanningJobUseCase(
       repository,
@@ -356,23 +374,112 @@ describe('ProcessPlanningJobUseCase — RabbitMQ transport branch', () => {
     );
   });
 
-  it('publishes an empty connectors array when no active connections match the job', async () => {
-    const repository = new InMemoryPlanningJobRepository();
-    repository.seed(makeJob({ connectors: ['github'] }));
-    const publisher = new FakeContextRequestPublisher();
-    const useCase = new ProcessPlanningJobUseCase(
-      repository,
-      new StubGatherer(),
-      makePipeline(new StubPlanner()),
-      new FakePromptRepository(),
-      new FakeUserRepository(),
-      publisher,
-      new FakeConnectorConnectionRepository([]),
+  describe('jobs with nothing to gather', () => {
+    class OkPlanner implements LlmPlanner {
+      plan(): Promise<PlanningResult> {
+        return Promise.resolve({
+          suggestions: ['a plan'],
+          outline: null,
+          sources: [],
+          model: 'test/planner',
+        });
+      }
+    }
+    class FailingPlanner implements LlmPlanner {
+      plan(): Promise<PlanningResult> {
+        return Promise.reject(new Error('planner exploded'));
+      }
+    }
+
+    function build(
+      job: PlanningJob,
+      planner: LlmPlanner,
+      connections: ConnectorConnection[] = [],
+    ) {
+      const repository = new InMemoryPlanningJobRepository();
+      repository.seed(job);
+      const publisher = new FakeContextRequestPublisher();
+      const scheduler = new FakeGatherTimeoutScheduler();
+      const useCase = new ProcessPlanningJobUseCase(
+        repository,
+        new StubGatherer(),
+        makePipeline(planner),
+        new FakePromptRepository(),
+        new FakeUserRepository(),
+        publisher,
+        new FakeConnectorConnectionRepository(connections),
+        scheduler,
+        90_000,
+      );
+      return { useCase, publisher, scheduler };
+    }
+
+    it.each([
+      ['submitted without connectors', makeJob({ connectors: [] })],
+      [
+        'whose connectors went inactive after submission',
+        makeJob({ connectors: ['github'] }),
+      ],
+    ])(
+      'a job %s completes without publishing or waiting on the engine',
+      async (_label, job) => {
+        const { useCase, publisher, scheduler } = build(job, new OkPlanner());
+
+        const { processed, job: done } = await useCase.execute({
+          jobId: 'job-1',
+        });
+
+        expect(processed).toBe(true);
+        expect(publisher.published).toHaveLength(0);
+        expect(scheduler.scheduled).toHaveLength(0);
+        expect(done.status).toBe(JobStatus.Completed);
+        expect(done.model).toBe('test/planner');
+        expect(done.contextUsed).toHaveProperty('retrieval');
+        expect(done.finishedAt).toBeInstanceOf(Date);
+      },
     );
 
-    await useCase.execute({ jobId: 'job-1' });
+    it.each([
+      ['submitted without connectors', makeJob({ connectors: [] })],
+      [
+        'whose connectors went inactive after submission',
+        makeJob({ connectors: ['github'] }),
+      ],
+    ])(
+      'a job %s is marked failed when the planner fails, never left gathering',
+      async (_label, job) => {
+        const { useCase, publisher } = build(job, new FailingPlanner());
 
-    expect(publisher.published[0].connectors).toEqual([]);
+        const { job: done } = await useCase.execute({ jobId: 'job-1' });
+
+        expect(publisher.published).toHaveLength(0);
+        expect(done.status).toBe(JobStatus.Failed);
+        expect(done.errorCode).toBeTruthy();
+        expect(done.contextUsed).toHaveProperty('retrieval');
+      },
+    );
+
+    it('fails without calling the planner when consent was withdrawn', async () => {
+      const repository = new InMemoryPlanningJobRepository();
+      repository.seed(makeJob({ connectors: [] }));
+      const planner = new OkPlanner();
+      const planSpy = jest.spyOn(planner, 'plan');
+      const useCase = new ProcessPlanningJobUseCase(
+        repository,
+        new StubGatherer(),
+        makePipeline(planner),
+        new FakePromptRepository(),
+        new FakeUserRepository(new Set(), new Set(), new Set(['user-1'])),
+        new FakeContextRequestPublisher(),
+        new FakeConnectorConnectionRepository([]),
+      );
+
+      const { job } = await useCase.execute({ jobId: 'job-1' });
+
+      expect(job.status).toBe(JobStatus.Failed);
+      expect(job.errorCode).toBe('AI_CONSENT_REQUIRED');
+      expect(planSpy).not.toHaveBeenCalled();
+    });
   });
 
   it("fails an inactive user's job with USER_INACTIVE before anything is published or scheduled", async () => {

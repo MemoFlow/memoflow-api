@@ -3,6 +3,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import * as amqplib from 'amqplib';
+import { Client } from 'pg';
 import {
   RabbitMQContainer,
   StartedRabbitMQContainer,
@@ -31,6 +32,42 @@ interface PlanningJobBody {
   context_used: Record<string, unknown> | null;
   error_code: string | null;
   error_message: string | null;
+}
+
+/**
+ * Gives the account behind `token` an active connector, so its planning jobs
+ * have something to gather and take the publish path. A job without a
+ * connector completes without the engine (see the dedicated test below).
+ * Idempotent across a jest.retryTimes re-run.
+ */
+async function addActiveConnector(
+  pg: PgTestEnv,
+  token: string,
+  provider: string,
+): Promise<void> {
+  const payload = JSON.parse(
+    Buffer.from(token.split('.')[1], 'base64url').toString('utf-8'),
+  ) as { sub: string };
+  const client = new Client({
+    host: pg.env.POSTGRES_HOST,
+    port: Number(pg.env.POSTGRES_PORT),
+    user: pg.env.POSTGRES_USER,
+    password: pg.env.POSTGRES_PASSWORD,
+    database: pg.env.POSTGRES_DB,
+  });
+  await client.connect();
+  try {
+    await client.query(
+      `INSERT INTO connector_connections (user_id, provider, composio_account_id, status, connected_at)
+       SELECT $1::uuid, $2::varchar, $3, 'active', now()
+       WHERE NOT EXISTS (
+         SELECT 1 FROM connector_connections WHERE user_id = $1::uuid AND provider = $2::varchar
+       )`,
+      [payload.sub, provider, `ca_${provider}_e2e`],
+    );
+  } finally {
+    await client.end();
+  }
 }
 
 async function registerAndLogin(
@@ -557,12 +594,16 @@ describeWithDocker()('RabbitMQ context-engine transport (e2e)', () => {
       'properties when a planning job is submitted, and the job moves to gathering',
     async () => {
       const token = await registerAndLogin(app, 'rabbit-request@example.com');
+      await addActiveConnector(pg, token, 'trello');
       const received = waitForOneMessage(ceChannel, CTX_GATHER_REQUESTS_QUEUE);
 
       const submitRes = await request(app.getHttpServer())
         .post('/planning-jobs')
         .set('Authorization', `Bearer ${token}`)
-        .send({ prompt: 'Draft an outline via the RabbitMQ transport' })
+        .send({
+          prompt: 'Draft an outline via the RabbitMQ transport',
+          connectors: ['trello'],
+        })
         .expect(202);
       const jobId = submitRes.body.job_id as string;
       expect(submitRes.body.status).toBe('pending');
@@ -594,7 +635,13 @@ describeWithDocker()('RabbitMQ context-engine transport (e2e)', () => {
         job_id: jobId,
         user_id: expect.any(String),
         prompt: 'Draft an outline via the RabbitMQ transport',
-        connectors: [],
+        connectors: [
+          {
+            provider: 'trello',
+            mcp_url: null,
+            composio_account_id: 'ca_trello_e2e',
+          },
+        ],
         requested_at: expect.any(String),
       });
       expect(msg.properties.messageId).toBe(jobId);
@@ -621,12 +668,16 @@ describeWithDocker()('RabbitMQ context-engine transport (e2e)', () => {
       'fake context engine, ignoring a duplicate sequence',
     async () => {
       const token = await registerAndLogin(app, 'rabbit-completed@example.com');
+      await addActiveConnector(pg, token, 'trello');
       const received = waitForOneMessage(ceChannel, CTX_GATHER_REQUESTS_QUEUE);
 
       const submitRes = await request(app.getHttpServer())
         .post('/planning-jobs')
         .set('Authorization', `Bearer ${token}`)
-        .send({ prompt: 'Plan with fake context engine' })
+        .send({
+          prompt: 'Plan with fake context engine',
+          connectors: ['trello'],
+        })
         .expect(202);
       const jobId = submitRes.body.job_id as string;
 
@@ -742,16 +793,49 @@ describeWithDocker()('RabbitMQ context-engine transport (e2e)', () => {
   );
 
   it(
+    'completes a job with no connectors without publishing a gather request ' +
+      'or waiting on the engine',
+    async () => {
+      const token = await registerAndLogin(app, 'rabbit-no-conn@example.com');
+      // Nothing answers on ctx.gather.results in this test: the job must
+      // finish on its own instead of waiting for a terminal chunk.
+      const submitRes = await request(app.getHttpServer())
+        .post('/planning-jobs')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ prompt: 'Plan without any connector' })
+        .expect(202);
+      const jobId = submitRes.body.job_id as string;
+
+      const finalState = await pollUntilTerminal(app, jobId, token);
+      expect(finalState.status).toBe('completed');
+      expect(finalState.result).toEqual({
+        suggestions: ['(stub plan) Plan without any connector'],
+        outline: null,
+        sources: [],
+      });
+      expect(finalState.context_used).toMatchObject({
+        retrieval: { sources: [], used: 0, failed: false },
+      });
+      // Reaching `completed` with no engine reply already proves it did not
+      // wait; the empty request queue proves nothing was published either.
+      const queue = await ceChannel.checkQueue(CTX_GATHER_REQUESTS_QUEUE);
+      expect(queue.messageCount).toBe(0);
+    },
+    30_000,
+  );
+
+  it(
     'fails a job (generic code and fixed message) when the fake context engine ' +
       'publishes a terminal failed status chunk',
     async () => {
       const token = await registerAndLogin(app, 'rabbit-failed@example.com');
+      await addActiveConnector(pg, token, 'trello');
       const received = waitForOneMessage(ceChannel, CTX_GATHER_REQUESTS_QUEUE);
 
       const submitRes = await request(app.getHttpServer())
         .post('/planning-jobs')
         .set('Authorization', `Bearer ${token}`)
-        .send({ prompt: 'This gather will fail' })
+        .send({ prompt: 'This gather will fail', connectors: ['trello'] })
         .expect(202);
       const jobId = submitRes.body.job_id as string;
 
