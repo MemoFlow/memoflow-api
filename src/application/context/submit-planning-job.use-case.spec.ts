@@ -96,7 +96,7 @@ class StubPromptQueue implements PromptQueue {
 
   enqueue(job: { jobId: string; userId: string }): Promise<void> {
     if (this.shouldThrow) {
-      return Promise.reject(new Error('redis unavailable'));
+      return Promise.reject(new Error('connect ECONNREFUSED 10.0.0.5:6379'));
     }
     this.enqueued.push(job);
     return Promise.resolve();
@@ -228,6 +228,8 @@ describe('SubmitPlanningJobUseCase', () => {
     expect(job).not.toBeNull();
     expect(job?.status).toBe(JobStatus.Failed);
     expect(job?.errorCode).toBe('ENQUEUE_FAILED');
+    // Fixed text: the queue error can carry an internal address.
+    expect(job?.errorMessage).toBe('Failed to enqueue job');
     expect(job?.finishedAt).not.toBeNull();
   });
 

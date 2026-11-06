@@ -12,6 +12,12 @@ import { startRedisContainer, RedisTestEnv } from './utils/redis-testcontainer';
 import { promoteToAdmin } from './utils/promote-admin';
 import { registerUser } from './utils/register-user';
 
+/** The text between the untrusted tags, so a reply never echoes the fence
+ * (and with it the nonce), which the output guard rightly rejects. */
+function fencedContent(user: string): string {
+  return user.replace(/<\/?untrusted_[0-9a-f]+>\n?/g, '').replace(/\n$/, '');
+}
+
 /**
  * Fake `SuggestionGenerator` swapped in via `overrideProvider` — this suite
  * never calls the real LLM provider. `available` starts `true` so most
@@ -36,7 +42,7 @@ class FakeSuggestionGenerator {
   }): Promise<{ suggestedText: string; model: string }> {
     this.lastInput = input;
     return Promise.resolve({
-      suggestedText: `Better: ${input.user}`,
+      suggestedText: `Better: ${fencedContent(input.user)}`,
       model: 'fake/model-1',
     });
   }
@@ -384,7 +390,9 @@ describeWithDocker()('AI layer (e2e)', () => {
       expect(input.user).toBe(
         `<untrusted_${nonce}>\nThis is a rough draft paragraph.\n</untrusted_${nonce}>`,
       );
-      expect(res.body.suggested_text).toBe(`Better: ${input.user}`);
+      expect(res.body.suggested_text).toBe(
+        'Better: This is a rough draft paragraph.',
+      );
     });
 
     it('keeps $-sequences in the section content literal in the rendered prompt', async () => {

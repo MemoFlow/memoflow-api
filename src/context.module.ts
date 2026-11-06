@@ -6,12 +6,13 @@ import { JwtModule, JwtModuleOptions } from '@nestjs/jwt';
 import { MongooseModule } from '@nestjs/mongoose';
 import type { Queue } from 'bullmq';
 import { GetPlanningJobUseCase } from './application/context/get-planning-job.use-case';
+import { AI_MAX_INPUT_CHARS } from './application/ai/max-input-chars.token';
 import { GATHER_TIMEOUT_MS } from './application/context/gather-timeout-ms.token';
 import { HandleContextResultChunkUseCase } from './application/context/handle-context-result-chunk.use-case';
 import { HandleGatherTimeoutUseCase } from './application/context/handle-gather-timeout.use-case';
 import { ProcessPlanningJobUseCase } from './application/context/process-planning-job.use-case';
 import { SubmitPlanningJobUseCase } from './application/context/submit-planning-job.use-case';
-import { AiModule } from './ai.module';
+import { AiModule, aiMaxInputCharsFactory } from './ai.module';
 import { ConnectorsModule } from './connectors.module';
 import { DocumentsModule } from './documents.module';
 import {
@@ -200,6 +201,11 @@ export function contextResultsConsumerFactory(
       provide: LLM_PLANNER,
       inject: [ConfigService, LLM_GATEWAY],
       useFactory: llmPlannerFactory,
+    },
+    {
+      provide: AI_MAX_INPUT_CHARS,
+      inject: [ConfigService],
+      useFactory: aiMaxInputCharsFactory,
     },
     {
       provide: GATHER_TIMEOUT_MS,

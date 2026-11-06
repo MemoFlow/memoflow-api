@@ -624,3 +624,43 @@ describe('env.validation deployed-tier safety checks', () => {
     });
   });
 });
+
+describe('env.validation AI guardrail settings', () => {
+  it('defaults OPENROUTER_MAX_RETRIES to 1 and AI_MAX_INPUT_CHARS to 40000', () => {
+    const result = validate(baseConfig());
+    expect(result.OPENROUTER_MAX_RETRIES).toBe(1);
+    expect(result.AI_MAX_INPUT_CHARS).toBe(40_000);
+  });
+
+  it('parses numeric strings', () => {
+    const result = validate(
+      baseConfig({ OPENROUTER_MAX_RETRIES: '3', AI_MAX_INPUT_CHARS: '1000' }),
+    );
+    expect(result.OPENROUTER_MAX_RETRIES).toBe(3);
+    expect(result.AI_MAX_INPUT_CHARS).toBe(1000);
+  });
+
+  it.each([
+    { OPENROUTER_MAX_RETRIES: '-1' },
+    { OPENROUTER_MAX_RETRIES: '4' },
+    { OPENROUTER_MAX_RETRIES: '1.5' },
+    { AI_MAX_INPUT_CHARS: '0' },
+    { AI_MAX_INPUT_CHARS: '200001' },
+    { AI_MAX_INPUT_CHARS: 'lots' },
+  ])('rejects %j', (overrides) => {
+    expect(() => validate(baseConfig(overrides))).toThrow();
+  });
+
+  it('allows AI_MAX_INPUT_CHARS up to 200000', () => {
+    expect(
+      validate(baseConfig({ AI_MAX_INPUT_CHARS: '200000' })).AI_MAX_INPUT_CHARS,
+    ).toBe(200_000);
+  });
+
+  it('allows 0 retries', () => {
+    expect(
+      validate(baseConfig({ OPENROUTER_MAX_RETRIES: '0' }))
+        .OPENROUTER_MAX_RETRIES,
+    ).toBe(0);
+  });
+});

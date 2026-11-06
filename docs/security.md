@@ -234,13 +234,17 @@ otherwise) needs an allowlist, not just validation.
 
 ## Prompt-injection posture (item 39)
 
-Spot-checked `src/infrastructure/ai/gateway-suggestion-generator.ts` and
-`src/infrastructure/context/gateway-llm-planner.ts`, which send content to the model
-only through `OpenRouterGateway` (`src/infrastructure/ai/openrouter.gateway.ts`).
-Slices 3 and 7 of the AI rework revisit this section.
+Content reaches the model only through `OpenRouterGateway`
+(`src/infrastructure/ai/openrouter.gateway.ts`) from
+`src/infrastructure/ai/gateway-suggestion-generator.ts` and
+`src/infrastructure/context/gateway-llm-planner.ts`.
 
-**Result: provisional.** Item 39 passed the original provider adapters. The gateway code
-that replaced them hasn't had that review yet; slices 3 and 7 do it.
+**Result: layered defenses in place (slice 3); injection risk is reduced, not
+eliminated.** Delimiters, redaction and output checks make attacks harder and limit
+what a successful one can do, but none of them is a guarantee. Treat all model output
+as untrusted data: never execute it or act on it automatically, and always show it to
+the user for review before it is applied. Slice 7 revisits this section with live
+testing against a real model.
 
 - The use-cases render the active prompt's `system_template` and user template with a
   random per-request nonce, and the adapters forward them unchanged as the `system` and
@@ -255,6 +259,19 @@ that replaced them hasn't had that review yet; slices 3 and 7 do it.
   use-case layer and persisted as inert data (`ai_suggestions` rows /
   `planning_jobs.result` in Mongo). Nothing downstream re-feeds stored
   suggestion/plan text into another LLM call unsanitized.
+- **Input handling.** Before text reaches the model, secrets are redacted on a best-effort
+  basis and look-alikes of the untrusted-data tags are neutralised. Stored originals are
+  unchanged; only the copy sent to the model is altered. Redaction is not a substitute
+  for keeping secrets out of documents.
+- **Size limits.** Section text over `AI_MAX_INPUT_CHARS` is rejected with `422` before
+  any provider call, planning prompts are capped at 5000 characters (`400`), and
+  planning context is cut to the limit.
+- **Output validation.** Replies are validated against the expected shape, and a reply
+  that echoes the prompt is rejected: `502` for suggestions, a failed job for planning.
+- **Fixed client errors.** Clients see fixed error messages. Provider detail goes only to
+  logs and Sentry, and logs carry no document or prompt content.
+- **Bounded retries.** `OPENROUTER_MAX_RETRIES` allows a few conservative retries that
+  share a single deadline with the call, so retries can't extend a request indefinitely.
 
 ## Rate-limiting note
 

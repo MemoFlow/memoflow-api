@@ -3,8 +3,31 @@ import {
   PROMPT_DEFINITIONS_V2,
   PromptTexts,
 } from '../../domain/ai/prompt-definitions';
+import {
+  collectStrings,
+  leaksPrompt,
+  prepareUntrustedText,
+  prepareUntrustedValue,
+} from '../../domain/ai/prompt-guards';
 import { renderPrompt } from '../../domain/ai/prompt-render';
 import type { PromptRepository } from '../../domain/ai/prompt.repository';
+import {
+  SuggestionGenerationProviderError,
+  SuggestionGenerationRefusedError,
+  SuggestionGenerationTruncatedError,
+  SuggestionGeneratorRateLimitedError,
+  SuggestionGeneratorUnavailableError,
+} from '../../domain/ai/suggestion-generation.errors';
+import type {
+  LlmPlanner,
+  PlanningResult,
+} from '../../domain/context/llm-planner.port';
+import {
+  PLANNING_FAILED_MESSAGE,
+  PlanningOutputInvalidError,
+  PlanningOutputRejectedError,
+} from '../../domain/context/planning-errors';
+import { DEFAULT_AI_MAX_INPUT_CHARS } from '../ai/max-input-chars.token';
 
 /** Feature type of the planning prompt. */
 export const PLANNING_FEATURE_TYPE = 'planning';
@@ -37,22 +60,105 @@ export async function resolvePlanningPrompt(
   };
 }
 
+export interface RenderedPlanningPrompt {
+  system: string;
+  user: string;
+  /** The per-call nonce, kept as the leak canary for the reply check. */
+  nonce: string;
+}
+
 /**
- * Renders both templates with a fresh per-call nonce. Throws if a template
- * uses an unknown placeholder, so call it inside the job's try block.
+ * Renders both templates with a fresh per-call nonce. The request and the
+ * serialised context are untrusted: both are redacted and have fence tags
+ * neutralised, and the context is cut at `maxInputChars` (it is data for the
+ * model, so a cut is acceptable until real source budgets exist). Throws if
+ * a template uses an unknown placeholder, so call it inside the job's try
+ * block.
  */
 export function renderPlanningPrompt(
   resolved: PromptTexts,
   prompt: string,
   context: Record<string, unknown>,
-): { system: string; user: string } {
+  maxInputChars: number = DEFAULT_AI_MAX_INPUT_CHARS,
+): RenderedPlanningPrompt {
+  // Redact and defuse the string leaves first: once serialised, quotes are
+  // escaped and a quoted secret would slip past the patterns.
+  const preparedContext = JSON.stringify(
+    prepareUntrustedValue(context, maxInputChars),
+  ).slice(0, maxInputChars);
+  const nonce = randomBytes(16).toString('hex');
   const vars = {
-    prompt,
-    context: JSON.stringify(context),
-    nonce: randomBytes(16).toString('hex'),
+    prompt: prepareUntrustedText(prompt),
+    context: preparedContext,
+    nonce,
   };
   return {
     system: renderPrompt(resolved.systemTemplate, vars),
     user: renderPrompt(resolved.userTemplate, vars),
+    nonce,
   };
+}
+
+/** Free text in a planning result, for the leak check. */
+function planningResultStrings(result: PlanningResult): string[] {
+  const strings = [...result.suggestions];
+  if (typeof result.outline === 'string') strings.push(result.outline);
+  for (const source of result.sources) {
+    if (typeof source === 'string') strings.push(source);
+  }
+  return strings;
+}
+
+/**
+ * The one place both planning paths render, call the planner and check the
+ * reply, so they behave identically. A reply that echoes the nonce or the
+ * system prompt throws `PlanningOutputRejectedError`. The result is inert
+ * data: it is stored and returned, never executed or fed back to a model.
+ */
+export async function planWithGuards(
+  planner: LlmPlanner,
+  resolved: PromptTexts,
+  prompt: string,
+  context: Record<string, unknown>,
+  maxInputChars: number = DEFAULT_AI_MAX_INPUT_CHARS,
+): Promise<PlanningResult> {
+  const { nonce, ...rendered } = renderPlanningPrompt(
+    resolved,
+    prompt,
+    context,
+    maxInputChars,
+  );
+  const result = await planner.plan({ prompt, context, ...rendered });
+  const leaked = leaksPrompt(planningResultStrings(result).join('\n'), {
+    nonce,
+    system: rendered.system,
+    source: [prompt, ...collectStrings(context)].join('\n'),
+  });
+  if (leaked) throw new PlanningOutputRejectedError();
+  return result;
+}
+
+/**
+ * The message to record on a failed job. Typed errors carry fixed messages
+ * and pass through; anything else (gather errors, driver errors, ...) may
+ * echo content, so it becomes a generic message.
+ */
+export function safeFailureMessage(err: unknown): string {
+  if (
+    err instanceof PlanningOutputInvalidError ||
+    err instanceof PlanningOutputRejectedError ||
+    err instanceof SuggestionGenerationProviderError ||
+    err instanceof SuggestionGenerationRefusedError ||
+    err instanceof SuggestionGenerationTruncatedError ||
+    err instanceof SuggestionGeneratorRateLimitedError ||
+    err instanceof SuggestionGeneratorUnavailableError
+  ) {
+    return err.message;
+  }
+  return PLANNING_FAILED_MESSAGE;
+}
+
+/** Error name only: messages can echo prompts, context or provider text. */
+export function errorName(err: unknown): string {
+  return err instanceof Error ? err.name : 'unknown';
 }

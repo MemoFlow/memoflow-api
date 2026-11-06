@@ -595,7 +595,8 @@ describe('ContextResultsConsumer', () => {
 
       await expect(consumer.onModuleInit()).resolves.toBeUndefined();
       await new Promise((r) => setImmediate(r));
-      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('boom'));
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('(Error)'));
+      expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('boom'));
     });
   });
 });

@@ -81,10 +81,13 @@ export class PlanningProcessor extends WorkerHost {
         });
       }
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : 'Planning job processing failed';
+      // Clients receive this message over the websocket and the log may
+      // be shared: neither gets the raw error text, which can echo content.
+      const errorMessage = 'Planning job processing failed';
       this.logger.error(
-        `Unexpected failure processing planning job ${jobId}: ${errorMessage}`,
+        `Unexpected failure processing planning job ${jobId} (${
+          err instanceof Error ? err.name : 'unknown'
+        })`,
       );
       // No manual Sentry.captureException here: @sentry/nestjs's BullMQ
       // instrumentation wraps `process()` (see `SentryModule.forRoot()` in

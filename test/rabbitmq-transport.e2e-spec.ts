@@ -714,7 +714,7 @@ describeWithDocker()('RabbitMQ context-engine transport (e2e)', () => {
   );
 
   it(
-    'fails a job (with the chunk error_code) when the fake context engine ' +
+    'fails a job (generic code and fixed message) when the fake context engine ' +
       'publishes a terminal failed status chunk',
     async () => {
       const token = await registerAndLogin(app, 'rabbit-failed@example.com');
@@ -763,8 +763,10 @@ describeWithDocker()('RabbitMQ context-engine transport (e2e)', () => {
 
       const finalState = await pollUntilTerminal(app, jobId, token);
       expect(finalState.status).toBe('failed');
-      expect(finalState.error_code).toBe('MCP_UNAVAILABLE');
-      expect(finalState.error_message).toBe('Trello MCP unreachable');
+      // The engine's own code and text are not stored: the unlisted code
+      // becomes the generic one and the message is fixed.
+      expect(finalState.error_code).toBe('CONTEXT_ENGINE_FAILED');
+      expect(finalState.error_message).toBe('Context gather failed');
     },
     30_000,
   );

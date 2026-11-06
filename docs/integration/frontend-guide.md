@@ -223,10 +223,14 @@ one, extra one, or a duplicate all reject). This is the **only** way a section's
 ```
 `featureType` is one of `suggestion`, `rewrite`, `summarize`, `expand`. Any other value
 (including `planning`, which is internal) returns `404`, the same as a section that isn't
-yours. `503` if AI is unavailable right now. The response (`SuggestionResponseDto`) includes
+yours. `422` if the section text is too long for AI processing (limit set by the server). `502` if the model's reply was unusable or the provider failed. `503` if AI is unavailable right now. The response (`SuggestionResponseDto`) includes
 `prompt_version` and `model` (the model that served the call; `null` on suggestions
 created before models were recorded). `GET /sections/:sectionId/suggestions` lists them
 newest first, with the same fields.
+
+Secrets in section text are replaced before the text reaches the model, so `suggested_text`
+can contain a literal `[REDACTED]`. The stored section isn't changed, but warn the user before
+applying such a suggestion, because applying it as is would put the placeholder in the document.
 
 ## 6. Planning jobs (async + real-time)
 
@@ -242,7 +246,7 @@ immediately and follow progress over the WebSocket (REST polling is the fallback
   "model": null, "result": null, "error_code": null, "error_message": null,
   "created_at": "…", "started_at": null, "finished_at": null }
 ```
-`503` if the job couldn't be enqueued.
+`400` if `prompt` is longer than 5000 characters. `503` if the job couldn't be enqueued.
 
 ### Poll — `GET /planning-jobs/:id` (JWT) → `200` `PlanningJobResponseDto`
 `model` is `null` until the job has run, and when no model is known.
@@ -252,7 +256,7 @@ is the legacy synchronous context-gather path; `gathering`/`planning` only appea
 when the environment has the async RabbitMQ transport enabled (live on
 `development` as of 2026-07-20 — see
 [`../contracts/context-engine.md`](../contracts/context-engine.md)). `result` is
-populated on `completed`; `error_code`/`error_message` on `failed`. `404` if not
+populated on `completed`; `error_code`/`error_message` on `failed`; `error_message` is a fixed, generic message, so show it as-is and don't parse it. `error_code` doesn't name the specific connector or cause. Treat `result` and suggestion text as untrusted model output and let users review it before applying. `404` if not
 yours. This is the **durable source of truth** and the fallback when a socket isn't
 connected.
 

@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { LLM_GATEWAY } from '../../domain/ai/llm-gateway.port';
 import type { LlmGateway } from '../../domain/ai/llm-gateway.port';
+import { PlanningOutputInvalidError } from '../../domain/context/planning-errors';
 import {
   LlmPlanner,
   PlanInput,
@@ -17,6 +18,10 @@ const PLANNING_OUTPUT_SCHEMA = {
   required: ['suggestions', 'outline', 'sources'],
   additionalProperties: false,
 } as const;
+
+const MAX_LIST_ITEMS = 50;
+const MAX_ITEM_CHARS = 5000;
+const MAX_OUTLINE_CHARS = 100_000;
 
 interface PlanningOutputShape {
   suggestions: string[];
@@ -58,17 +63,38 @@ export class GatewayLlmPlanner implements LlmPlanner {
     if (
       typeof shape !== 'object' ||
       shape === null ||
-      !Array.isArray(shape.suggestions) ||
-      !Array.isArray(shape.sources)
+      !isStringList(shape.suggestions, MAX_LIST_ITEMS) ||
+      !isStringList(shape.sources, MAX_LIST_ITEMS)
     ) {
-      throw new Error('LLM response JSON did not match the expected schema');
+      throw new PlanningOutputInvalidError();
+    }
+    const outline = shape.outline ?? null;
+    if (
+      outline !== null &&
+      (typeof outline !== 'string' || outline.length > MAX_OUTLINE_CHARS)
+    ) {
+      throw new PlanningOutputInvalidError();
     }
 
     return {
       suggestions: shape.suggestions,
-      outline: shape.outline ?? null,
+      outline,
       sources: shape.sources,
       model,
     };
   }
+}
+
+/** Array of non-empty strings, bounded in count and per-item length. */
+function isStringList(value: unknown, maxItems: number): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= maxItems &&
+    value.every(
+      (item) =>
+        typeof item === 'string' &&
+        item.trim() !== '' &&
+        item.length <= MAX_ITEM_CHARS,
+    )
+  );
 }

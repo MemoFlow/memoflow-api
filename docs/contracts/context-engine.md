@@ -143,8 +143,11 @@ pending ── publish request ──▶ gathering ── terminal `completed` �
 
 - **Missing/duplicate chunk:** duplicates are ignored by `(job_id, sequence)`; a gap in
   `sequence` is tolerated (best-effort relay) — correctness rests on the terminal marker.
-- **`failed` terminal chunk:** the job is marked `failed` with the chunk's `error_code`;
-  no planning runs.
+- **`failed` terminal chunk:** the job is marked `failed` and no planning runs. The API
+  stores a fixed message, never the chunk's `message`, and keeps `error_code` only if it's
+  `CONTEXT_ENGINE_TIMEOUT`; any other code becomes `CONTEXT_ENGINE_FAILED`.
+- **Progress chunks:** a non-terminal status `message` is relayed live to the job owner, so
+  it must be safe for users to read: no internal addresses, credentials or stack traces.
 - **No-result timeout:** if no terminal chunk arrives within a configured window, the API
   fails the job (`error_code: CONTEXT_ENGINE_TIMEOUT`). The request queue's DLQ captures
   requests the CE never acked.

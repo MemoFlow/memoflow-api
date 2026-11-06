@@ -5,16 +5,22 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { AiSuggestion } from '../../domain/ai/ai-suggestion.entity';
 import { AI_SUGGESTION_REPOSITORY } from '../../domain/ai/ai-suggestion.repository';
 import type { AiSuggestionRepository } from '../../domain/ai/ai-suggestion.repository';
+import {
+  leaksPrompt,
+  prepareUntrustedText,
+} from '../../domain/ai/prompt-guards';
 import { renderPrompt } from '../../domain/ai/prompt-render';
 import { PROMPT_REPOSITORY } from '../../domain/ai/prompt.repository';
 import type { PromptRepository } from '../../domain/ai/prompt.repository';
 import {
+  SuggestionGenerationProviderError,
   SuggestionGenerationRefusedError,
   SuggestionGenerationTruncatedError,
   SuggestionGeneratorRateLimitedError,
@@ -27,7 +33,17 @@ import { DOCUMENT_REPOSITORY } from '../../domain/documents/document.repository'
 import type { DocumentRepository } from '../../domain/documents/document.repository';
 import { SECTION_REPOSITORY } from '../../domain/documents/section.repository';
 import type { SectionRepository } from '../../domain/documents/section.repository';
+import {
+  AI_MAX_INPUT_CHARS,
+  DEFAULT_AI_MAX_INPUT_CHARS,
+} from './max-input-chars.token';
 import { assertSectionOwnedByUser } from './section-access';
+
+/** Longest `suggested_text` accepted from the model. */
+const MAX_SUGGESTED_TEXT_CHARS = 100_000;
+
+const GENERATION_FAILED_MESSAGE = 'AI suggestion generation failed';
+const INVALID_OUTPUT_MESSAGE = 'The AI provider returned an invalid response';
 
 export interface GenerateSuggestionInput {
   userId: string;
@@ -61,6 +77,9 @@ export class GenerateSuggestionUseCase {
     private readonly aiSuggestionRepository: AiSuggestionRepository,
     @Inject(SUGGESTION_GENERATOR)
     private readonly suggestionGenerator: SuggestionGenerator,
+    @Optional()
+    @Inject(AI_MAX_INPUT_CHARS)
+    private readonly maxInputChars: number = DEFAULT_AI_MAX_INPUT_CHARS,
   ) {}
 
   async execute(input: GenerateSuggestionInput): Promise<AiSuggestion> {
@@ -84,10 +103,19 @@ export class GenerateSuggestionUseCase {
       throw new ServiceUnavailableException('AI not configured');
     }
 
-    // Fresh per request so document text can't predict the delimiter.
+    if (section.content.length > this.maxInputChars) {
+      throw new UnprocessableEntityException(
+        `Section text is too long for AI processing (maximum ${this.maxInputChars} characters)`,
+      );
+    }
+
+    // Fresh per request so document text can't predict the delimiter. The
+    // text is redacted and fence tags neutralised for the model only; the
+    // stored `originalText` stays the user's real text.
+    const nonce = randomBytes(16).toString('hex');
     const vars = {
-      content: section.content,
-      nonce: randomBytes(16).toString('hex'),
+      content: prepareUntrustedText(section.content),
+      nonce,
     };
     let system: string;
     let user: string;
@@ -109,6 +137,11 @@ export class GenerateSuggestionUseCase {
         user,
         featureType: input.featureType,
       });
+      this.assertValidOutput(generated.suggestedText, {
+        nonce,
+        system,
+        source: section.content,
+      });
     } catch (err) {
       throw this.mapGenerationError(err);
     }
@@ -122,6 +155,21 @@ export class GenerateSuggestionUseCase {
       promptVersion: prompt.version,
       model: generated.model,
     });
+  }
+
+  /** The reply is inert data: checked, stored, never executed or re-fed. */
+  private assertValidOutput(
+    text: unknown,
+    leak: { nonce: string; system: string; source: string },
+  ): void {
+    if (
+      typeof text !== 'string' ||
+      text.trim() === '' ||
+      text.length > MAX_SUGGESTED_TEXT_CHARS ||
+      leaksPrompt(text, leak)
+    ) {
+      throw new SuggestionGenerationProviderError(INVALID_OUTPUT_MESSAGE);
+    }
   }
 
   private mapGenerationError(err: unknown): Error {
@@ -145,10 +193,14 @@ export class GenerateSuggestionUseCase {
           : err.message,
       );
     }
-    // Any other provider failure (SuggestionGenerationProviderError or an
-    // unexpected throw) is treated as an upstream fault.
-    return new BadGatewayException(
-      err instanceof Error ? err.message : 'AI suggestion generation failed',
+    if (err instanceof SuggestionGenerationProviderError) {
+      return new BadGatewayException(err.message);
+    }
+    // An unexpected throw is an upstream fault. Its message may echo prompt
+    // or provider text, so clients get a fixed one and logs only the name.
+    this.logger.error(
+      `Suggestion generation failed (${err instanceof Error ? err.name : 'unknown'})`,
     );
+    return new BadGatewayException(GENERATION_FAILED_MESSAGE);
   }
 }

@@ -306,7 +306,7 @@ describe('ProcessPlanningJobUseCase — RabbitMQ transport branch', () => {
     expect(processed).toBe(true);
     expect(job.status).toBe(JobStatus.Failed);
     expect(job.errorCode).toBe('CONTEXT_ENGINE_PUBLISH_FAILED');
-    expect(job.errorMessage).toBe('broker unavailable');
+    expect(job.errorMessage).toBe('Failed to publish context gather request');
     expect(scheduler.scheduled).toHaveLength(0);
   });
 
