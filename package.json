@@ -6,7 +6,7 @@
   "private": true,
   "license": "UNLICENSED",
   "overrides": {
-    "multer": "2.4.0"
+    "multer": "2.5.0"
   },
   "scripts": {
     "build": "nest build",
