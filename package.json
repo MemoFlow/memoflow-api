@@ -32,6 +32,7 @@
     "db:seed": "./scripts/db.sh seed",
     "admin:promote": "ts-node scripts/promote-admin.ts",
     "templates:load": "ts-node scripts/load-template-content.ts",
+    "ai:smoke": "ts-node scripts/ai-smoke.ts",
     "smoke": "./scripts/smoke.sh",
     "release": "./scripts/release.sh",
     "release:dry": "./scripts/release.sh --dry-run",
