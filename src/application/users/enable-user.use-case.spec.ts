@@ -1,0 +1,108 @@
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { UserRole } from '../../domain/users/user-role';
+import { User } from '../../domain/users/user.entity';
+import { UserRepository } from '../../domain/users/user.repository';
+import { EnableUserUseCase } from './enable-user.use-case';
+
+class InMemoryUserRepository implements UserRepository {
+  readonly setCalls: { id: string; disabledAt: Date | null }[] = [];
+
+  constructor(private readonly users: User[] = []) {}
+
+  findById(id: string): Promise<User | null> {
+    return Promise.resolve(this.users.find((u) => u.id === id) ?? null);
+  }
+
+  findByEmail(): Promise<User | null> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
+  create(): Promise<User> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
+  updateLastActiveAt(): Promise<void> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
+  setDisabledAt(id: string, disabledAt: Date | null): Promise<void> {
+    this.setCalls.push({ id, disabledAt });
+    return Promise.resolve();
+  }
+
+  findTopByXp(): Promise<User[]> {
+    return Promise.reject(new Error('not implemented'));
+  }
+}
+
+function makeUser(id: string, disabledAt: Date | null = null): User {
+  return new User({
+    id,
+    email: `${id}@example.com`,
+    passwordHash: 'hash',
+    displayName: id,
+    role: UserRole.User,
+    xp: 0,
+    level: 1,
+    lastActiveAt: null,
+    disabledAt,
+  });
+}
+
+describe('EnableUserUseCase', () => {
+  it('clears disabledAt on a disabled user', async () => {
+    const repository = new InMemoryUserRepository([
+      makeUser('user-1', new Date()),
+    ]);
+    const useCase = new EnableUserUseCase(repository);
+
+    await useCase.execute({
+      actorId: 'admin-1',
+      role: UserRole.Admin,
+      userId: 'user-1',
+    });
+
+    expect(repository.setCalls).toEqual([{ id: 'user-1', disabledAt: null }]);
+  });
+
+  it('is idempotent for an already active user', async () => {
+    const repository = new InMemoryUserRepository([makeUser('user-1')]);
+    const useCase = new EnableUserUseCase(repository);
+
+    await useCase.execute({
+      actorId: 'admin-1',
+      role: UserRole.Admin,
+      userId: 'user-1',
+    });
+
+    expect(repository.setCalls).toEqual([]);
+  });
+
+  it('throws NotFoundException for an unknown user', async () => {
+    const useCase = new EnableUserUseCase(new InMemoryUserRepository([]));
+
+    await expect(
+      useCase.execute({
+        actorId: 'admin-1',
+        role: UserRole.Admin,
+        userId: 'missing',
+      }),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  it('throws ForbiddenException for a non-admin actor', async () => {
+    const repository = new InMemoryUserRepository([
+      makeUser('user-1', new Date()),
+    ]);
+    const useCase = new EnableUserUseCase(repository);
+
+    await expect(
+      useCase.execute({
+        actorId: 'user-2',
+        role: UserRole.User,
+        userId: 'user-1',
+      }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(repository.setCalls).toEqual([]);
+  });
+});

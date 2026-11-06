@@ -15,6 +15,8 @@ import { JwtPayload } from '../../application/auth/jwt-payload.interface';
 import { GetPlanningJobUseCase } from '../../application/context/get-planning-job.use-case';
 import { GetUserByIdUseCase } from '../../application/users/get-user-by-id.use-case';
 import { JobStatus, PlanningJob } from '../../domain/context/planning-job';
+import { USER_DISABLED_EVENT } from '../../domain/users/user-events';
+import type { UserDisabledEventPayload } from '../../domain/users/user-events';
 
 interface PlanningStatusEvent {
   jobId: string;
@@ -112,28 +114,63 @@ export class PlanningGateway implements OnGatewayConnection {
       const payload = await this.jwtService.verifyAsync<JwtPayload>(token, {
         secret: this.configService.getOrThrow<string>('JWT_SECRET'),
       });
+      // Room is server-derived from the verified token — never from
+      // anything the client supplies — so a socket can only ever be joined
+      // to its own owner room. Joined *before* the account check so a
+      // concurrent disable event (which evicts by room) cannot miss this
+      // socket; a socket that fails the check below is disconnected, which
+      // also removes it from the room.
+      await client.join(`user:${payload.sub}`);
       // Mirrors JwtStrategy: a missing user means the token no longer maps
       // to an account (deleted user, forged sub) — treat it as an auth
       // failure, same as an invalid/expired token.
-      await this.getUserById.execute(payload.sub);
+      const user = await this.getUserById.execute(payload.sub);
+      if (user.isDisabled) {
+        client.disconnect(true);
+        return;
+      }
 
       client.data.userId = payload.sub;
-      // Room is server-derived from the verified token — never from
-      // anything the client supplies — so a socket can only ever be joined
-      // to its own owner room.
-      await client.join(`user:${payload.sub}`);
       // Deterministic readiness signal: the client-visible `connect` event
       // fires before this async handshake (verify + room join) completes,
       // so callers that need the join to be in effect (e.g. before
       // submitting a job they expect to be pushed back to this socket)
       // should wait for `ready` instead of an arbitrary delay.
       client.emit('ready');
-    } catch {
-      // Swallow the error (invalid signature, expired token, missing user,
-      // malformed payload) — all of these are indistinguishable auth
-      // failures from the client's point of view.
+    } catch (err) {
+      // Auth failures (invalid/expired/malformed token, missing user) are
+      // indistinguishable to the client and not worth logging. Anything
+      // else (e.g. a DB outage) still disconnects but is logged — never
+      // the token itself.
+      if (!this.isAuthFailure(err)) {
+        const message = err instanceof Error ? err.message : 'unknown error';
+        this.logger.warn(`Socket handshake failed unexpectedly: ${message}`);
+      }
       client.disconnect(true);
     }
+  }
+
+  /**
+   * Disconnects every live socket of a user whose account was just disabled.
+   * Eviction is per-process: the deployment is single-instance, so a future
+   * multi-instance setup needs a socket.io adapter for `in(...)` to reach
+   * sockets held by other instances.
+   */
+  @OnEvent(USER_DISABLED_EVENT)
+  handleUserDisabled(payload: UserDisabledEventPayload): void {
+    this.server.in(`user:${payload.userId}`).disconnectSockets(true);
+  }
+
+  private isAuthFailure(err: unknown): boolean {
+    // `jsonwebtoken` errors (a transitive dependency of `@nestjs/jwt`) are
+    // matched by name rather than imported directly.
+    return (
+      err instanceof NotFoundException ||
+      (err instanceof Error &&
+        ['JsonWebTokenError', 'TokenExpiredError', 'NotBeforeError'].includes(
+          err.name,
+        ))
+    );
   }
 
   @SubscribeMessage('subscribe')
@@ -149,6 +186,25 @@ export class PlanningGateway implements OnGatewayConnection {
     const jobId = body?.jobId;
     if (typeof jobId !== 'string' || jobId.length === 0) {
       return;
+    }
+
+    // Re-check the account on every subscribe so a disabled or deleted user
+    // is dropped even if the disable event never reached this socket.
+    try {
+      const user = await this.getUserById.execute(userId);
+      if (user.isDisabled) {
+        client.disconnect(true);
+        return;
+      }
+    } catch (err) {
+      if (err instanceof NotFoundException) {
+        client.disconnect(true);
+        return;
+      }
+      // Fail closed: if the account state can't be confirmed, drop the
+      // socket rather than serve the job.
+      client.disconnect(true);
+      throw err;
     }
 
     try {

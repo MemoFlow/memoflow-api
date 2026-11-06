@@ -35,10 +35,11 @@ validate that the referenced PG row exists before writing to Mongo. The
 | email | varchar | unique, **indexed** |
 | password_hash | varchar | never serialized in API responses |
 | display_name | varchar | |
-| role | varchar | |
+| role | varchar | `user` (default) or `admin`, enforced by `CHK_users_role`; promote via `npm run admin:promote` |
 | xp | int | **indexed** (leaderboards) |
 | level | int | |
 | last_active_at | timestamptz | |
+| disabled_at | timestamptz | nullable; set while the account is disabled (login, JWT and WebSocket auth reject it); exposed only to admin viewers |
 
 #### `documents`
 | column | type | notes |

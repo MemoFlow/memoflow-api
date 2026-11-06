@@ -40,9 +40,13 @@ export class GamificationController {
   @ApiResponse({ status: 200, type: [LeaderboardEntryResponseDto] })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async getLeaderboard(
+    @CurrentUser() user: User,
     @Query() query: LeaderboardQueryDto,
   ): Promise<LeaderboardEntryResponseDto[]> {
-    const entries = await this.getLeaderboardUseCase.execute(query.limit);
+    const entries = await this.getLeaderboardUseCase.execute(
+      user.id,
+      query.limit,
+    );
     return entries.map((entry) => LeaderboardEntryResponseDto.fromEntry(entry));
   }
 }

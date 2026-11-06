@@ -26,7 +26,18 @@ export class UserResponseDto {
   @ApiProperty({ nullable: true })
   last_active_at: Date | null;
 
-  static fromDomain(user: User): UserResponseDto {
+  @ApiProperty({
+    nullable: true,
+    required: false,
+    description: 'Present only in responses to an admin viewer',
+  })
+  disabled_at?: Date | null;
+
+  /**
+   * `disabled_at` is included only when the viewer is an admin. Omit
+   * `viewer` for contexts (e.g. registration) that never expose it.
+   */
+  static fromDomain(user: User, viewer?: User): UserResponseDto {
     const dto = new UserResponseDto();
     dto.id = user.id;
     dto.email = user.email;
@@ -35,6 +46,9 @@ export class UserResponseDto {
     dto.xp = user.xp;
     dto.level = user.level;
     dto.last_active_at = user.lastActiveAt;
+    if (viewer?.isAdmin) {
+      dto.disabled_at = user.disabledAt;
+    }
     return dto;
   }
 }

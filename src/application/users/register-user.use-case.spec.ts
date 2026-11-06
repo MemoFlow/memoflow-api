@@ -1,5 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
+import { UserRole } from '../../domain/users/user-role';
 import { User } from '../../domain/users/user.entity';
 import {
   CreateUserData,
@@ -24,7 +25,7 @@ class InMemoryUserRepository implements UserRepository {
       email: data.email,
       passwordHash: data.passwordHash,
       displayName: data.displayName,
-      role: 'user',
+      role: UserRole.User,
       xp: 0,
       level: 1,
       lastActiveAt: new Date(),
@@ -35,6 +36,10 @@ class InMemoryUserRepository implements UserRepository {
 
   updateLastActiveAt(): Promise<void> {
     return Promise.resolve();
+  }
+
+  setDisabledAt(): Promise<void> {
+    return Promise.reject(new Error('not implemented'));
   }
 
   findTopByXp(): Promise<User[]> {

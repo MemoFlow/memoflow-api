@@ -11,6 +11,7 @@ import {
   IncrementMissionProgressResult,
   MissionProgressRepository,
 } from '../../domain/gamification/mission-progress.repository';
+import { UserRole } from '../../domain/users/user-role';
 import { User } from '../../domain/users/user.entity';
 import { UserRepository } from '../../domain/users/user.repository';
 import { GetMyGamificationUseCase } from './get-my-gamification.use-case';
@@ -31,6 +32,10 @@ class InMemoryUserRepository implements UserRepository {
   }
 
   updateLastActiveAt(): Promise<void> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
+  setDisabledAt(): Promise<void> {
     return Promise.reject(new Error('not implemented'));
   }
 
@@ -88,7 +93,7 @@ function makeUser(overrides: Partial<User> = {}): User {
     email: 'user@example.com',
     passwordHash: 'hash',
     displayName: 'Test User',
-    role: 'user',
+    role: UserRole.User,
     xp: 150,
     level: 2,
     lastActiveAt: null,

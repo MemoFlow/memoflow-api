@@ -384,13 +384,15 @@ work already flagged as deferred in the sections above, not a numbered feature:
   returns 503 ("AI not configured") and the planning-job LLM planner stays on
   `StubLlmPlanner` ("(stub plan)") on the deployed dev service. Item 5's code is
   done; this is a deploy-config gap, not a missing feature.
-- **`CORS_ORIGIN` / `WS_CORS_ORIGIN` are wired but not yet active on `development`**
-  — `render.yaml` declares both keys (PR #46) and the Render dashboard has a value
-  set for each, but a live probe of `GET /health` with a non-matching `Origin`
-  still returns `access-control-allow-origin: *` as of 2026-07-20 — the running
-  dev process is still on the `'*'` default. A manual redeploy (and possibly a
-  blueprint sync, since #46 added the keys) is needed before REST/WS CORS actually
-  locks to the frontend origin on `development`.
+- **`CORS_ORIGIN` / `WS_CORS_ORIGIN` are active on `development`** — declared in
+  `render.yaml` (PR #46) and confirmed active on 2026-09-14. Staging/production are
+  set per environment at their first deploys.
+- **Authorization hardening — ◐ in progress**
+  ([plan](plans/2026-11-06-authz-hardening.md)). Phase 2 is implemented on
+  `bugfix/authz-hardening` (not yet merged): user roles (`user`/`admin`),
+  admin-only template publishing, owner-scoped user reads, leaderboard `is_me`
+  (replacing `user_id`), account disable/enable, and `npm run admin:promote`. See
+  [`docs/security.md`](security.md#role-model).
 - **gRPC and a separate Context-module worker deployment remain explicitly deferred**
   (Context module async backbone section) — only built if a concrete trigger from
   `ARCHITECTURE.md`'s "Service boundaries" appears.

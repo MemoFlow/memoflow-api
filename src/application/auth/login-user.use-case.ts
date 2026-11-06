@@ -45,7 +45,9 @@ export class LoginUserUseCase {
       input.password,
       user.passwordHash,
     );
-    if (!passwordMatches) {
+    // A disabled account is rejected with the same response as a wrong
+    // password so the login endpoint reveals nothing about account state.
+    if (!passwordMatches || user.isDisabled) {
       this.eventEmitter.emit(AUTH_LOGIN_FAILED_EVENT, {
         userId: user.id,
         email: input.email,

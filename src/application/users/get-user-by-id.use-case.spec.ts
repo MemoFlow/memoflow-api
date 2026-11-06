@@ -1,4 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
+import { UserRole } from '../../domain/users/user-role';
 import { User } from '../../domain/users/user.entity';
 import { UserRepository } from '../../domain/users/user.repository';
 import { GetUserByIdUseCase } from './get-user-by-id.use-case';
@@ -22,6 +23,10 @@ class InMemoryUserRepository implements UserRepository {
     return Promise.resolve();
   }
 
+  setDisabledAt(): Promise<void> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
   findTopByXp(): Promise<User[]> {
     return Promise.reject(new Error('not implemented'));
   }
@@ -34,7 +39,7 @@ describe('GetUserByIdUseCase', () => {
       email: 'ada@example.com',
       passwordHash: 'hashed',
       displayName: 'Ada Lovelace',
-      role: 'user',
+      role: UserRole.User,
       xp: 0,
       level: 1,
       lastActiveAt: null,

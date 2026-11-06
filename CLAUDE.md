@@ -16,6 +16,7 @@ creating or changing any entity; update it in the same PR as schema changes.
 | `npm run lint` / `npm run build` | lint (with autofix) / compile |
 | `npm run db:up` / `db:down` / `db:reset` | dev databases via docker compose (`reset` wipes volumes) |
 | `npm run db:seed` | idempotent dev seed (`scripts/seed.ts`) |
+| `npm run admin:promote` | promotes an existing user to admin and re-enables it if disabled: `ADMIN_EMAIL=<email> npm run admin:promote` (uses `POSTGRES_*`; idempotent; runs under any `NODE_ENV`; `scripts/promote-admin.ts`) |
 | `npm run smoke` | boots the app and polls `/health` |
 | `npm run migration:generate -- src/infrastructure/persistence/migrations/<Name>` | generate migration from entity diff |
 | `npm run migration:run` / `migration:revert` / `migration:show` | apply / revert / list migrations |

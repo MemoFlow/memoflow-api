@@ -4,6 +4,9 @@ import { JwtModule, JwtModuleOptions } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { LoginUserUseCase } from './application/auth/login-user.use-case';
+import { DisableUserUseCase } from './application/users/disable-user.use-case';
+import { EnableUserUseCase } from './application/users/enable-user.use-case';
+import { GetUserProfileUseCase } from './application/users/get-user-profile.use-case';
 import { GetUserByIdUseCase } from './application/users/get-user-by-id.use-case';
 import { RegisterUserUseCase } from './application/users/register-user.use-case';
 import { USER_REPOSITORY } from './domain/users/user.repository';
@@ -43,6 +46,9 @@ import { UsersController } from './presentation/users/users.controller';
     RegisterUserUseCase,
     LoginUserUseCase,
     GetUserByIdUseCase,
+    GetUserProfileUseCase,
+    DisableUserUseCase,
+    EnableUserUseCase,
     JwtStrategy,
   ],
   exports: [USER_REPOSITORY, GetUserByIdUseCase],
