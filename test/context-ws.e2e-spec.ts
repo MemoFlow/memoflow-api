@@ -12,6 +12,7 @@ import {
 } from './utils/pg-testcontainer';
 import { promoteToAdmin } from './utils/promote-admin';
 import { startRedisContainer, RedisTestEnv } from './utils/redis-testcontainer';
+import { registerUser } from './utils/register-user';
 
 // Same Docker-availability gate as `context.e2e-spec.ts` — this suite boots
 // the full AppModule (PostgreSQL + Redis via Testcontainers, in-memory
@@ -33,10 +34,7 @@ describeWithDocker()('Context / planning-job WebSocket push (e2e)', () => {
       password: 'correct-horse-battery-staple',
       display_name: 'Test User',
     };
-    await request(app.getHttpServer())
-      .post('/auth/register')
-      .send(payload)
-      .expect(201);
+    await registerUser(app, payload);
 
     const loginRes = await request(app.getHttpServer())
       .post('/auth/login')

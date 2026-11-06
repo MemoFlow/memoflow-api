@@ -16,6 +16,12 @@
 
 export const AUTH_LOGIN_EVENT = 'auth.login';
 export const AUTH_LOGIN_FAILED_EVENT = 'auth.login_failed';
+export const AUTH_PASSWORD_RESET_REQUESTED_EVENT =
+  'auth.password_reset_requested';
+export const AUTH_PASSWORD_RESET_COMPLETED_EVENT =
+  'auth.password_reset_completed';
+export const AUTH_PASSWORD_CHANGED_EVENT = 'auth.password_changed';
+export const AUTH_EMAIL_VERIFIED_EVENT = 'auth.email_verified';
 export const CONNECTOR_REVOKED_EVENT = 'connector.revoked';
 export const SUGGESTION_REVIEWED_EVENT = 'suggestion.reviewed';
 
@@ -27,6 +33,11 @@ export interface AuthLoginFailedEventPayload {
   /** null when the email doesn't match any account. */
   userId: string | null;
   email: string;
+}
+
+/** Shared by the password/email audit events. */
+export interface AuthAccountEventPayload {
+  userId: string;
 }
 
 export interface ConnectorRevokedEventPayload {

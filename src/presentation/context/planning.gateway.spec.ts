@@ -23,7 +23,7 @@ function makeJob(overrides: Partial<PlanningJob> = {}): PlanningJob {
   });
 }
 
-function makeUser(disabledAt: Date | null = null): User {
+function makeUser(disabledAt: Date | null = null, tokenVersion = 0): User {
   return new User({
     id: 'user-1',
     email: 'a@b.com',
@@ -34,6 +34,7 @@ function makeUser(disabledAt: Date | null = null): User {
     level: 1,
     lastActiveAt: null,
     disabledAt,
+    tokenVersion,
   });
 }
 
@@ -79,7 +80,7 @@ describe('PlanningGateway', () => {
         sub: 'user-1',
         email: 'a@b.com',
       });
-      getUserById.execute.mockResolvedValue({ id: 'user-1' });
+      getUserById.execute.mockResolvedValue(makeUser());
 
       await gateway.handleConnection(client as any);
 
@@ -216,6 +217,55 @@ describe('PlanningGateway', () => {
 
       expect(client.disconnect).toHaveBeenCalledWith(true);
       expect(client.emit).not.toHaveBeenCalledWith('ready');
+    });
+  });
+
+  describe('session version', () => {
+    it('disconnects at handshake when the token version is stale', async () => {
+      const client = makeClient();
+      client.handshake.auth.token = 'valid-token';
+      jwtService.verifyAsync.mockResolvedValue({ sub: 'user-1', tv: 0 });
+      getUserById.execute.mockResolvedValue(makeUser(null, 1));
+
+      await gateway.handleConnection(client as any);
+
+      expect(client.disconnect).toHaveBeenCalledWith(true);
+      expect(client.emit).not.toHaveBeenCalled();
+    });
+
+    it('treats a missing tv as 0 and keeps the version on the socket', async () => {
+      const client = makeClient();
+      client.handshake.auth.token = 'valid-token';
+      jwtService.verifyAsync.mockResolvedValue({ sub: 'user-1' });
+      getUserById.execute.mockResolvedValue(makeUser(null, 0));
+
+      await gateway.handleConnection(client as any);
+
+      expect(client.disconnect).not.toHaveBeenCalled();
+      expect(client.data.tokenVersion).toBe(0);
+    });
+
+    it('disconnects on subscribe when the account version moved on', async () => {
+      const client = makeClient();
+      client.data.userId = 'user-1';
+      client.data.tokenVersion = 0;
+      getUserById.execute.mockResolvedValue(makeUser(null, 1));
+
+      await gateway.handleSubscribe(client as any, { jobId: 'job-1' });
+
+      expect(client.disconnect).toHaveBeenCalledWith(true);
+      expect(getPlanningJob.execute).not.toHaveBeenCalled();
+    });
+
+    it('drops the sockets of a user whose sessions were revoked', () => {
+      const disconnectSockets = jest.fn();
+      const inRoom = jest.fn().mockReturnValue({ disconnectSockets });
+      gateway.server = { in: inRoom } as any;
+
+      gateway.handleUserSessionsRevoked({ userId: 'user-1' });
+
+      expect(inRoom).toHaveBeenCalledWith('user:user-1');
+      expect(disconnectSockets).toHaveBeenCalledWith(true);
     });
   });
 

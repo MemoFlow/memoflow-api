@@ -2,12 +2,17 @@ import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { RecordAuditEventUseCase } from '../../application/audit/record-audit-event.use-case';
 import {
+  AUTH_EMAIL_VERIFIED_EVENT,
   AUTH_LOGIN_EVENT,
   AUTH_LOGIN_FAILED_EVENT,
+  AUTH_PASSWORD_CHANGED_EVENT,
+  AUTH_PASSWORD_RESET_COMPLETED_EVENT,
+  AUTH_PASSWORD_RESET_REQUESTED_EVENT,
   CONNECTOR_REVOKED_EVENT,
   SUGGESTION_REVIEWED_EVENT,
 } from '../../domain/audit/audit-events';
 import type {
+  AuthAccountEventPayload,
   AuthLoginEventPayload,
   AuthLoginFailedEventPayload,
   ConnectorRevokedEventPayload,
@@ -51,6 +56,38 @@ export class AuditListener {
     await this.safeRecord(AUTH_LOGIN_FAILED_EVENT, payload.userId, {
       email: payload.email,
     });
+  }
+
+  @OnEvent(AUTH_PASSWORD_RESET_REQUESTED_EVENT)
+  async onPasswordResetRequested(
+    payload: AuthAccountEventPayload,
+  ): Promise<void> {
+    await this.safeRecord(
+      AUTH_PASSWORD_RESET_REQUESTED_EVENT,
+      payload.userId,
+      null,
+    );
+  }
+
+  @OnEvent(AUTH_PASSWORD_RESET_COMPLETED_EVENT)
+  async onPasswordResetCompleted(
+    payload: AuthAccountEventPayload,
+  ): Promise<void> {
+    await this.safeRecord(
+      AUTH_PASSWORD_RESET_COMPLETED_EVENT,
+      payload.userId,
+      null,
+    );
+  }
+
+  @OnEvent(AUTH_PASSWORD_CHANGED_EVENT)
+  async onPasswordChanged(payload: AuthAccountEventPayload): Promise<void> {
+    await this.safeRecord(AUTH_PASSWORD_CHANGED_EVENT, payload.userId, null);
+  }
+
+  @OnEvent(AUTH_EMAIL_VERIFIED_EVENT)
+  async onEmailVerified(payload: AuthAccountEventPayload): Promise<void> {
+    await this.safeRecord(AUTH_EMAIL_VERIFIED_EVENT, payload.userId, null);
   }
 
   @OnEvent(CONNECTOR_REVOKED_EVENT)

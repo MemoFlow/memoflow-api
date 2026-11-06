@@ -29,6 +29,7 @@ import { SyncConnectionStatusUseCase } from '../../application/connectors/sync-c
 import { ConnectorProvider } from '../../domain/connectors/connector-provider';
 import { User } from '../../domain/users/user.entity';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { EmailVerifiedGuard } from '../auth/email-verified.guard';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { ConnectorResponseDto } from './dto/connector-response.dto';
 import { InitiateConnectionResponseDto } from './dto/initiate-connection-response.dto';
@@ -81,7 +82,7 @@ export class ConnectorsController {
   }
 
   @Post(':provider/connect')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, EmailVerifiedGuard)
   @ApiBearerAuth()
   @HttpCode(201)
   @ApiParam({ name: 'provider', enum: ConnectorProvider })
@@ -110,7 +111,7 @@ export class ConnectorsController {
   }
 
   @Get()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, EmailVerifiedGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: "List the current user's connector connections" })
   @ApiResponse({ status: 200, type: [ConnectorResponseDto] })
@@ -123,7 +124,7 @@ export class ConnectorsController {
   }
 
   @Get(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, EmailVerifiedGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Get a connector connection by id (owner-scoped)' })
   @ApiResponse({ status: 200, type: ConnectorResponseDto })
@@ -141,7 +142,7 @@ export class ConnectorsController {
   }
 
   @Delete(':id')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, EmailVerifiedGuard)
   @ApiBearerAuth()
   @HttpCode(204)
   @ApiOperation({ summary: 'Revoke a connector connection (owner-scoped)' })

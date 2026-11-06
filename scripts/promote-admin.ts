@@ -4,7 +4,8 @@
  * disabled).
  *
  * Usage: ADMIN_EMAIL=person@example.com npm run admin:promote
- * (exact-match lookup on the email, no case folding).
+ * (the address is trimmed and lowercased before lookup, like every other
+ * email entry point).
  *
  * Connects with the POSTGRES_* variables from the environment (or `.env`).
  * Idempotent: running it for an enabled admin changes nothing.
@@ -13,14 +14,16 @@
  */
 import 'dotenv/config';
 import dataSource from '../src/infrastructure/persistence/typeorm.data-source';
+import { normalizeEmail } from '../src/domain/users/normalize-email';
 import { UserRole } from '../src/domain/users/user-role';
 import { UserOrmEntity } from '../src/infrastructure/persistence/users/user.orm-entity';
 
 async function main(): Promise<void> {
-  const email = process.env.ADMIN_EMAIL?.trim();
-  if (!email) {
+  const rawEmail = process.env.ADMIN_EMAIL?.trim();
+  if (!rawEmail) {
     throw new Error('ADMIN_EMAIL is not set');
   }
+  const email = normalizeEmail(rawEmail);
 
   await dataSource.initialize();
   try {

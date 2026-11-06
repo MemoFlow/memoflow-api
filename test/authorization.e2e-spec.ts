@@ -60,18 +60,19 @@ describeWithDocker()('Authorization (e2e)', () => {
   ): Promise<TestUser> {
     counter += 1;
     const email = `authz-user-${counter}@example.com`;
-    const registerRes = await http()
+    await http()
       .post('/auth/register')
       .send({ email, password: PASSWORD, display_name: `User ${counter}` })
-      .expect(201);
+      .expect(202);
     if (options.admin) {
       await promoteToAdmin(pg.env, email);
     }
-    return {
-      id: registerRes.body.id as string,
-      email,
-      token: await login(email),
-    };
+    const token = await login(email);
+    const me = await http()
+      .get('/users/me')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    return { id: me.body.id as string, email, token };
   }
 
   function templatePayload(isPublished = false) {

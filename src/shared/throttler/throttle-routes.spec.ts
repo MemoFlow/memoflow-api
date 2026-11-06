@@ -31,4 +31,18 @@ describe('per-route @Throttle overrides', () => {
     expect(limitOf(PlanningJobsController.prototype.submit)).toBe(10);
     expect(ttlOf(PlanningJobsController.prototype.submit)).toBe(60_000);
   });
+
+  it('caps every unauthenticated or credential auth route at 5 requests / minute', () => {
+    const proto = AuthController.prototype;
+    for (const handler of [
+      proto.forgotPassword,
+      proto.resetPassword,
+      proto.changePassword,
+      proto.verifyEmail,
+      proto.resendVerification,
+    ]) {
+      expect(limitOf(handler)).toBe(5);
+      expect(ttlOf(handler)).toBe(60_000);
+    }
+  });
 });

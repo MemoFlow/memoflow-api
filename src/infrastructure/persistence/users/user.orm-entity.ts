@@ -2,6 +2,7 @@ import { Check, Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity('users')
 @Check('CHK_users_role', `"role" IN ('user', 'admin')`)
+@Check('CHK_users_email_lowercase', `"email" = lower("email")`)
 export class UserOrmEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -36,4 +37,10 @@ export class UserOrmEntity {
 
   @Column({ type: 'timestamptz', name: 'disabled_at', nullable: true })
   disabledAt: Date | null;
+
+  @Column({ type: 'timestamptz', name: 'email_verified_at', nullable: true })
+  emailVerifiedAt: Date | null;
+
+  @Column({ type: 'int', name: 'token_version', default: 0 })
+  tokenVersion: number;
 }

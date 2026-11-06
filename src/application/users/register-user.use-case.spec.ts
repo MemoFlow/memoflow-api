@@ -1,90 +1,87 @@
 import { ConflictException } from '@nestjs/common';
-import { randomUUID } from 'node:crypto';
-import { UserRole } from '../../domain/users/user-role';
-import { User } from '../../domain/users/user.entity';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import * as bcrypt from 'bcrypt';
 import {
-  CreateUserData,
-  UserRepository,
-} from '../../domain/users/user.repository';
+  AUTH_RESET_LINK_REQUESTED_EVENT,
+  AUTH_VERIFICATION_REQUESTED_EVENT,
+} from '../../domain/auth/auth-events';
+import { UserRole } from '../../domain/users/user-role';
+import { FakeUserRepository, makeUser } from '../auth/testing-fakes';
 import { RegisterUserUseCase } from './register-user.use-case';
 
-class InMemoryUserRepository implements UserRepository {
-  private readonly users: User[] = [];
-
-  findById(id: string): Promise<User | null> {
-    return Promise.resolve(this.users.find((u) => u.id === id) ?? null);
-  }
-
-  findByEmail(email: string): Promise<User | null> {
-    return Promise.resolve(this.users.find((u) => u.email === email) ?? null);
-  }
-
-  create(data: CreateUserData): Promise<User> {
-    const user = new User({
-      id: randomUUID(),
-      email: data.email,
-      passwordHash: data.passwordHash,
-      displayName: data.displayName,
-      role: UserRole.User,
-      xp: 0,
-      level: 1,
-      lastActiveAt: new Date(),
-    });
-    this.users.push(user);
-    return Promise.resolve(user);
-  }
-
-  updateLastActiveAt(): Promise<void> {
-    return Promise.resolve();
-  }
-
-  setDisabledAt(): Promise<void> {
-    return Promise.reject(new Error('not implemented'));
-  }
-
-  findTopByXp(): Promise<User[]> {
-    return Promise.reject(new Error('not implemented'));
-  }
-}
-
 describe('RegisterUserUseCase', () => {
-  let repository: InMemoryUserRepository;
+  const input = {
+    email: 'ada@example.com',
+    password: 'correct-horse-battery-staple',
+    displayName: 'Ada Lovelace',
+  };
+  let repository: FakeUserRepository;
+  let emit: jest.Mock;
   let useCase: RegisterUserUseCase;
 
   beforeEach(() => {
-    repository = new InMemoryUserRepository();
-    useCase = new RegisterUserUseCase(repository);
+    repository = new FakeUserRepository();
+    emit = jest.fn();
+    useCase = new RegisterUserUseCase(repository, {
+      emit,
+    } as unknown as EventEmitter2);
   });
 
-  it('creates a new user with a bcrypt-hashed password', async () => {
-    const user = await useCase.execute({
-      email: 'ada@example.com',
-      password: 'super-secret-1',
-      displayName: 'Ada Lovelace',
-    });
+  it('creates an unverified user with a bcrypt hash and requests a verification email', async () => {
+    await expect(useCase.execute(input)).resolves.toBeUndefined();
 
-    expect(user.email).toBe('ada@example.com');
-    expect(user.displayName).toBe('Ada Lovelace');
-    expect(user.role).toBe('user');
-    expect(user.xp).toBe(0);
-    expect(user.level).toBe(1);
-    expect(user.passwordHash).not.toBe('super-secret-1');
-    expect(user.passwordHash.startsWith('$2')).toBe(true);
+    expect(repository.users).toHaveLength(1);
+    const user = repository.users[0];
+    expect(user.role).toBe(UserRole.User);
+    expect(user.emailVerifiedAt).toBeNull();
+    expect(user.passwordHash).not.toBe(input.password);
+    expect(await bcrypt.compare(input.password, user.passwordHash)).toBe(true);
+    expect(emit).toHaveBeenCalledWith(AUTH_VERIFICATION_REQUESTED_EVENT, {
+      userId: user.id,
+    });
   });
 
-  it('rejects duplicate emails with ConflictException', async () => {
-    await useCase.execute({
-      email: 'ada@example.com',
-      password: 'super-secret-1',
-      displayName: 'Ada Lovelace',
-    });
+  it('stores the address trimmed and lowercased', async () => {
+    await useCase.execute({ ...input, email: '  Ada@Example.COM ' });
+
+    expect(repository.users[0].email).toBe('ada@example.com');
+  });
+
+  it('treats an address differing only by case as existing', async () => {
+    repository.users.push(makeUser({ passwordHash: 'original' }));
 
     await expect(
-      useCase.execute({
-        email: 'ada@example.com',
-        password: 'another-password',
-        displayName: 'Someone Else',
-      }),
-    ).rejects.toThrow(ConflictException);
+      useCase.execute({ ...input, email: 'ADA@example.com' }),
+    ).resolves.toBeUndefined();
+
+    expect(repository.users).toHaveLength(1);
+    expect(repository.users[0].passwordHash).toBe('original');
+    expect(emit).toHaveBeenCalledWith(AUTH_RESET_LINK_REQUESTED_EVENT, {
+      email: 'ada@example.com',
+      reason: 'existing_account',
+    });
+    expect(emit).not.toHaveBeenCalledWith(
+      AUTH_VERIFICATION_REQUESTED_EVENT,
+      expect.anything(),
+    );
+  });
+
+  it('ends in the same outcome when the unique constraint loses a race', async () => {
+    jest
+      .spyOn(repository, 'create')
+      .mockRejectedValue(new ConflictException('Email is already registered'));
+
+    await expect(useCase.execute(input)).resolves.toBeUndefined();
+
+    expect(emit).toHaveBeenCalledWith(AUTH_RESET_LINK_REQUESTED_EVENT, {
+      email: 'ada@example.com',
+      reason: 'existing_account',
+    });
+  });
+
+  it('rethrows unexpected repository errors', async () => {
+    jest.spyOn(repository, 'create').mockRejectedValue(new Error('db down'));
+
+    await expect(useCase.execute(input)).rejects.toThrow('db down');
   });
 });

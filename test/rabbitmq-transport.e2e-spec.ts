@@ -40,14 +40,13 @@ async function registerAndLogin(
     password: 'correct-horse-battery-staple',
     display_name: 'Test User',
   };
-  // Tolerate 409 so this is idempotent across a jest.retryTimes re-run: a
-  // retried test re-invokes its body with the same fixed email, and a second
-  // register would otherwise 409 and fail the retry instead of the transient
-  // broker reset it's meant to absorb.
+  // Registering an existing address also answers 202, so this stays
+  // idempotent across a jest.retryTimes re-run: a retried test re-invokes its
+  // body with the same fixed email.
   const registerRes = await request(app.getHttpServer())
     .post('/auth/register')
     .send(payload);
-  if (registerRes.status !== 201 && registerRes.status !== 409) {
+  if (registerRes.status !== 202) {
     throw new Error(
       `register failed for ${email}: ${registerRes.status} ${JSON.stringify(registerRes.body)}`,
     );

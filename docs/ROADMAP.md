@@ -401,11 +401,16 @@ work already flagged as deferred in the sections above, not a numbered feature:
   `render.yaml` (PR #46) and confirmed active on 2026-09-14. Staging/production are
   set per environment at their first deploys.
 - **Authorization hardening — ◐ in progress**
-  ([plan](plans/2026-11-06-authz-hardening.md)). Phase 2 is implemented on
-  `bugfix/authz-hardening` (not yet merged): user roles (`user`/`admin`),
+  ([plan](plans/2026-11-06-authz-hardening.md)). Phase 2 is merged (PR #63): user roles (`user`/`admin`),
   admin-only template publishing, owner-scoped user reads, leaderboard `is_me`
   (replacing `user_id`), account disable/enable, and `npm run admin:promote`. See
-  [`docs/security.md`](security.md#role-model).
+  [`docs/security.md`](security.md#role-model). Phase 3 (email identity: normalized
+  addresses, email verification, forgot/reset/change password, a verification gate on
+  AI, connector and planning routes) is implemented on `feature/email-identity`, not
+  yet merged. Deploy-config gap: `RESEND_API_KEY`, `EMAIL_FROM` and `APP_BASE_URL`
+  must be set per tier (required at boot in staging/production), and a verified
+  sending domain is needed before staging/production; on development verification
+  stays off. See [`docs/security.md`](security.md#email-identity).
 - **gRPC and a separate Context-module worker deployment remain explicitly deferred**
   (Context module async backbone section) — only built if a concrete trigger from
   `ARCHITECTURE.md`'s "Service boundaries" appears.

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import 'reflect-metadata';
 import {
   parseComposioAuthConfigIds,
@@ -304,4 +306,168 @@ describe('env.validation SENTRY_*', () => {
       validate(baseConfig({ SENTRY_TRACES_SAMPLE_RATE: '-0.1' })),
     ).toThrow(/SENTRY_TRACES_SAMPLE_RATE/);
   });
+});
+
+describe('env.validation email settings', () => {
+  const mail = {
+    RESEND_API_KEY: 're_test_key',
+    EMAIL_FROM: 'MemoFlow <no-reply@example.com>',
+    APP_BASE_URL: 'https://app.example.com',
+  };
+
+  it('treats all mail settings as optional in development and test', () => {
+    for (const NODE_ENV of ['development', 'test']) {
+      const result = validate(baseConfig({ NODE_ENV }));
+      expect(result.RESEND_API_KEY).toBeUndefined();
+      expect(result.EMAIL_VERIFICATION_REQUIRED).toBe(false);
+    }
+  });
+
+  it('parses EMAIL_VERIFICATION_REQUIRED=true in development', () => {
+    const result = validate(
+      baseConfig({ EMAIL_VERIFICATION_REQUIRED: 'true' }),
+    );
+    expect(result.EMAIL_VERIFICATION_REQUIRED).toBe(true);
+  });
+
+  it.each(['staging', 'production'])(
+    'fails boot in %s when a mail setting is missing',
+    (NODE_ENV) => {
+      for (const key of Object.keys(mail)) {
+        const partial: Record<string, string> = { ...mail };
+        delete partial[key];
+        expect(() => validate(baseConfig({ NODE_ENV, ...partial }))).toThrow(
+          key,
+        );
+      }
+    },
+  );
+
+  it.each(['staging', 'production'])(
+    'forces verification on in %s when the flag is unset',
+    (NODE_ENV) => {
+      const result = validate(baseConfig({ NODE_ENV, ...mail }));
+      expect(result.EMAIL_VERIFICATION_REQUIRED).toBe(true);
+    },
+  );
+
+  it.each(['staging', 'production'])(
+    'rejects an explicit EMAIL_VERIFICATION_REQUIRED=false in %s',
+    (NODE_ENV) => {
+      expect(() =>
+        validate(
+          baseConfig({
+            NODE_ENV,
+            ...mail,
+            EMAIL_VERIFICATION_REQUIRED: 'false',
+          }),
+        ),
+      ).toThrow('EMAIL_VERIFICATION_REQUIRED');
+    },
+  );
+
+  it('accepts an explicit EMAIL_VERIFICATION_REQUIRED=true in production', () => {
+    const result = validate(
+      baseConfig({
+        NODE_ENV: 'production',
+        ...mail,
+        EMAIL_VERIFICATION_REQUIRED: 'true',
+      }),
+    );
+    expect(result.EMAIL_VERIFICATION_REQUIRED).toBe(true);
+  });
+});
+
+describe('env.validation APP_BASE_URL', () => {
+  it.each([
+    'https://app.example.com',
+    'http://localhost:5173',
+    'https://app.example.com/',
+  ])('accepts %s', (APP_BASE_URL) => {
+    expect(validate(baseConfig({ APP_BASE_URL })).APP_BASE_URL).toBe(
+      APP_BASE_URL,
+    );
+  });
+
+  it.each([
+    'app.example.com',
+    'ftp://app.example.com',
+    'javascript:alert(1)',
+    'not a url',
+  ])('rejects %s', (APP_BASE_URL) => {
+    expect(() => validate(baseConfig({ APP_BASE_URL }))).toThrow(
+      'APP_BASE_URL',
+    );
+  });
+});
+
+describe('env.validation blank and strict mail settings', () => {
+  it.each([
+    'https://memoflow-client.vercel.app',
+    'https://memoflow-client.vercel.app/',
+    'http://localhost:5173',
+    'http://localhost:5173/',
+    'https://a.com/app',
+  ])('accepts %s', (APP_BASE_URL) => {
+    expect(validate(baseConfig({ APP_BASE_URL })).APP_BASE_URL).toBe(
+      APP_BASE_URL,
+    );
+  });
+
+  it.each([
+    'https://a.com/?x=1',
+    'https://a.com?x=1',
+    'https://u:p@a.com',
+    'https://a.com/#x',
+    'https://a.com/?',
+  ])('rejects %s', (APP_BASE_URL) => {
+    expect(() => validate(baseConfig({ APP_BASE_URL }))).toThrow(
+      'APP_BASE_URL',
+    );
+  });
+
+  it.each(['', '  '])('treats blank %j as unset in development', (blank) => {
+    const result = validate(
+      baseConfig({
+        NODE_ENV: 'development',
+        APP_BASE_URL: blank,
+        RESEND_API_KEY: blank,
+        EMAIL_FROM: blank,
+        EMAIL_VERIFICATION_REQUIRED: blank,
+      }),
+    );
+    expect(result.APP_BASE_URL).toBeUndefined();
+    expect(result.RESEND_API_KEY).toBeUndefined();
+    expect(result.EMAIL_FROM).toBeUndefined();
+    expect(result.EMAIL_VERIFICATION_REQUIRED).toBe(false);
+  });
+
+  it('boots with the blank values shipped in .env.example', () => {
+    const env: Record<string, string> = {};
+    for (const line of readFileSync(
+      join(__dirname, '..', '..', '.env.example'),
+      'utf8',
+    ).split('\n')) {
+      const m = /^([A-Z0-9_]+)=(.*)$/.exec(line);
+      if (m) env[m[1]] = m[2];
+    }
+    expect(env.APP_BASE_URL).toBe('');
+    expect(() => validate(env)).not.toThrow();
+  });
+
+  it.each(['staging', 'production'])(
+    'still rejects blank mail settings in %s',
+    (NODE_ENV) => {
+      expect(() =>
+        validate(
+          baseConfig({
+            NODE_ENV,
+            RESEND_API_KEY: ' ',
+            EMAIL_FROM: '',
+            APP_BASE_URL: '',
+          }),
+        ),
+      ).toThrow('required when NODE_ENV');
+    },
+  );
 });

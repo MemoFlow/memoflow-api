@@ -41,6 +41,18 @@ class InMemoryUserRepository implements UserRepository {
     return Promise.reject(new Error('not implemented'));
   }
 
+  markEmailVerified(): Promise<void> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
+  changePassword(): Promise<number> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
+  resetPassword(): Promise<void> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
   findTopByXp(): Promise<User[]> {
     return Promise.reject(new Error('not implemented'));
   }
@@ -83,6 +95,20 @@ describe('LoginUserUseCase', () => {
     expect(result.accessToken).toEqual(expect.any(String));
     const decoded = jwtService.verify(result.accessToken);
     expect(decoded).toMatchObject({ sub: 'user-1', email: 'ada@example.com' });
+  });
+
+  it('matches the address case-insensitively and embeds the session version', async () => {
+    user.tokenVersion = 3;
+
+    const result = await useCase.execute({
+      email: '  Ada@Example.COM ',
+      password: 'correct-password',
+    });
+
+    expect(jwtService.verify(result.accessToken)).toMatchObject({
+      sub: 'user-1',
+      tv: 3,
+    });
   });
 
   it('updates last_active_at on successful login', async () => {
