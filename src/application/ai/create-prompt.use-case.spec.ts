@@ -41,6 +41,24 @@ describe('CreatePromptUseCase', () => {
     });
   });
 
+  it('accepts the light {{context}} placeholder in an invocable user template, but still not in the system template', async () => {
+    const { useCase } = build();
+
+    const prompt = await useCase.execute({
+      ...valid,
+      userTemplate: 'Context: {{context}}\nText: {{content}}',
+    });
+
+    expect(prompt.template).toContain('{{context}}');
+    await expect(
+      useCase.execute({
+        ...valid,
+        version: 'v4',
+        systemTemplate: 'Sys {{context}}',
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
   it('marks a planning prompt as not user-invocable', async () => {
     const { useCase } = build();
 
@@ -64,7 +82,7 @@ describe('CreatePromptUseCase', () => {
     ['system {{prompt}}', { systemTemplate: 'Sys {{prompt}}' }],
     ['system {{content}}', { systemTemplate: 'Sys {{content}}' }],
     ['system {{context}}', { systemTemplate: 'Sys {{context}}' }],
-    ['user', { userTemplate: '{{content}} {{context}}' }],
+    ['user {{prompt}}', { userTemplate: '{{content}} {{prompt}}' }],
     ['unknown name', { userTemplate: '{{content}} {{secret}}' }],
   ])('rejects a disallowed placeholder (%s)', async (_label, override) => {
     const { useCase, repository } = build();

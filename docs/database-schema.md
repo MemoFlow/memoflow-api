@@ -85,12 +85,17 @@ previous one).
 | order | int | see composite index below |
 | status | varchar | |
 | word_count | int | server-computed, never client-set |
+| search_vector | tsvector | **generated, stored** (never written by the app): `setweight(to_tsvector('simple', left(title, 1000)), 'A') \|\| setweight(to_tsvector('simple', left(content, 100000)), 'B')`; backs planning retrieval |
 | created_at | timestamptz | |
 | updated_at | timestamptz | |
 
 Composite index **(document_id, order)** — `IDX_sections_document_order` — satisfies
 "ordered fetch per document"; `document_id` also has its own plain index (FK lookup /
-existence checks).
+existence checks). GIN index on `search_vector` — `IDX_sections_search_vector`
+(`SectionSearchVector` migration). The `simple` text-search configuration is used
+because documents can be in any language: there is no stemming or stop-word list, so
+word variants (`plan` / `planning`) do not match each other. Title and content are cut at
+1000 and 100000 characters inside the expression because a `tsvector` has a hard size limit.
 
 #### `ai_suggestions`
 | column | type | notes |
@@ -131,8 +136,14 @@ partial unique index on `feature_type` `WHERE is_active = true`
 feature type and serves the active-prompt lookup (`findActiveByFeatureType`). The
 earlier plain `is_active` index was dropped.
 
-The v2 prompts for all five feature types ship in the `PromptSystem` migration and are
-the active ones; they are not seeded by `scripts/seed.ts`. Admins manage prompts through
+The v2 prompts for all five feature types ship in the `PromptSystem` migration; the v3
+prompts ship in the `PromptsV3` migration. Per feature type, v3 becomes the active prompt
+only if v2 was the active one (an admin's other choice is kept and v3 is inserted
+inactive); reverting the migration deletes v3 and restores v2. v3 gives the four
+invocable types a `{{context}}` placeholder (the document title and the titles of the
+previous and next sections) and makes `planning` cite numbered sources as `[S1]`. The
+context lines are only built when the active prompt uses `{{context}}`. Prompts are not
+seeded by `scripts/seed.ts`. Admins manage prompts through
 `GET /admin/prompts` (optional `feature_type` filter), `POST /admin/prompts` (creates an
 **inactive** version) and `POST /admin/prompts/:id/activate` (makes it the active one
 for its type), all admin-only. Create and activate are audited as `prompt.created` and
@@ -401,8 +412,8 @@ two chunk-accumulation fields, `chunk_sequences`/`data_chunks`:
 | connectors | string[] | e.g. ["notion", "github"] — unused until item 7 |
 | prompt_version | string? | **nullable** — the active `planning` prompt's version, recorded once the job runs (item 5) |
 | model | string? | **nullable** — the model that served the planning call, when known; null until the job runs, for the stub planner, and for jobs created before models were recorded |
-| context_used | object? | **nullable** — the context-gatherer's output for this run, recorded once the job runs (item 5); flexible shape, varies by connector |
-| result | object? | **nullable** — stub/echo payload today; a richer `{ suggestions[], outline?, sources[] }` shape is provider-dependent future work |
+| context_used | object? | **nullable** — the connector context for this run (flexible shape, varies by connector) plus a `retrieval` key, recorded once the job runs. `retrieval` is metadata only, never section or connector text: `{ sources: [{ id, type, title, ref, truncated }], matched, used, dropped, truncated, failed }` — `id` is `S1`, `S2`, ... as cited in the result; `type` is `section` or `connector`; `ref` is the section id or provider; `matched` counts retrieved sections that matched the prompt; `used`/`dropped`/`truncated` count sources that reached the prompt, were left out for the input budget, or had their excerpt cut; `failed` is true when retrieval errored and the job went on without it |
+| result | object? | **nullable** — `{ suggestions: string[], outline?, sources: [{ id, type, title }] }`; `sources` lists only cited sources that exist (ids like `S1`, never text), and inline `[S9]` citations of unknown sources are stripped from `suggestions` and a string `outline`. The stub planner echoes the prompt with empty `sources` |
 | error_code / error_message | string? | set when failed |
 | created_at / started_at / finished_at | date | timestamps |
 | chunk_sequences | number[] | RabbitMQ transport only — `[]` otherwise; guards idempotent chunk append, see above |

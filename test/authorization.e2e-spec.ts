@@ -17,7 +17,12 @@ const PASSWORD = 'correct-horse-battery-staple';
 /** The text between the untrusted tags, so a reply never echoes the fence
  * (and with it the nonce), which the output guard rightly rejects. */
 function fencedContent(user: string): string {
-  return user.replace(/<\/?untrusted_[0-9a-f]+>\n?/g, '').replace(/\n$/, '');
+  // The v3 user template leads with a Context block; the section text is the
+  // block after "Text:".
+  const text = user.includes('\n\nText:\n')
+    ? user.split('\n\nText:\n')[1]
+    : user;
+  return text.replace(/<\/?untrusted_[0-9a-f]+>\n?/g, '').replace(/\n$/, '');
 }
 
 class FakeSuggestionGenerator {

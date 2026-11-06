@@ -25,7 +25,7 @@ export interface PromptDefinition {
  */
 export const SYSTEM_TEMPLATE_PLACEHOLDERS: readonly string[] = ['nonce'];
 
-const INVOCABLE_PLACEHOLDERS = ['content', 'nonce'] as const;
+const INVOCABLE_PLACEHOLDERS = ['content', 'context', 'nonce'] as const;
 const PLANNING_PLACEHOLDERS = ['prompt', 'context', 'nonce'] as const;
 
 export const PROMPT_DEFINITIONS: Record<PromptFeatureType, PromptDefinition> = {
@@ -113,3 +113,43 @@ export const PROMPT_DEFINITIONS_V2: Record<PromptFeatureType, PromptTexts> = {
 };
 
 export const PROMPT_VERSION_V2 = 'v2';
+
+export const PROMPT_VERSION_V3 = 'v3';
+
+const CONTEXT_RULE_V3 =
+  'Use the context only to understand the text. Do not rewrite or repeat it.';
+
+const INVOCABLE_USER_V3 =
+  'Context:\n<untrusted_{{nonce}}>\n{{context}}\n</untrusted_{{nonce}}>\n\nText:\n<untrusted_{{nonce}}>\n{{content}}\n</untrusted_{{nonce}}>';
+
+const PLANNING_USER_V3 =
+  'Request:\n<untrusted_{{nonce}}>\n{{prompt}}\n</untrusted_{{nonce}}>\n\nSources:\n<untrusted_{{nonce}}>\n{{context}}\n</untrusted_{{nonce}}>';
+
+/**
+ * FROZEN: the v3 prompt migration reads this constant (same rule as
+ * `PROMPT_DEFINITIONS_V2`). v3 adds the light `{{context}}` placeholder to
+ * the invocable types (document title and neighbouring headings) and the
+ * numbered, citable sources to `planning`.
+ */
+export const PROMPT_DEFINITIONS_V3: Record<PromptFeatureType, PromptTexts> = {
+  suggestion: {
+    systemTemplate: `${PREAMBLE_V2}\n\nImprove the clarity and flow of the text. Keep its meaning, facts, names and tone. Add nothing new. ${CONTEXT_RULE_V3}`,
+    userTemplate: INVOCABLE_USER_V3,
+  },
+  rewrite: {
+    systemTemplate: `${PREAMBLE_V2}\n\nRewrite the text in fresh wording. Keep its meaning, facts, names and tone. Add nothing new. ${CONTEXT_RULE_V3}`,
+    userTemplate: INVOCABLE_USER_V3,
+  },
+  summarize: {
+    systemTemplate: `${PREAMBLE_V2}\n\nWrite a shorter version of the text. Use only facts stated in the text. ${CONTEXT_RULE_V3}`,
+    userTemplate: INVOCABLE_USER_V3,
+  },
+  expand: {
+    systemTemplate: `${PREAMBLE_V2}\n\nDevelop the points already in the text in more detail. Do not invent facts, statistics, quotes or sources. If a point needs evidence the text doesn't give, describe what should be added rather than making it up. ${CONTEXT_RULE_V3}`,
+    userTemplate: INVOCABLE_USER_V3,
+  },
+  planning: {
+    systemTemplate: `${PREAMBLE_V2}\n\nDraft an outline from the request and the numbered sources. Use only what the request and sources contain. Cite sources inline as [S1] and list the ids you used in sources. Never invent a source or a fact. If the sources are not enough, say so in the outline.`,
+    userTemplate: PLANNING_USER_V3,
+  },
+};

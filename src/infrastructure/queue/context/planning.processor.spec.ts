@@ -21,6 +21,7 @@ import {
 } from '../../../domain/context/planning-job.repository';
 import { ProcessPlanningJobUseCase } from '../../../application/context/process-planning-job.use-case';
 import { PlanningProcessor } from './planning.processor';
+import { makePipeline } from '../../../application/context/testing-fakes';
 
 jest.mock('@sentry/nestjs', () => ({
   captureException: jest.fn(),
@@ -199,7 +200,7 @@ describe('PlanningProcessor + ProcessPlanningJobUseCase, wired exactly as produc
       const useCase = new ProcessPlanningJobUseCase(
         repository,
         new UnreachableGatherer(),
-        new UnreachablePlanner(),
+        makePipeline(new UnreachablePlanner()),
         new FakePromptRepository(),
         publisher,
         new FakeConnectorConnectionRepository(),
@@ -245,7 +246,7 @@ describe('PlanningProcessor + ProcessPlanningJobUseCase, wired exactly as produc
     const useCase = new ProcessPlanningJobUseCase(
       repository,
       new UnreachableGatherer(),
-      new UnreachablePlanner(),
+      makePipeline(new UnreachablePlanner()),
       new FakePromptRepository(),
       publisher,
       new FakeConnectorConnectionRepository(),

@@ -688,6 +688,30 @@ describeWithDocker()('RabbitMQ context-engine transport (e2e)', () => {
           { provider: 'trello', content: '{"cards":[]}', tokenEstimate: 12 },
           { provider: 'notion', content: '{"pages":[]}', tokenEstimate: null },
         ],
+        // One connector source per chunk; no sections (the user has none).
+        retrieval: {
+          sources: [
+            {
+              id: 'S1',
+              type: 'connector',
+              title: 'trello',
+              ref: 'trello',
+              truncated: false,
+            },
+            {
+              id: 'S2',
+              type: 'connector',
+              title: 'notion',
+              ref: 'notion',
+              truncated: false,
+            },
+          ],
+          matched: 0,
+          used: 2,
+          dropped: 0,
+          truncated: 0,
+          failed: false,
+        },
       });
 
       // A duplicate (sequence 0, already recorded) must be ignored — even

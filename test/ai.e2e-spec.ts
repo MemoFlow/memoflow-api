@@ -15,7 +15,12 @@ import { registerUser } from './utils/register-user';
 /** The text between the untrusted tags, so a reply never echoes the fence
  * (and with it the nonce), which the output guard rightly rejects. */
 function fencedContent(user: string): string {
-  return user.replace(/<\/?untrusted_[0-9a-f]+>\n?/g, '').replace(/\n$/, '');
+  // The v3 user template leads with a Context block; the section text is the
+  // block after "Text:".
+  const text = user.includes('\n\nText:\n')
+    ? user.split('\n\nText:\n')[1]
+    : user;
+  return text.replace(/<\/?untrusted_[0-9a-f]+>\n?/g, '').replace(/\n$/, '');
 }
 
 /**
@@ -187,7 +192,7 @@ describeWithDocker()('AI layer (e2e)', () => {
 
     const body = {
       feature_type: 'rewrite',
-      version: 'v3',
+      version: 'v4',
       system_template: 'Sys <untrusted_{{nonce}}>',
       user_template: '<untrusted_{{nonce}}>{{content}}</untrusted_{{nonce}}>',
     };
@@ -209,7 +214,7 @@ describeWithDocker()('AI layer (e2e)', () => {
       return res.body as PromptBody[];
     }
 
-    it('migration leaves all five feature types with an active v2 prompt', async () => {
+    it('migration leaves all five feature types with an active v3 prompt', async () => {
       const prompts = await listPrompts();
       const active = prompts.filter((p) => p.is_active);
       expect(active.map((p) => p.feature_type).sort()).toEqual([
@@ -219,7 +224,7 @@ describeWithDocker()('AI layer (e2e)', () => {
         'suggestion',
         'summarize',
       ]);
-      expect(active.every((p) => p.version === 'v2')).toBe(true);
+      expect(active.every((p) => p.version === 'v3')).toBe(true);
       expect(
         Object.fromEntries(
           active.map((p) => [p.feature_type, p.user_invocable]),
@@ -252,8 +257,12 @@ describeWithDocker()('AI layer (e2e)', () => {
 
     it('filters the list by feature_type', async () => {
       const prompts = await listPrompts('planning');
-      expect(prompts).toHaveLength(1);
-      expect(prompts[0].feature_type).toBe('planning');
+      // The migrations leave v2 (inactive) and v3 (active).
+      expect(prompts.map((p) => [p.version, p.is_active]).sort()).toEqual([
+        ['v2', false],
+        ['v3', true],
+      ]);
+      expect(prompts.every((p) => p.feature_type === 'planning')).toBe(true);
     });
 
     it('400s on an invalid body, an unknown type, a bad placeholder and a missing required one', async () => {
@@ -273,7 +282,7 @@ describeWithDocker()('AI layer (e2e)', () => {
         400,
       );
       await post({ ...body, user_template: '{{content}} {{oops' }).expect(400);
-      await post({ ...body, user_template: '{{content}} {{context}}' }).expect(
+      await post({ ...body, user_template: '{{content}} {{prompt}}' }).expect(
         400,
       );
       await post({ ...body, system_template: 'Sys {{prompt}}' }).expect(400);
@@ -297,7 +306,7 @@ describeWithDocker()('AI layer (e2e)', () => {
       const created = createRes.body as PromptBody;
       expect(created).toMatchObject({
         feature_type: 'rewrite',
-        version: 'v3',
+        version: 'v4',
         is_active: false,
         user_invocable: true,
       });
@@ -336,7 +345,7 @@ describeWithDocker()('AI layer (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .send({ featureType: 'rewrite' })
         .expect(201);
-      expect(sugg.body).toMatchObject({ prompt_version: 'v3' });
+      expect(sugg.body).toMatchObject({ prompt_version: 'v4' });
     });
 
     it('404s activating a missing prompt and 400s a non-uuid id', async () => {
@@ -372,13 +381,13 @@ describeWithDocker()('AI layer (e2e)', () => {
         .send({ featureType: 'suggestion' })
         .expect(201);
 
-      // The prompt comes from the PromptSystem migration (v2), not a fixture.
+      // The prompt comes from the PromptsV3 migration, not a fixture.
       expect(res.body).toMatchObject({
         section_id: sectionId,
         feature_type: 'suggestion',
         original_text: 'This is a rough draft paragraph.',
         status: 'pending',
-        prompt_version: 'v2',
+        prompt_version: 'v3',
         model: 'fake/model-1',
       });
       expect(res.body.id).toEqual(expect.any(String));
@@ -387,8 +396,10 @@ describeWithDocker()('AI layer (e2e)', () => {
       const nonce = /<untrusted_([0-9a-f]{32})>/.exec(input.system)?.[1];
       expect(nonce).toBeDefined();
       expect(input.system).toContain("MemoFlow's writing assistant");
+      // v3: a Context block (document title and neighbouring headings, here
+      // none) comes first, then the text.
       expect(input.user).toBe(
-        `<untrusted_${nonce}>\nThis is a rough draft paragraph.\n</untrusted_${nonce}>`,
+        `Context:\n<untrusted_${nonce}>\nDocument: Q3 Planning\n</untrusted_${nonce}>\n\nText:\n<untrusted_${nonce}>\nThis is a rough draft paragraph.\n</untrusted_${nonce}>`,
       );
       expect(res.body.suggested_text).toBe(
         'Better: This is a rough draft paragraph.',

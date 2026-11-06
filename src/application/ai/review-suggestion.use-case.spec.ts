@@ -9,7 +9,10 @@ import { SUGGESTION_REVIEWED_EVENT } from '../../domain/audit/audit-events';
 import { Document } from '../../domain/documents/document.entity';
 import { DocumentRepository } from '../../domain/documents/document.repository';
 import { Section } from '../../domain/documents/section.entity';
-import { SectionRepository } from '../../domain/documents/section.repository';
+import {
+  SectionRepository,
+  SectionTitle,
+} from '../../domain/documents/section.repository';
 import { ReviewSuggestionUseCase } from './review-suggestion.use-case';
 
 class InMemorySectionRepository implements SectionRepository {
@@ -33,6 +36,9 @@ class InMemorySectionRepository implements SectionRepository {
     return Promise.reject(new Error('not implemented'));
   }
   reorder(): Promise<void> {
+    return Promise.reject(new Error('not implemented'));
+  }
+  findTitlesByDocument(): Promise<SectionTitle[]> {
     return Promise.reject(new Error('not implemented'));
   }
   replaceAll(): Promise<number> {

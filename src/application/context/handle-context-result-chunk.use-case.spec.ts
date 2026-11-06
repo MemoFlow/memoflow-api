@@ -14,6 +14,7 @@ import {
   UpdatePlanningJobStatusData,
 } from '../../domain/context/planning-job.repository';
 import { HandleContextResultChunkUseCase } from './handle-context-result-chunk.use-case';
+import { makePipeline } from './testing-fakes';
 
 class InMemoryPlanningJobRepository implements PlanningJobRepository {
   private readonly jobs = new Map<string, PlanningJob>();
@@ -234,7 +235,7 @@ describe('HandleContextResultChunkUseCase', () => {
     const repository = new InMemoryPlanningJobRepository();
     const useCase = new HandleContextResultChunkUseCase(
       repository,
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository(),
     );
 
@@ -249,7 +250,7 @@ describe('HandleContextResultChunkUseCase', () => {
     repository.seed(makeJob({ userId: 'owner-1' }));
     const useCase = new HandleContextResultChunkUseCase(
       repository,
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository(),
     );
 
@@ -265,7 +266,7 @@ describe('HandleContextResultChunkUseCase', () => {
     repository.seed(makeJob({ status: JobStatus.Completed }));
     const useCase = new HandleContextResultChunkUseCase(
       repository,
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository(),
     );
 
@@ -279,7 +280,7 @@ describe('HandleContextResultChunkUseCase', () => {
     repository.seed(makeJob());
     const useCase = new HandleContextResultChunkUseCase(
       repository,
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository(),
     );
 
@@ -303,7 +304,7 @@ describe('HandleContextResultChunkUseCase', () => {
     repository.seed(makeJob());
     const useCase = new HandleContextResultChunkUseCase(
       repository,
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository(),
     );
 
@@ -319,7 +320,7 @@ describe('HandleContextResultChunkUseCase', () => {
     repository.seed(makeJob());
     const useCase = new HandleContextResultChunkUseCase(
       repository,
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository(),
     );
 
@@ -339,7 +340,7 @@ describe('HandleContextResultChunkUseCase', () => {
     const planSpy = jest.spyOn(planner, 'plan');
     const useCase = new HandleContextResultChunkUseCase(
       repository,
-      planner,
+      makePipeline(planner),
       new FakePromptRepository(makePlanningPrompt()),
     );
 
@@ -358,23 +359,48 @@ describe('HandleContextResultChunkUseCase', () => {
     expect(result.terminal).toBe(true);
     expect(result.job?.status).toBe(JobStatus.Completed);
     expect(result.job?.promptVersion).toBe('v2');
+    const chunks = [
+      { provider: 'trello', content: '{"cards":[]}', tokenEstimate: 42 },
+      { provider: 'notion', content: '{"pages":[]}', tokenEstimate: null },
+    ];
+    // The connector keys stay as they were; retrieval metadata is added.
     expect(result.job?.contextUsed).toEqual({
-      chunks: [
-        { provider: 'trello', content: '{"cards":[]}', tokenEstimate: 42 },
-        { provider: 'notion', content: '{"pages":[]}', tokenEstimate: null },
-      ],
+      chunks,
+      retrieval: {
+        sources: [
+          {
+            id: 'S1',
+            type: 'connector',
+            title: 'trello',
+            ref: 'trello',
+            truncated: false,
+          },
+          {
+            id: 'S2',
+            type: 'connector',
+            title: 'notion',
+            ref: 'notion',
+            truncated: false,
+          },
+        ],
+        matched: 0,
+        used: 2,
+        dropped: 0,
+        truncated: 0,
+        failed: false,
+      },
     });
     expect(planSpy).toHaveBeenCalledTimes(1);
     const planInput = planSpy.mock.calls[0][0];
     expect(planInput.prompt).toBe('Plan my chapter');
-    expect(planInput.context).toEqual(result.job?.contextUsed);
+    expect(planInput.context).toEqual({ chunks });
     // Rendered from the active prompt: placeholders filled, nonce shared.
     const nonce = /^SYS <untrusted_([0-9a-f]{32})>$/.exec(
       planInput.system,
     )?.[1];
     expect(nonce).toBeDefined();
     expect(planInput.user).toBe(
-      `Plan this: Plan my chapter | ${JSON.stringify(result.job?.contextUsed)} | ${nonce}`,
+      `Plan this: Plan my chapter | [S1] connector: trello\n{"cards":[]}\n\n[S2] connector: notion\n{"pages":[]} | ${nonce}`,
     );
     expect(result.job?.result).toEqual({
       suggestions: ['(stub plan) Plan my chapter'],
@@ -390,7 +416,7 @@ describe('HandleContextResultChunkUseCase', () => {
     const planSpy = jest.spyOn(planner, 'plan');
     const useCase = new HandleContextResultChunkUseCase(
       repository,
-      planner,
+      makePipeline(planner),
       new FakePromptRepository(),
     );
 
@@ -414,7 +440,7 @@ describe('HandleContextResultChunkUseCase', () => {
     const planSpy = jest.spyOn(planner, 'plan');
     const useCase = new HandleContextResultChunkUseCase(
       repository,
-      planner,
+      makePipeline(planner),
       new FakePromptRepository(
         Object.assign(makePlanningPrompt(), { template: 'Bad {{nope}}' }),
       ),
@@ -437,7 +463,7 @@ describe('HandleContextResultChunkUseCase', () => {
     const planSpy = jest.spyOn(planner, 'plan');
     const useCase = new HandleContextResultChunkUseCase(
       repository,
-      planner,
+      makePipeline(planner),
       new FakePromptRepository(),
     );
 
@@ -452,7 +478,7 @@ describe('HandleContextResultChunkUseCase', () => {
     repository.seed(makeJob());
     const useCase = new HandleContextResultChunkUseCase(
       repository,
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository(),
     );
 
@@ -477,7 +503,7 @@ describe('HandleContextResultChunkUseCase', () => {
     repository.seed(makeJob());
     const useCase = new HandleContextResultChunkUseCase(
       repository,
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository(),
     );
 
@@ -501,7 +527,7 @@ describe('HandleContextResultChunkUseCase', () => {
     repository.seed(makeJob());
     const useCase = new HandleContextResultChunkUseCase(
       repository,
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository(),
     );
 
@@ -517,7 +543,7 @@ describe('HandleContextResultChunkUseCase', () => {
     repository.seed(makeJob());
     const useCase = new HandleContextResultChunkUseCase(
       repository,
-      new ThrowingPlanner(),
+      makePipeline(new ThrowingPlanner()),
       new FakePromptRepository(),
     );
 
@@ -535,7 +561,7 @@ describe('HandleContextResultChunkUseCase', () => {
     repository.seed(makeJob());
     const useCase = new HandleContextResultChunkUseCase(
       repository,
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository(),
     );
 
@@ -559,7 +585,7 @@ describe('HandleContextResultChunkUseCase', () => {
       const planSpy = jest.spyOn(planner, 'plan');
       const useCase = new HandleContextResultChunkUseCase(
         repository,
-        planner,
+        makePipeline(planner),
         new FakePromptRepository(makePlanningPrompt()),
       );
 
@@ -621,7 +647,7 @@ describe('HandleContextResultChunkUseCase', () => {
     };
     const useCase = new HandleContextResultChunkUseCase(
       repository,
-      planner,
+      makePipeline(planner),
       new FakePromptRepository(),
     );
 

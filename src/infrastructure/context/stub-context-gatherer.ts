@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import {
   ContextGatherer,
   GatherInput,
+  STUB_CONTEXT_NOTE,
 } from '../../domain/context/context-gatherer.port';
 
 /**
@@ -15,7 +16,7 @@ export class StubContextGatherer implements ContextGatherer {
   gather(input: GatherInput): Promise<Record<string, unknown>> {
     return Promise.resolve({
       requestedConnectors: input.connectors,
-      note: 'stub — no context engine configured (CONTEXT_ENGINE_URL unset)',
+      note: STUB_CONTEXT_NOTE,
     });
   }
 }

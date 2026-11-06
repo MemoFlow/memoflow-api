@@ -8,6 +8,7 @@ import { Section } from '../../domain/documents/section.entity';
 import {
   CreateSectionData,
   SectionRepository,
+  SectionTitle,
 } from '../../domain/documents/section.repository';
 import { CreateSectionUseCase } from './create-section.use-case';
 import { GetDocumentUseCase } from './get-document.use-case';
@@ -89,6 +90,9 @@ class InMemorySectionRepository implements SectionRepository {
     return Promise.reject(new Error('not implemented'));
   }
 
+  findTitlesByDocument(): Promise<SectionTitle[]> {
+    return Promise.reject(new Error('not implemented'));
+  }
   replaceAll(): Promise<number> {
     return Promise.reject(new Error('not implemented'));
   }

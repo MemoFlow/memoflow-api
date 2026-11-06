@@ -1,5 +1,8 @@
 import { Prompt } from '../../domain/ai/prompt.entity';
-import { ContextGatherer } from '../../domain/context/context-gatherer.port';
+import {
+  ContextGatherer,
+  STUB_CONTEXT_NOTE,
+} from '../../domain/context/context-gatherer.port';
 import {
   LlmPlanner,
   PlanInput,
@@ -13,6 +16,7 @@ import {
 } from '../../domain/context/planning-job.repository';
 import { ProcessPlanningJobUseCase } from './process-planning-job.use-case';
 import { InMemoryPromptRepository, makePrompt } from '../ai/testing-fakes';
+import { makePipeline } from './testing-fakes';
 
 class InMemoryPlanningJobRepository implements PlanningJobRepository {
   private readonly jobs = new Map<string, PlanningJob>();
@@ -126,6 +130,15 @@ class InMemoryPlanningJobRepository implements PlanningJobRepository {
   }
 }
 
+const NO_RETRIEVAL = {
+  sources: [],
+  matched: 0,
+  used: 0,
+  dropped: 0,
+  truncated: 0,
+  failed: false,
+};
+
 class FakePromptRepository extends InMemoryPromptRepository {}
 
 function makePlanningPrompt(overrides: Partial<Prompt> = {}): Prompt {
@@ -141,7 +154,7 @@ function makePlanningPrompt(overrides: Partial<Prompt> = {}): Prompt {
 
 class StubGatherer implements ContextGatherer {
   gather(): Promise<Record<string, unknown>> {
-    return Promise.resolve({ note: 'stub' });
+    return Promise.resolve({ note: STUB_CONTEXT_NOTE });
   }
 }
 
@@ -188,7 +201,7 @@ describe('ProcessPlanningJobUseCase', () => {
     const useCase = new ProcessPlanningJobUseCase(
       repository,
       new StubGatherer(),
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository([makePlanningPrompt()]),
     );
 
@@ -204,7 +217,10 @@ describe('ProcessPlanningJobUseCase', () => {
     expect(job.finishedAt).not.toBeNull();
     expect(job.promptVersion).toBe('v1');
     expect(job.model).toBe('test/planner');
-    expect(job.contextUsed).toEqual({ note: 'stub' });
+    expect(job.contextUsed).toEqual({
+      note: STUB_CONTEXT_NOTE,
+      retrieval: NO_RETRIEVAL,
+    });
   });
 
   it('records promptVersion null when no active planning prompt is configured', async () => {
@@ -213,7 +229,7 @@ describe('ProcessPlanningJobUseCase', () => {
     const useCase = new ProcessPlanningJobUseCase(
       repository,
       new StubGatherer(),
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository([]),
     );
 
@@ -230,7 +246,7 @@ describe('ProcessPlanningJobUseCase', () => {
     const useCase = new ProcessPlanningJobUseCase(
       repository,
       new StubGatherer(),
-      planner,
+      makePipeline(planner),
       new FakePromptRepository([makePlanningPrompt()]),
     );
 
@@ -239,9 +255,8 @@ describe('ProcessPlanningJobUseCase', () => {
     const input = planSpy.mock.calls[0][0];
     const nonce = /^SYS <untrusted_([0-9a-f]{32})>$/.exec(input.system)?.[1];
     expect(nonce).toBeDefined();
-    expect(input.user).toBe(
-      `Plan this: costs $& {{nonce}} | ${JSON.stringify({ note: 'stub' })} | ${nonce}`,
-    );
+    // The stub gatherer's placeholder is not presented as a source.
+    expect(input.user).toBe(`Plan this: costs $& {{nonce}} |  | ${nonce}`);
   });
 
   it('falls back to the built-in planning prompt when none is active', async () => {
@@ -252,7 +267,7 @@ describe('ProcessPlanningJobUseCase', () => {
     const useCase = new ProcessPlanningJobUseCase(
       repository,
       new StubGatherer(),
-      planner,
+      makePipeline(planner),
       new FakePromptRepository([]),
     );
 
@@ -273,7 +288,7 @@ describe('ProcessPlanningJobUseCase', () => {
     const useCase = new ProcessPlanningJobUseCase(
       repository,
       new StubGatherer(),
-      planner,
+      makePipeline(planner),
       new FakePromptRepository([makePlanningPrompt({ template: '{{nope}}' })]),
     );
 
@@ -296,14 +311,17 @@ describe('ProcessPlanningJobUseCase', () => {
     const useCase = new ProcessPlanningJobUseCase(
       repository,
       new StubGatherer(),
-      new ThrowingPlanner(),
+      makePipeline(new ThrowingPlanner()),
       new FakePromptRepository([makePlanningPrompt()]),
     );
 
     const { job } = await useCase.execute({ jobId: 'job-1' });
 
     expect(job.status).toBe(JobStatus.Failed);
-    expect(job.contextUsed).toEqual({ note: 'stub' });
+    expect(job.contextUsed).toEqual({
+      note: STUB_CONTEXT_NOTE,
+      retrieval: NO_RETRIEVAL,
+    });
     expect(job.promptVersion).toBe('v1');
   });
 
@@ -317,7 +335,7 @@ describe('ProcessPlanningJobUseCase', () => {
     const useCase = new ProcessPlanningJobUseCase(
       repository,
       gatherer,
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository([makePlanningPrompt()]),
     );
 
@@ -336,7 +354,7 @@ describe('ProcessPlanningJobUseCase', () => {
     const useCase = new ProcessPlanningJobUseCase(
       repository,
       new ThrowingGatherer(),
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository([makePlanningPrompt()]),
     );
 
@@ -362,7 +380,7 @@ describe('ProcessPlanningJobUseCase', () => {
     const useCase = new ProcessPlanningJobUseCase(
       repository,
       gatherer,
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository([makePlanningPrompt()]),
     );
 
@@ -385,7 +403,7 @@ describe('ProcessPlanningJobUseCase', () => {
     const useCase = new ProcessPlanningJobUseCase(
       repository,
       new StubGatherer(),
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository([makePlanningPrompt()]),
     );
 
@@ -407,7 +425,7 @@ describe('ProcessPlanningJobUseCase', () => {
     const useCase = new ProcessPlanningJobUseCase(
       repository,
       gatherer,
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository([makePlanningPrompt()]),
     );
 
@@ -423,7 +441,7 @@ describe('ProcessPlanningJobUseCase', () => {
     const useCase = new ProcessPlanningJobUseCase(
       repository,
       new StubGatherer(),
-      new StubPlanner(),
+      makePipeline(new StubPlanner()),
       new FakePromptRepository([makePlanningPrompt()]),
     );
 
@@ -449,7 +467,7 @@ describe('ProcessPlanningJobUseCase', () => {
     const useCase = new ProcessPlanningJobUseCase(
       repository,
       new StubGatherer(),
-      planner,
+      makePipeline(planner),
       new FakePromptRepository([makePlanningPrompt()]),
     );
 

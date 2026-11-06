@@ -263,6 +263,15 @@ testing against a real model.
   basis and look-alikes of the untrusted-data tags are neutralised. Stored originals are
   unchanged; only the copy sent to the model is altered. Redaction is not a substitute
   for keeping secrets out of documents.
+- **Retrieval scope.** Planning retrieval (`SectionRetrieverTypeOrm`) takes the user id
+  from the job, never from the prompt, and every query joins `documents` on
+  `user_id`, so another user's section is never returned, bound document or not. The
+  prompt is turned into lexemes by Postgres and passed as bind parameters; the SQL text
+  never varies with prompt content. Retrieved text is redacted and fenced like other
+  untrusted input, is never written to `planning_jobs` (only `context_used.retrieval`
+  metadata is), and `result.sources` is reduced to `{ id, type, title }` with unknown
+  citations removed. A retrieval error is logged by error name only and the job
+  continues without retrieval.
 - **Size limits.** Section text over `AI_MAX_INPUT_CHARS` is rejected with `422` before
   any provider call, planning prompts are capped at 5000 characters (`400`), and
   planning context is cut to the limit.

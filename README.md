@@ -179,7 +179,7 @@ use-case validates the caller owns the document (and that a given section belong
 it) before writing either into Mongo, 404ing uniformly on any mismatch. The
 LLM-planner port is likewise real when `OPENROUTER_API_KEY` is set (model
 `openrouter/free` by default), recording the active `planning` prompt's version and
-the context used on the job once it runs; unset keeps the built-in `StubLlmPlanner`
+the context used on the job once it runs (before planning, the job owner's own sections are retrieved with Postgres full-text search and offered to the model as numbered sources; `result.sources` is `[{ id, type, title }]` and `context_used.retrieval` holds metadata only); unset keeps the built-in `StubLlmPlanner`
 (echoes the prompt back).
 
 The frontend gets the result pushed in real time over WebSocket (`@nestjs/websockets`

@@ -12,10 +12,12 @@ import { ReorderSectionsUseCase } from './application/documents/reorder-sections
 import { UpdateDocumentUseCase } from './application/documents/update-document.use-case';
 import { UpdateSectionUseCase } from './application/documents/update-section.use-case';
 import { DOCUMENT_REPOSITORY } from './domain/documents/document.repository';
+import { SECTION_RETRIEVER } from './domain/context/section-retriever.port';
 import { SECTION_REPOSITORY } from './domain/documents/section.repository';
 import { DocumentOrmEntity } from './infrastructure/persistence/documents/document.orm-entity';
 import { DocumentTypeOrmRepository } from './infrastructure/persistence/documents/document.typeorm.repository';
 import { SectionOrmEntity } from './infrastructure/persistence/documents/section.orm-entity';
+import { SectionRetrieverTypeOrm } from './infrastructure/persistence/documents/section-retriever.typeorm';
 import { SectionTypeOrmRepository } from './infrastructure/persistence/documents/section.typeorm.repository';
 import { DocumentsController } from './presentation/documents/documents.controller';
 import { SectionsController } from './presentation/documents/sections.controller';
@@ -25,7 +27,8 @@ import { UsersModule } from './users.module';
  * Roadmap item 2 — documents + sections (PG). Mirrors `ConnectorsModule`'s
  * shape: JwtAuthGuard/JwtStrategy come from `UsersModule`; repository
  * interfaces are exported so item 4 (versioning, Mongo) can validate a PG
- * document/section id exists before writing a Mongo document.
+ * document/section id exists before writing a Mongo document. Also provides
+ * the full-text `SECTION_RETRIEVER` used by the planning pipeline.
  */
 @Module({
   imports: [
@@ -36,6 +39,7 @@ import { UsersModule } from './users.module';
   providers: [
     { provide: DOCUMENT_REPOSITORY, useClass: DocumentTypeOrmRepository },
     { provide: SECTION_REPOSITORY, useClass: SectionTypeOrmRepository },
+    { provide: SECTION_RETRIEVER, useClass: SectionRetrieverTypeOrm },
     CreateDocumentUseCase,
     ListDocumentsUseCase,
     GetDocumentUseCase,
@@ -48,6 +52,6 @@ import { UsersModule } from './users.module';
     DeleteSectionUseCase,
     ReorderSectionsUseCase,
   ],
-  exports: [DOCUMENT_REPOSITORY, SECTION_REPOSITORY],
+  exports: [DOCUMENT_REPOSITORY, SECTION_REPOSITORY, SECTION_RETRIEVER],
 })
 export class DocumentsModule {}

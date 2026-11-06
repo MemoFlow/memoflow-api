@@ -1,25 +1,20 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { PROMPT_REPOSITORY } from '../../domain/ai/prompt.repository';
 import type { PromptRepository } from '../../domain/ai/prompt.repository';
 import {
   ContextResultChunk,
   isTerminalPhase,
 } from '../../domain/context/context-result-chunk';
-import { LLM_PLANNER } from '../../domain/context/llm-planner.port';
-import type {
-  LlmPlanner,
-  PlanningResult,
-} from '../../domain/context/llm-planner.port';
 import {
   AccumulatedDataChunk,
   JobStatus,
   PlanningJob,
 } from '../../domain/context/planning-job';
 import { PLANNING_JOB_REPOSITORY } from '../../domain/context/planning-job.repository';
-import { AI_MAX_INPUT_CHARS } from '../ai/max-input-chars.token';
+import type { ValidatedPlanningResult } from './planning-citations';
+import { PlanningPipeline } from './planning-pipeline';
 import {
   errorName,
-  planWithGuards,
   resolvePlanningPrompt,
   safeFailureMessage,
 } from './planning-prompt';
@@ -96,13 +91,9 @@ export class HandleContextResultChunkUseCase {
   constructor(
     @Inject(PLANNING_JOB_REPOSITORY)
     private readonly planningJobRepository: PlanningJobRepository,
-    @Inject(LLM_PLANNER)
-    private readonly llmPlanner: LlmPlanner,
+    private readonly planningPipeline: PlanningPipeline,
     @Inject(PROMPT_REPOSITORY)
     private readonly promptRepository: PromptRepository,
-    @Optional()
-    @Inject(AI_MAX_INPUT_CHARS)
-    private readonly maxInputChars?: number,
   ) {}
 
   async execute(
@@ -183,14 +174,15 @@ export class HandleContextResultChunkUseCase {
   private async finalizeCompleted(
     job: PlanningJob,
   ): Promise<PlanningJob | null> {
-    const contextUsed = this.assembleContext(job.dataChunks);
+    const assembled = this.assembleContext(job.dataChunks);
 
     // Atomic CAS: gathering -> planning, recording the assembled context.
     // `null` means this call lost the race — some other winner already
     // claimed the job (see the race-safety note in `execute` above).
+    // Retrieval only runs for the winner, after the claim.
     const claimed = await this.planningJobRepository.claimForPlanning(
       job.id,
-      contextUsed,
+      assembled,
     );
     if (!claimed) {
       return null;
@@ -199,14 +191,17 @@ export class HandleContextResultChunkUseCase {
     const resolvedPrompt = await resolvePlanningPrompt(this.promptRepository);
     const promptVersion = resolvedPrompt.promptVersion;
 
-    let result: PlanningResult;
+    // Connector chunks plus the retrieved-source metadata; recorded on the
+    // job whether planning then succeeds or fails.
+    let contextUsed: Record<string, unknown> = assembled;
+    let result: ValidatedPlanningResult;
     try {
-      result = await planWithGuards(
-        this.llmPlanner,
+      const prepared = await this.planningPipeline.prepare(claimed, assembled);
+      contextUsed = prepared.contextUsed;
+      result = await this.planningPipeline.plan(
         resolvedPrompt,
         claimed.prompt,
-        contextUsed,
-        this.maxInputChars,
+        prepared,
       );
     } catch (err) {
       // Clients read the message: only typed (fixed) messages pass through,

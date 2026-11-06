@@ -260,6 +260,31 @@ populated on `completed`; `error_code`/`error_message` on `failed`; `error_messa
 yours. This is the **durable source of truth** and the fallback when a socket isn't
 connected.
 
+### Result shape and citations
+Planning draws on the user's own sections (and connector context) as numbered sources.
+On `completed`:
+```json
+{ "suggestions": ["Open with the budget risk [S1]"], "outline": "1. Scope [S1, S2]\n2. ...",
+  "sources": [ { "id": "S1", "type": "section", "title": "Budget (Q3 plan)" },
+               { "id": "S2", "type": "connector", "title": "trello" } ] }
+```
+- `[S1]` markers in `suggestions` and a string `outline` point at entries of `sources`
+  by `id`. `type` is `section` (the user's own section, titled `section (document)`) or
+  `connector`. `sources` carries no source text, and ids that don't exist are removed
+  from both the list and the inline markers, so every marker you see resolves.
+  `outline` may be a non-string value, which is returned as is.
+- Source ids are per job (`S1` is not stable across jobs).
+- `context_used` (on `GET /planning-jobs/:id`) has a `retrieval` key beside any
+  connector context: `{ sources: [{ id, type, title, ref, truncated }], matched, used,
+  dropped, truncated, failed }`. It is metadata only. `ref` is the section id (use it to
+  link to the section) or the provider; `truncated` means the excerpt sent to the model
+  was cut; `dropped` counts sources left out for size; `failed: true` means retrieval
+  errored and the plan ran without the user's sections.
+- Retrieval only ever uses the job owner's sections. A job bound to a `documentId` /
+  `sectionId` always includes that document's sections; other documents are included
+  only when they match the prompt's words. Matching is by exact word (any language, no
+  stemming), so `plan` does not match `planning`.
+
 ## 7. Real-time WebSocket (Socket.IO)
 
 Push updates for planning jobs. Default namespace `/`; the JWT travels in the handshake
@@ -332,9 +357,8 @@ Two things differ from the rest of the API:
 
 ## Notes & non-final surfaces
 
-- The planning `result` payload is a **stub echo** today; its final shape
-  (`{ suggestions, outline, sources }`) lands with the AI layer (roadmap item 5). Treat
-  `result` as opaque JSON until then.
+- With `OPENROUTER_API_KEY` unset the planner is a **stub echo** (`sources` is `[]`);
+  see section 6 for the real `result` shape.
 - Documents/sections exist (roadmap item 2, section 5 above), but `planning_jobs`
   still has no `document_id`/`section_id` bound to them — that wiring is item 5's
   remaining work.

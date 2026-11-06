@@ -4,6 +4,7 @@ import { Section } from '../../domain/documents/section.entity';
 import {
   ReplaceSectionData,
   SectionRepository,
+  SectionTitle,
 } from '../../domain/documents/section.repository';
 import { GetVersionUseCase } from './get-version.use-case';
 import { RestoreVersionUseCase } from './restore-version.use-case';
@@ -56,6 +57,9 @@ class InMemorySectionRepository implements SectionRepository {
     return Promise.reject(new Error('not implemented'));
   }
 
+  findTitlesByDocument(): Promise<SectionTitle[]> {
+    return Promise.reject(new Error('not implemented'));
+  }
   replaceAll(
     documentId: string,
     sections: ReplaceSectionData[],
