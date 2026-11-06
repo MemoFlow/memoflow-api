@@ -96,20 +96,21 @@ describeWithDocker()('Leads (e2e)', () => {
   ): Promise<TestUser> {
     counter += 1;
     const email = `leads-${counter}@example.com`;
-    const reg = await http()
+    await http()
       .post('/auth/register')
       .send({ email, password: PASSWORD, display_name: `Lead ${counter}` })
-      .expect(201);
+      .expect(202);
     if (opts.admin) await promoteToAdmin(pg.env, email);
     const login = await http()
       .post('/auth/login')
       .send({ email, password: PASSWORD })
       .expect(200);
-    return {
-      id: reg.body.id as string,
-      email,
-      token: login.body.accessToken as string,
-    };
+    const token = login.body.accessToken as string;
+    const me = await http()
+      .get('/users/me')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    return { id: me.body.id as string, email, token };
   }
 
   const submit = (u: TestUser, body: object = answers()) =>
