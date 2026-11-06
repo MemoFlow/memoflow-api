@@ -1,10 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { getRepositoryToken } from '@nestjs/typeorm';
 import request from 'supertest';
 import { App } from 'supertest/types';
-import { Repository } from 'typeorm';
-import type { PromptOrmEntity } from '../src/infrastructure/persistence/ai/prompt.orm-entity';
 import { startMongoMemory, MongoTestEnv } from './utils/mongo-memory';
 import {
   describeWithDocker,
@@ -23,10 +20,14 @@ class FakeSuggestionGenerator {
   }
 
   generate(input: {
-    promptTemplate: string;
-    originalText: string;
-  }): Promise<{ suggestedText: string }> {
-    return Promise.resolve({ suggestedText: `Better: ${input.originalText}` });
+    system: string;
+    user: string;
+    featureType: string;
+  }): Promise<{ suggestedText: string; model: string }> {
+    return Promise.resolve({
+      suggestedText: `Better: ${input.user}`,
+      model: 'fake/model-1',
+    });
   }
 }
 
@@ -154,8 +155,6 @@ describeWithDocker()('Authorization (e2e)', () => {
     const { AppModule } = await import('./../src/app.module');
     const { SUGGESTION_GENERATOR } =
       await import('./../src/domain/ai/suggestion-generator.port');
-    const { PromptOrmEntity: PromptOrmEntityCtor } =
-      await import('./../src/infrastructure/persistence/ai/prompt.orm-entity');
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -173,18 +172,6 @@ describeWithDocker()('Authorization (e2e)', () => {
       }),
     );
     await app.init();
-
-    const promptRepository = app.get<Repository<PromptOrmEntity>>(
-      getRepositoryToken(PromptOrmEntityCtor as typeof PromptOrmEntity),
-    );
-    await promptRepository.save(
-      promptRepository.create({
-        featureType: 'suggestion',
-        version: 'v1',
-        template: 'Improve this: {{content}}',
-        isActive: true,
-      }),
-    );
   }, 180_000);
 
   afterAll(async () => {

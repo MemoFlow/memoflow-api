@@ -6,14 +6,17 @@
 export const SUGGESTION_GENERATOR = Symbol('SuggestionGenerator');
 
 export interface GenerateSuggestionInput {
-  /** Fully rendered prompt template (`{{content}}` already substituted). */
-  promptTemplate: string;
-  originalText: string;
+  /** Fully rendered system message. */
+  system: string;
+  /** Fully rendered user message. */
+  user: string;
   featureType: string;
 }
 
 export interface GenerateSuggestionOutput {
   suggestedText: string;
+  /** Model that actually served the call, when known. */
+  model: string | null;
 }
 
 export interface SuggestionGenerator {

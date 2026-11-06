@@ -40,6 +40,9 @@ export class AiSuggestionOrmEntity {
   @Column({ type: 'varchar', name: 'prompt_version' })
   promptVersion: string;
 
+  @Column({ type: 'varchar', nullable: true })
+  model: string | null;
+
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;
 

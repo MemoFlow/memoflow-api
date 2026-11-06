@@ -17,6 +17,7 @@ export class AiSuggestion {
   suggestedText: string;
   status: SuggestionStatus;
   promptVersion: string;
+  model: string | null;
   createdAt: Date;
   updatedAt: Date;
 
@@ -29,6 +30,7 @@ export class AiSuggestion {
     suggestedText: string;
     status: SuggestionStatus;
     promptVersion: string;
+    model?: string | null;
     createdAt: Date;
     updatedAt: Date;
   }) {
@@ -40,6 +42,7 @@ export class AiSuggestion {
     this.suggestedText = props.suggestedText;
     this.status = props.status;
     this.promptVersion = props.promptVersion;
+    this.model = props.model ?? null;
     this.createdAt = props.createdAt;
     this.updatedAt = props.updatedAt;
   }

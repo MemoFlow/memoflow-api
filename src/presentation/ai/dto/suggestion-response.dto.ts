@@ -29,6 +29,14 @@ export class SuggestionResponseDto {
   @ApiProperty()
   prompt_version: string;
 
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description:
+      'Model that generated the suggestion; null for suggestions created before models were recorded.',
+  })
+  model: string | null;
+
   @ApiProperty()
   created_at: Date;
 
@@ -45,6 +53,7 @@ export class SuggestionResponseDto {
     dto.suggested_text = suggestion.suggestedText;
     dto.status = suggestion.status;
     dto.prompt_version = suggestion.promptVersion;
+    dto.model = suggestion.model;
     dto.created_at = suggestion.createdAt;
     dto.updated_at = suggestion.updatedAt;
     return dto;

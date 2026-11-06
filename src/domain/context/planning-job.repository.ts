@@ -24,6 +24,8 @@ export interface UpdatePlanningJobStatusData {
   finishedAt?: Date | null;
   /** Version of the active 'planning' prompt used, recorded by the worker. */
   promptVersion?: string | null;
+  /** Model that served the planning call, when known. */
+  model?: string | null;
   /** Context-gatherer result used for this run, recorded by the worker. */
   contextUsed?: Record<string, unknown> | null;
 }

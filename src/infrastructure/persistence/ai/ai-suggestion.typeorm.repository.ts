@@ -26,6 +26,7 @@ export class AiSuggestionTypeOrmRepository implements AiSuggestionRepository {
       originalText: data.originalText,
       suggestedText: data.suggestedText,
       promptVersion: data.promptVersion,
+      model: data.model,
       status: SuggestionStatus.Pending,
     });
     const saved = await this.repository.save(entity);
@@ -81,6 +82,7 @@ export class AiSuggestionTypeOrmRepository implements AiSuggestionRepository {
       suggestedText: entity.suggestedText,
       status: entity.status as SuggestionStatus,
       promptVersion: entity.promptVersion,
+      model: entity.model,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     });
@@ -101,6 +103,7 @@ export class AiSuggestionTypeOrmRepository implements AiSuggestionRepository {
       suggestedText: row.suggested_text as string,
       status: row.status as SuggestionStatus,
       promptVersion: row.prompt_version as string,
+      model: (row.model as string | null) ?? null,
       createdAt: row.created_at as Date,
       updatedAt: row.updated_at as Date,
     });

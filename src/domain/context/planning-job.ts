@@ -43,6 +43,7 @@ export class PlanningJob {
   prompt: string;
   connectors: string[];
   promptVersion: string | null;
+  model: string | null;
   contextUsed: Record<string, unknown> | null;
   result: Record<string, unknown> | null;
   errorCode: string | null;
@@ -64,6 +65,7 @@ export class PlanningJob {
     prompt: string;
     connectors: string[];
     promptVersion?: string | null;
+    model?: string | null;
     contextUsed?: Record<string, unknown> | null;
     result: Record<string, unknown> | null;
     errorCode: string | null;
@@ -81,6 +83,7 @@ export class PlanningJob {
     this.prompt = props.prompt;
     this.connectors = props.connectors;
     this.promptVersion = props.promptVersion ?? null;
+    this.model = props.model ?? null;
     this.contextUsed = props.contextUsed ?? null;
     this.result = props.result;
     this.errorCode = props.errorCode;

@@ -192,6 +192,7 @@ export class PlanningJobMongooseRepository implements PlanningJobRepository {
     if (patch.finishedAt !== undefined) update.finished_at = patch.finishedAt;
     if (patch.promptVersion !== undefined)
       update.prompt_version = patch.promptVersion;
+    if (patch.model !== undefined) update.model = patch.model;
     if (patch.contextUsed !== undefined)
       update.context_used = patch.contextUsed;
     return update;
@@ -207,6 +208,7 @@ export class PlanningJobMongooseRepository implements PlanningJobRepository {
       prompt: doc.prompt,
       connectors: doc.connectors,
       promptVersion: doc.prompt_version ?? null,
+      model: (doc.get('model') as string | null | undefined) ?? null,
       contextUsed: doc.context_used ?? null,
       result: doc.result,
       errorCode: doc.error_code,

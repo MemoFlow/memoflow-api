@@ -28,6 +28,12 @@ export class PlanningJobResponseDto {
   @ApiProperty({ nullable: true })
   prompt_version: string | null;
 
+  @ApiProperty({
+    nullable: true,
+    description: 'Model that served the planning call, when known.',
+  })
+  model: string | null;
+
   @ApiProperty({ nullable: true, type: Object })
   context_used: Record<string, unknown> | null;
 
@@ -58,6 +64,7 @@ export class PlanningJobResponseDto {
     dto.document_id = job.documentId;
     dto.section_id = job.sectionId;
     dto.prompt_version = job.promptVersion;
+    dto.model = job.model;
     dto.context_used = job.contextUsed;
     dto.result = job.result;
     dto.error_code = job.errorCode;

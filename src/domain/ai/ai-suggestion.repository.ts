@@ -9,6 +9,7 @@ export interface CreateAiSuggestionData {
   originalText: string;
   suggestedText: string;
   promptVersion: string;
+  model: string | null;
 }
 
 export interface AiSuggestionRepository {

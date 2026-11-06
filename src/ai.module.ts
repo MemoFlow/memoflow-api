@@ -1,8 +1,11 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ActivatePromptUseCase } from './application/ai/activate-prompt.use-case';
+import { CreatePromptUseCase } from './application/ai/create-prompt.use-case';
 import { GenerateSuggestionUseCase } from './application/ai/generate-suggestion.use-case';
 import { ListSuggestionsUseCase } from './application/ai/list-suggestions.use-case';
+import { ListPromptsUseCase } from './application/ai/list-prompts.use-case';
 import { ReviewSuggestionUseCase } from './application/ai/review-suggestion.use-case';
 import { AI_SUGGESTION_REPOSITORY } from './domain/ai/ai-suggestion.repository';
 import { LLM_GATEWAY, LlmGateway } from './domain/ai/llm-gateway.port';
@@ -19,6 +22,7 @@ import { AiSuggestionOrmEntity } from './infrastructure/persistence/ai/ai-sugges
 import { AiSuggestionTypeOrmRepository } from './infrastructure/persistence/ai/ai-suggestion.typeorm.repository';
 import { PromptOrmEntity } from './infrastructure/persistence/ai/prompt.orm-entity';
 import { PromptTypeOrmRepository } from './infrastructure/persistence/ai/prompt.typeorm.repository';
+import { PromptsController } from './presentation/ai/prompts.controller';
 import { SuggestionReviewsController } from './presentation/ai/suggestion-reviews.controller';
 import { SuggestionsController } from './presentation/ai/suggestions.controller';
 import { UsersModule } from './users.module';
@@ -54,7 +58,11 @@ export function suggestionGeneratorFactory(
     UsersModule,
     DocumentsModule,
   ],
-  controllers: [SuggestionsController, SuggestionReviewsController],
+  controllers: [
+    SuggestionsController,
+    SuggestionReviewsController,
+    PromptsController,
+  ],
   providers: [
     {
       provide: LLM_GATEWAY,
@@ -75,6 +83,9 @@ export function suggestionGeneratorFactory(
     GenerateSuggestionUseCase,
     ListSuggestionsUseCase,
     ReviewSuggestionUseCase,
+    ListPromptsUseCase,
+    CreatePromptUseCase,
+    ActivatePromptUseCase,
   ],
   exports: [LLM_GATEWAY, PROMPT_REPOSITORY, AI_SUGGESTION_REPOSITORY],
 })

@@ -1,8 +1,8 @@
 import { Prompt } from '../../domain/ai/prompt.entity';
-import { PromptRepository } from '../../domain/ai/prompt.repository';
 import { ContextGatherer } from '../../domain/context/context-gatherer.port';
 import {
   LlmPlanner,
+  PlanInput,
   PlanningResult,
 } from '../../domain/context/llm-planner.port';
 import { JobStatus, PlanningJob } from '../../domain/context/planning-job';
@@ -12,6 +12,7 @@ import {
   UpdatePlanningJobStatusData,
 } from '../../domain/context/planning-job.repository';
 import { ProcessPlanningJobUseCase } from './process-planning-job.use-case';
+import { InMemoryPromptRepository, makePrompt } from '../ai/testing-fakes';
 
 class InMemoryPlanningJobRepository implements PlanningJobRepository {
   private readonly jobs = new Map<string, PlanningJob>();
@@ -116,6 +117,7 @@ class InMemoryPlanningJobRepository implements PlanningJobRepository {
         patch.promptVersion !== undefined
           ? patch.promptVersion
           : existing.promptVersion,
+      model: patch.model !== undefined ? patch.model : existing.model,
       contextUsed:
         patch.contextUsed !== undefined
           ? patch.contextUsed
@@ -124,26 +126,15 @@ class InMemoryPlanningJobRepository implements PlanningJobRepository {
   }
 }
 
-class FakePromptRepository implements PromptRepository {
-  constructor(private readonly prompts: Prompt[] = []) {}
-
-  findActiveByFeatureType(featureType: string): Promise<Prompt | null> {
-    return Promise.resolve(
-      this.prompts.find((p) => p.featureType === featureType && p.isActive) ??
-        null,
-    );
-  }
-}
+class FakePromptRepository extends InMemoryPromptRepository {}
 
 function makePlanningPrompt(overrides: Partial<Prompt> = {}): Prompt {
-  return new Prompt({
-    id: 'prompt-1',
+  return makePrompt({
     featureType: 'planning',
     version: 'v1',
-    template: 'Plan this: {{prompt}}',
-    isActive: true,
-    createdAt: new Date('2026-01-01T00:00:00.000Z'),
-    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    systemTemplate: 'SYS <untrusted_{{nonce}}>',
+    template: 'Plan this: {{prompt}} | {{context}} | {{nonce}}',
+    userInvocable: false,
     ...overrides,
   });
 }
@@ -161,11 +152,12 @@ class ThrowingGatherer implements ContextGatherer {
 }
 
 class StubPlanner implements LlmPlanner {
-  plan(input: { prompt: string }): Promise<PlanningResult> {
+  plan(input: PlanInput): Promise<PlanningResult> {
     return Promise.resolve({
       suggestions: [`(stub plan) ${input.prompt}`],
       outline: null,
       sources: [],
+      model: 'test/planner',
     });
   }
 }
@@ -211,6 +203,7 @@ describe('ProcessPlanningJobUseCase', () => {
     });
     expect(job.finishedAt).not.toBeNull();
     expect(job.promptVersion).toBe('v1');
+    expect(job.model).toBe('test/planner');
     expect(job.contextUsed).toEqual({ note: 'stub' });
   });
 
@@ -227,6 +220,69 @@ describe('ProcessPlanningJobUseCase', () => {
     const { job } = await useCase.execute({ jobId: 'job-1' });
 
     expect(job.promptVersion).toBeNull();
+  });
+
+  it('passes the rendered system and user prompts to the planner', async () => {
+    const repository = new InMemoryPlanningJobRepository();
+    repository.seed(makeJob({ prompt: 'costs $& {{nonce}}' }));
+    const planner = new StubPlanner();
+    const planSpy = jest.spyOn(planner, 'plan');
+    const useCase = new ProcessPlanningJobUseCase(
+      repository,
+      new StubGatherer(),
+      planner,
+      new FakePromptRepository([makePlanningPrompt()]),
+    );
+
+    await useCase.execute({ jobId: 'job-1' });
+
+    const input = planSpy.mock.calls[0][0];
+    const nonce = /^SYS <untrusted_([0-9a-f]{32})>$/.exec(input.system)?.[1];
+    expect(nonce).toBeDefined();
+    expect(input.user).toBe(
+      `Plan this: costs $& {{nonce}} | ${JSON.stringify({ note: 'stub' })} | ${nonce}`,
+    );
+  });
+
+  it('falls back to the built-in planning prompt when none is active', async () => {
+    const repository = new InMemoryPlanningJobRepository();
+    repository.seed(makeJob());
+    const planner = new StubPlanner();
+    const planSpy = jest.spyOn(planner, 'plan');
+    const useCase = new ProcessPlanningJobUseCase(
+      repository,
+      new StubGatherer(),
+      planner,
+      new FakePromptRepository([]),
+    );
+
+    const { job } = await useCase.execute({ jobId: 'job-1' });
+
+    expect(job.status).toBe(JobStatus.Completed);
+    expect(job.promptVersion).toBeNull();
+    const input = planSpy.mock.calls[0][0];
+    expect(input.system).toContain("MemoFlow's writing assistant");
+    expect(input.user).toContain('Plan my chapter');
+  });
+
+  it('marks the job failed when the active prompt cannot be rendered', async () => {
+    const repository = new InMemoryPlanningJobRepository();
+    repository.seed(makeJob());
+    const planner = new StubPlanner();
+    const planSpy = jest.spyOn(planner, 'plan');
+    const useCase = new ProcessPlanningJobUseCase(
+      repository,
+      new StubGatherer(),
+      planner,
+      new FakePromptRepository([makePlanningPrompt({ template: '{{nope}}' })]),
+    );
+
+    const { job } = await useCase.execute({ jobId: 'job-1' });
+
+    expect(job.status).toBe(JobStatus.Failed);
+    expect(job.errorMessage).toContain('nope');
+    expect(job.promptVersion).toBe('v1');
+    expect(planSpy).not.toHaveBeenCalled();
   });
 
   it('records contextUsed on a failed job when gather succeeded but plan threw', async () => {

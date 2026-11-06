@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   LlmPlanner,
+  PlanInput,
   PlanningResult,
 } from '../../domain/context/llm-planner.port';
 
@@ -11,14 +12,12 @@ import {
  */
 @Injectable()
 export class StubLlmPlanner implements LlmPlanner {
-  plan(input: {
-    prompt: string;
-    context: Record<string, unknown>;
-  }): Promise<PlanningResult> {
+  plan(input: PlanInput): Promise<PlanningResult> {
     return Promise.resolve({
       suggestions: [`(stub plan) ${input.prompt}`],
       outline: null,
       sources: [],
+      model: null,
     });
   }
 }
