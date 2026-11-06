@@ -21,6 +21,14 @@ function isUniqueViolation(err: unknown): err is QueryFailedError {
   );
 }
 
+/** How long an active-prompt lookup is reused. Other instances can lag this long. */
+export const ACTIVE_PROMPT_CACHE_TTL_MS = 60_000;
+
+interface ActivePromptEntry {
+  prompt: Prompt | null;
+  expiresAt: number;
+}
+
 @Injectable()
 export class PromptTypeOrmRepository implements PromptRepository {
   constructor(
@@ -28,11 +36,31 @@ export class PromptTypeOrmRepository implements PromptRepository {
     private readonly repository: Repository<PromptOrmEntity>,
   ) {}
 
+  /**
+   * In-memory, per instance, for 60 seconds, "no active prompt" included.
+   * `activate` clears it on this instance; another instance may serve the old
+   * prompt for up to the TTL, which is accepted.
+   */
+  private readonly activeCache = new Map<string, ActivePromptEntry>();
+  /** Bumped on every clear, so a read that began before it can't repopulate. */
+  private cacheGeneration = 0;
+
   async findActiveByFeatureType(featureType: string): Promise<Prompt | null> {
+    const cached = this.activeCache.get(featureType);
+    if (cached && cached.expiresAt > Date.now()) return cached.prompt;
+
+    const generation = this.cacheGeneration;
     const entity = await this.repository.findOne({
       where: { featureType, isActive: true },
     });
-    return entity ? this.toDomain(entity) : null;
+    const prompt = entity ? this.toDomain(entity) : null;
+    if (generation === this.cacheGeneration) {
+      this.activeCache.set(featureType, {
+        prompt,
+        expiresAt: Date.now() + ACTIVE_PROMPT_CACHE_TTL_MS,
+      });
+    }
+    return prompt;
   }
 
   async findById(id: string): Promise<Prompt | null> {
@@ -73,20 +101,26 @@ export class PromptTypeOrmRepository implements PromptRepository {
 
   async activate(id: string): Promise<Prompt | null> {
     try {
-      return await this.repository.manager.transaction(async (manager) => {
-        const prompts = manager.getRepository(PromptOrmEntity);
-        const target = await prompts.findOne({ where: { id } });
-        if (!target) {
-          return null;
-        }
-        await prompts.update(
-          { featureType: target.featureType, isActive: true },
-          { isActive: false },
-        );
-        await prompts.update({ id }, { isActive: true });
-        const updated = await prompts.findOneOrFail({ where: { id } });
-        return this.toDomain(updated);
-      });
+      const activated = await this.repository.manager.transaction(
+        async (manager) => {
+          const prompts = manager.getRepository(PromptOrmEntity);
+          const target = await prompts.findOne({ where: { id } });
+          if (!target) {
+            return null;
+          }
+          await prompts.update(
+            { featureType: target.featureType, isActive: true },
+            { isActive: false },
+          );
+          await prompts.update({ id }, { isActive: true });
+          const updated = await prompts.findOneOrFail({ where: { id } });
+          return this.toDomain(updated);
+        },
+      );
+      // Cleared only after the commit: a failed or rolled-back activation
+      // changed nothing, so the cached prompt is still right.
+      if (activated) this.clearActiveCache();
+      return activated;
     } catch (err) {
       if (
         isUniqueViolation(err) &&
@@ -97,6 +131,11 @@ export class PromptTypeOrmRepository implements PromptRepository {
       }
       throw err;
     }
+  }
+
+  private clearActiveCache(): void {
+    this.cacheGeneration += 1;
+    this.activeCache.clear();
   }
 
   private toDomain(entity: PromptOrmEntity): Prompt {

@@ -21,7 +21,10 @@ import {
 } from '../../../domain/context/planning-job.repository';
 import { ProcessPlanningJobUseCase } from '../../../application/context/process-planning-job.use-case';
 import { PlanningProcessor } from './planning.processor';
-import { makePipeline } from '../../../application/context/testing-fakes';
+import {
+  FakeUserRepository,
+  makePipeline,
+} from '../../../application/context/testing-fakes';
 
 jest.mock('@sentry/nestjs', () => ({
   captureException: jest.fn(),
@@ -202,6 +205,7 @@ describe('PlanningProcessor + ProcessPlanningJobUseCase, wired exactly as produc
         new UnreachableGatherer(),
         makePipeline(new UnreachablePlanner()),
         new FakePromptRepository(),
+        new FakeUserRepository(),
         publisher,
         new FakeConnectorConnectionRepository(),
       );
@@ -248,6 +252,7 @@ describe('PlanningProcessor + ProcessPlanningJobUseCase, wired exactly as produc
       new UnreachableGatherer(),
       makePipeline(new UnreachablePlanner()),
       new FakePromptRepository(),
+      new FakeUserRepository(),
       publisher,
       new FakeConnectorConnectionRepository(),
     );
@@ -293,6 +298,40 @@ describe('PlanningProcessor Sentry capture', () => {
       expect.objectContaining({ jobId: 'job-1', status: JobStatus.Failed }),
     );
   });
+
+  it.each([
+    ['AI_QUOTA_EXCEEDED', 0],
+    ['USER_INACTIVE', 0],
+    ['AI_QUOTA_UNAVAILABLE', 1],
+    ['PROCESSING_FAILED', 1],
+  ])(
+    'a failed job coded %s is reported %d time(s) but always relayed',
+    async (errorCode, reports) => {
+      const useCase = {
+        execute: jest.fn().mockResolvedValue({
+          processed: true,
+          job: makeJob({
+            status: JobStatus.Failed,
+            errorCode,
+            errorMessage: 'fixed message',
+          }),
+        }),
+      } as unknown as ProcessPlanningJobUseCase;
+      const eventEmitter = new EventEmitter2();
+      const emitSpy = jest.spyOn(eventEmitter, 'emit');
+      const processor = new PlanningProcessor(useCase, eventEmitter);
+
+      await processor.process({
+        data: { jobId: 'job-1', userId: 'user-1' },
+      } as Job<{ jobId: string; userId: string }>);
+
+      expect(Sentry.captureException).toHaveBeenCalledTimes(reports);
+      expect(emitSpy).toHaveBeenCalledWith(
+        'planning.failed',
+        expect.objectContaining({ errorCode }),
+      );
+    },
+  );
 
   it('does NOT manually capture on the rethrow branch (BullMQ auto-instrumentation already covers it)', async () => {
     const useCase = {

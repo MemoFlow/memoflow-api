@@ -1,3 +1,9 @@
+import { AiQuotaExceededError } from '../../domain/ai/ai-quota.errors';
+import type { AiQuota } from '../../domain/ai/ai-quota.port';
+import type {
+  AiResponseCache,
+  CachedSuggestion,
+} from '../../domain/ai/ai-response-cache.port';
 import { Prompt } from '../../domain/ai/prompt.entity';
 import {
   CreatePromptData,
@@ -79,5 +85,59 @@ export class InMemoryPromptRepository implements PromptRepository {
     }
     target.isActive = true;
     return Promise.resolve(target);
+  }
+}
+
+/** In-memory `AiQuota` with a plain per-user and global counter. */
+export class FakeAiQuota implements AiQuota {
+  readonly reserved: string[] = [];
+  readonly checked: string[] = [];
+  /** Set to make every call fail the way the real adapter would. */
+  failWith: Error | null = null;
+
+  constructor(
+    public userLimit = Number.POSITIVE_INFINITY,
+    public globalLimit = Number.POSITIVE_INFINITY,
+  ) {}
+
+  reserve(userId: string): Promise<void> {
+    const err = this.verdict(userId);
+    if (err) return Promise.reject(err);
+    this.reserved.push(userId);
+    return Promise.resolve();
+  }
+
+  check(userId: string): Promise<void> {
+    this.checked.push(userId);
+    const err = this.verdict(userId);
+    return err ? Promise.reject(err) : Promise.resolve();
+  }
+
+  private verdict(userId: string): Error | null {
+    if (this.failWith) return this.failWith;
+    const mine = this.reserved.filter((id) => id === userId).length;
+    if (mine >= this.userLimit || this.reserved.length >= this.globalLimit) {
+      return new AiQuotaExceededError(60);
+    }
+    return null;
+  }
+}
+
+/** In-memory `AiResponseCache`; `failing` makes it behave like a dead Redis (a miss, a no-op). */
+export class FakeAiResponseCache implements AiResponseCache {
+  readonly entries = new Map<string, CachedSuggestion>();
+  readonly gets: string[] = [];
+  failing = false;
+
+  get(key: string): Promise<CachedSuggestion | null> {
+    this.gets.push(key);
+    return Promise.resolve(
+      this.failing ? null : (this.entries.get(key) ?? null),
+    );
+  }
+
+  set(key: string, value: CachedSuggestion): Promise<void> {
+    if (!this.failing) this.entries.set(key, value);
+    return Promise.resolve();
   }
 }

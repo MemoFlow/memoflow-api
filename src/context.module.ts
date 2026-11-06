@@ -32,6 +32,7 @@ import {
   GATHER_TIMEOUT_SCHEDULER,
   GatherTimeoutScheduler,
 } from './domain/context/gather-timeout-scheduler.port';
+import { AI_QUOTA, AiQuota } from './domain/ai/ai-quota.port';
 import { LLM_GATEWAY, LlmGateway } from './domain/ai/llm-gateway.port';
 import { LLM_PLANNER, LlmPlanner } from './domain/context/llm-planner.port';
 import { PLANNING_JOB_REPOSITORY } from './domain/context/planning-job.repository';
@@ -86,9 +87,10 @@ export function contextGathererFactory(
 export function llmPlannerFactory(
   config: ConfigService,
   gateway: LlmGateway,
+  quota: AiQuota,
 ): LlmPlanner {
   return config.get<string>('OPENROUTER_API_KEY')
-    ? new GatewayLlmPlanner(gateway)
+    ? new GatewayLlmPlanner(gateway, quota)
     : new StubLlmPlanner();
 }
 
@@ -200,7 +202,7 @@ export function contextResultsConsumerFactory(
     },
     {
       provide: LLM_PLANNER,
-      inject: [ConfigService, LLM_GATEWAY],
+      inject: [ConfigService, LLM_GATEWAY, AI_QUOTA],
       useFactory: llmPlannerFactory,
     },
     {

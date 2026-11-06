@@ -7,6 +7,7 @@ import { App } from 'supertest/types';
 import { startMongoMemory, MongoTestEnv } from './mongo-memory';
 import { startPgContainer, PgTestEnv } from './pg-testcontainer';
 import { startRedisContainer, RedisTestEnv } from './redis-testcontainer';
+import { stopContainer } from './stop-container';
 
 export interface CapturedMail {
   to: string;
@@ -132,9 +133,9 @@ export async function bootIdentityApp(
     query,
     stop: async () => {
       await app.close();
-      await pg.container.stop();
+      await stopContainer(pg.container);
       await mongo.server.stop();
-      await redis.container.stop();
+      await stopContainer(redis.container);
     },
   };
 }

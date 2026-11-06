@@ -11,6 +11,8 @@ export interface GenerateSuggestionInput {
   /** Fully rendered user message. */
   user: string;
   featureType: string;
+  /** The user the call is made for; its provider attempts count against them. */
+  userId: string;
 }
 
 export interface GenerateSuggestionOutput {
@@ -27,6 +29,12 @@ export interface SuggestionGenerator {
    * "AI not configured" without a wasted round trip through `generate`.
    */
   isAvailable(): boolean;
+
+  /**
+   * Identity of the configured model, fallbacks included, so cached output is
+   * never reused across a model change.
+   */
+  cacheScope(): string;
 
   /**
    * Throws `SuggestionGeneration*`/`SuggestionGeneratorUnavailableError`

@@ -5,6 +5,8 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
+import { USER_REPOSITORY } from '../../domain/users/user.repository';
+import type { UserRepository } from '../../domain/users/user.repository';
 import { PROMPT_REPOSITORY } from '../../domain/ai/prompt.repository';
 import type { PromptRepository } from '../../domain/ai/prompt.repository';
 import { CONNECTOR_CONNECTION_REPOSITORY } from '../../domain/connectors/connector-connection.repository';
@@ -23,7 +25,9 @@ import { GATHER_TIMEOUT_MS } from './gather-timeout-ms.token';
 import type { ValidatedPlanningResult } from './planning-citations';
 import { PlanningPipeline } from './planning-pipeline';
 import {
+  assertJobUserActive,
   errorName,
+  failureErrorCode,
   resolvePlanningPrompt,
   safeFailureMessage,
 } from './planning-prompt';
@@ -75,6 +79,8 @@ export class ProcessPlanningJobUseCase {
     private readonly planningPipeline: PlanningPipeline,
     @Inject(PROMPT_REPOSITORY)
     private readonly promptRepository: PromptRepository,
+    @Inject(USER_REPOSITORY)
+    private readonly userRepository: UserRepository,
     @Optional()
     @Inject(CONTEXT_REQUEST_PUBLISHER)
     private readonly contextRequestPublisher?: ContextRequestPublisher,
@@ -125,6 +131,9 @@ export class ProcessPlanningJobUseCase {
     let context: Record<string, unknown> | undefined;
     let result: ValidatedPlanningResult;
     try {
+      // Before any gathering, retrieval or provider call: the user may have
+      // been disabled or deleted while the job waited in the queue.
+      await assertJobUserActive(this.userRepository, claimed.userId);
       const gathered = await this.contextGatherer.gather({
         userId: claimed.userId,
         connectors: claimed.connectors,
@@ -137,7 +146,7 @@ export class ProcessPlanningJobUseCase {
       context = prepared.contextUsed;
       result = await this.planningPipeline.plan(
         resolvedPrompt,
-        claimed.prompt,
+        claimed,
         prepared,
       );
     } catch (err) {
@@ -150,10 +159,11 @@ export class ProcessPlanningJobUseCase {
         `Planning job ${claimed.id} failed (${errorName(err)})`,
       );
       const errorMessage = safeFailureMessage(err);
+      const errorCode = failureErrorCode(err);
       const contextUsed = context ?? null;
       const failed = await this.planningJobRepository.updateStatus(claimed.id, {
         status: JobStatus.Failed,
-        errorCode: 'PROCESSING_FAILED',
+        errorCode,
         errorMessage,
         finishedAt: new Date(),
         promptVersion,
@@ -164,6 +174,7 @@ export class ProcessPlanningJobUseCase {
         job: failed ?? {
           ...claimed,
           status: JobStatus.Failed,
+          errorCode,
           errorMessage,
           promptVersion,
           contextUsed,
@@ -211,6 +222,33 @@ export class ProcessPlanningJobUseCase {
         throw new NotFoundException(`Planning job ${input.jobId} not found`);
       }
       return { processed: false, job: existing };
+    }
+
+    // Before the gather request leaves: a disabled user's job must not reach
+    // the context engine. Finalising checks again.
+    try {
+      await assertJobUserActive(this.userRepository, claimed.userId);
+    } catch (err) {
+      this.logger.error(
+        `Planning job ${claimed.id} not started (${errorName(err)})`,
+      );
+      const errorCode = failureErrorCode(err);
+      const errorMessage = safeFailureMessage(err);
+      const failed = await this.planningJobRepository.updateStatus(claimed.id, {
+        status: JobStatus.Failed,
+        errorCode,
+        errorMessage,
+        finishedAt: new Date(),
+      });
+      return {
+        processed: true,
+        job: failed ?? {
+          ...claimed,
+          status: JobStatus.Failed,
+          errorCode,
+          errorMessage,
+        },
+      };
     }
 
     const connectors = this.connectorConnectionRepository

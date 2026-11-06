@@ -11,6 +11,8 @@ import {
   AI_MAX_INPUT_CHARS,
   DEFAULT_AI_MAX_INPUT_CHARS,
 } from './application/ai/max-input-chars.token';
+import { AI_QUOTA, AiQuota } from './domain/ai/ai-quota.port';
+import { AI_RESPONSE_CACHE } from './domain/ai/ai-response-cache.port';
 import { AI_SUGGESTION_REPOSITORY } from './domain/ai/ai-suggestion.repository';
 import { LLM_GATEWAY, LlmGateway } from './domain/ai/llm-gateway.port';
 import { PROMPT_REPOSITORY } from './domain/ai/prompt.repository';
@@ -22,6 +24,8 @@ import { DocumentsModule } from './documents.module';
 import { GatewaySuggestionGenerator } from './infrastructure/ai/gateway-suggestion-generator';
 import { NullSuggestionGenerator } from './infrastructure/ai/null-suggestion-generator';
 import { OpenRouterGateway } from './infrastructure/ai/openrouter.gateway';
+import { RedisAiQuota } from './infrastructure/ai/redis-ai-quota';
+import { RedisAiResponseCache } from './infrastructure/ai/redis-ai-response-cache';
 import { AiSuggestionOrmEntity } from './infrastructure/persistence/ai/ai-suggestion.orm-entity';
 import { AiSuggestionTypeOrmRepository } from './infrastructure/persistence/ai/ai-suggestion.typeorm.repository';
 import { PromptOrmEntity } from './infrastructure/persistence/ai/prompt.orm-entity';
@@ -41,9 +45,10 @@ import { UsersModule } from './users.module';
 export function suggestionGeneratorFactory(
   config: ConfigService,
   gateway: LlmGateway,
+  quota: AiQuota,
 ): SuggestionGenerator {
   return config.get<string>('OPENROUTER_API_KEY')
-    ? new GatewaySuggestionGenerator(gateway)
+    ? new GatewaySuggestionGenerator(gateway, quota)
     : new NullSuggestionGenerator();
 }
 
@@ -84,9 +89,11 @@ export function aiMaxInputCharsFactory(config: ConfigService): number {
       provide: AI_SUGGESTION_REPOSITORY,
       useClass: AiSuggestionTypeOrmRepository,
     },
+    { provide: AI_QUOTA, useClass: RedisAiQuota },
+    { provide: AI_RESPONSE_CACHE, useClass: RedisAiResponseCache },
     {
       provide: SUGGESTION_GENERATOR,
-      inject: [ConfigService, LLM_GATEWAY],
+      inject: [ConfigService, LLM_GATEWAY, AI_QUOTA],
       useFactory: suggestionGeneratorFactory,
     },
     {
@@ -101,6 +108,6 @@ export function aiMaxInputCharsFactory(config: ConfigService): number {
     CreatePromptUseCase,
     ActivatePromptUseCase,
   ],
-  exports: [LLM_GATEWAY, PROMPT_REPOSITORY, AI_SUGGESTION_REPOSITORY],
+  exports: [LLM_GATEWAY, AI_QUOTA, PROMPT_REPOSITORY, AI_SUGGESTION_REPOSITORY],
 })
 export class AiModule {}

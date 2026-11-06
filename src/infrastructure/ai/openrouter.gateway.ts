@@ -96,6 +96,14 @@ export class OpenRouterGateway implements LlmGateway {
     return Boolean(this.config.get<string>('OPENROUTER_API_KEY'));
   }
 
+  modelIdentity(): string {
+    const model = this.config.get<string>('OPENROUTER_MODEL') || DEFAULT_MODEL;
+    const fallbacks = parseModelList(
+      this.config.get<string>('OPENROUTER_FALLBACK_MODELS'),
+    );
+    return JSON.stringify([model, ...fallbacks.filter((m) => m !== model)]);
+  }
+
   async complete(request: LlmCompletionRequest): Promise<LlmCompletion> {
     if (!this.isAvailable()) {
       throw new SuggestionGeneratorUnavailableError();
@@ -212,14 +220,17 @@ export class OpenRouterGateway implements LlmGateway {
   }
 
   /**
-   * One provider attempt: the only place that talks to OpenRouter, so a
-   * per-attempt hook (e.g. quota reservation) belongs here.
+   * One provider attempt: the only place that talks to OpenRouter, so the
+   * per-attempt hook (e.g. quota reservation) runs here. It is awaited
+   * outside any provider error mapping: whatever it throws propagates
+   * unchanged (it is not an `AttemptFailure`, so it is never retried).
    */
   private async attempt(
     request: LlmCompletionRequest,
     messages: ChatMessage[],
     deadline: number,
   ): Promise<RawCompletion> {
+    await request.beforeAttempt();
     const apiKey = this.config.get<string>('OPENROUTER_API_KEY');
     const baseUrl = (
       this.config.get<string>('OPENROUTER_BASE_URL') || DEFAULT_BASE_URL

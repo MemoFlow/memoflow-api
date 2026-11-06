@@ -664,3 +664,35 @@ describe('env.validation AI guardrail settings', () => {
     ).toBe(0);
   });
 });
+
+describe('env.validation AI quota and cache settings', () => {
+  it('defaults to 10 per user, 40 in total and a one-day cache', () => {
+    const result = validate(baseConfig());
+    expect(result.AI_USER_DAILY_LIMIT).toBe(10);
+    expect(result.AI_GLOBAL_DAILY_LIMIT).toBe(40);
+    expect(result.AI_CACHE_TTL_SECONDS).toBe(86_400);
+  });
+
+  it('parses numeric strings, and 0 is allowed (blocks AI use / disables the cache)', () => {
+    const result = validate(
+      baseConfig({
+        AI_USER_DAILY_LIMIT: '0',
+        AI_GLOBAL_DAILY_LIMIT: '100',
+        AI_CACHE_TTL_SECONDS: '0',
+      }),
+    );
+    expect(result.AI_USER_DAILY_LIMIT).toBe(0);
+    expect(result.AI_GLOBAL_DAILY_LIMIT).toBe(100);
+    expect(result.AI_CACHE_TTL_SECONDS).toBe(0);
+  });
+
+  it.each([
+    { AI_USER_DAILY_LIMIT: '-1' },
+    { AI_GLOBAL_DAILY_LIMIT: '-1' },
+    { AI_CACHE_TTL_SECONDS: '-1' },
+    { AI_USER_DAILY_LIMIT: '1.5' },
+    { AI_GLOBAL_DAILY_LIMIT: 'many' },
+  ])('rejects %j', (overrides) => {
+    expect(() => validate(baseConfig(overrides))).toThrow();
+  });
+});

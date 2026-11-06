@@ -21,3 +21,14 @@ export class PlanningOutputRejectedError extends Error {
     this.name = 'PlanningOutputRejectedError';
   }
 }
+
+/** Error code recorded when the job's user is gone or disabled. */
+export const USER_INACTIVE_ERROR_CODE = 'USER_INACTIVE';
+
+/** The job's user no longer exists or was disabled before the job ran. */
+export class JobUserInactiveError extends Error {
+  constructor(message = 'The account that submitted this job is not active') {
+    super(message);
+    this.name = 'JobUserInactiveError';
+  }
+}

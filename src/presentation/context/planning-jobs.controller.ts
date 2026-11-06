@@ -5,6 +5,7 @@ import {
   HttpCode,
   Param,
   Post,
+  Res,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -14,6 +15,8 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import type { Response } from 'express';
+import { AiQuotaThrottledException } from '../../application/ai/ai-quota-http';
 import { GetPlanningJobUseCase } from '../../application/context/get-planning-job.use-case';
 import { SubmitPlanningJobUseCase } from '../../application/context/submit-planning-job.use-case';
 import { User } from '../../domain/users/user.entity';
@@ -42,7 +45,8 @@ export class PlanningJobsController {
   @ApiResponse({ status: 202, type: PlanningJobResponseDto })
   @ApiResponse({
     status: 400,
-    description: 'Invalid body, e.g. prompt empty or over 5000 characters',
+    description:
+      'Invalid body, e.g. prompt empty or over 5000 characters, or a connector that is not one of your active connections',
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({
@@ -51,20 +55,35 @@ export class PlanningJobsController {
       'documentId/sectionId given but not found (or not owned by the caller)',
   })
   @ApiResponse({
+    status: 429,
+    description:
+      'Daily AI usage limit reached (per user or in total); see the Retry-After header (seconds until the next UTC midnight)',
+  })
+  @ApiResponse({
     status: 503,
-    description: 'Failed to enqueue the job for processing',
+    description:
+      'Failed to enqueue the job for processing, or the AI usage counters are unreachable',
   })
   async submit(
     @CurrentUser() user: User,
     @Body() dto: SubmitPlanningJobDto,
+    @Res({ passthrough: true }) res: Response,
   ): Promise<PlanningJobResponseDto> {
-    const job = await this.submitPlanningJobUseCase.execute({
-      userId: user.id,
-      prompt: dto.prompt,
-      connectors: dto.connectors,
-      documentId: dto.documentId,
-      sectionId: dto.sectionId,
-    });
+    let job: Awaited<ReturnType<SubmitPlanningJobUseCase['execute']>>;
+    try {
+      job = await this.submitPlanningJobUseCase.execute({
+        userId: user.id,
+        prompt: dto.prompt,
+        connectors: dto.connectors,
+        documentId: dto.documentId,
+        sectionId: dto.sectionId,
+      });
+    } catch (err) {
+      if (err instanceof AiQuotaThrottledException) {
+        res.setHeader('Retry-After', String(err.retryAfterSeconds));
+      }
+      throw err;
+    }
     return PlanningJobResponseDto.fromDomain(job);
   }
 

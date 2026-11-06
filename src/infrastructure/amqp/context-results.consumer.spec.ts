@@ -354,6 +354,51 @@ describe('ContextResultsConsumer', () => {
     expect(Sentry.captureException).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ['AI_QUOTA_EXCEEDED', false],
+    ['USER_INACTIVE', false],
+    ['AI_QUOTA_UNAVAILABLE', true],
+    ['PROCESSING_FAILED', true],
+  ])(
+    'Sentry for a terminal failure coded %s: reported=%s',
+    async (errorCode, reported) => {
+      const channel = makeChannel();
+      const emitSpy = jest.fn();
+      const eventEmitter = { emit: emitSpy } as unknown as EventEmitter2;
+      const execute = jest.fn().mockResolvedValue({
+        outcome: 'applied',
+        job: makeJob({
+          status: JobStatus.Failed,
+          errorCode,
+          errorMessage: 'fixed message',
+        }),
+        terminal: true,
+      });
+      const consumer = new ContextResultsConsumer(
+        makeConnectionProvider(channel),
+        { execute } as unknown as HandleContextResultChunkUseCase,
+        eventEmitter,
+      );
+
+      const msg = makeMsg({
+        schema_version: 1,
+        job_id: 'job-1',
+        user_id: 'user-1',
+        sequence: 2,
+        type: 'status',
+        status: { phase: 'completed' },
+      });
+      await (consumer as any).onMessage(msg);
+
+      expect(Sentry.captureException).toHaveBeenCalledTimes(reported ? 1 : 0);
+      // The client is told either way.
+      expect(emitSpy).toHaveBeenCalledWith(
+        'planning.failed',
+        expect.objectContaining({ errorCode }),
+      );
+    },
+  );
+
   it('does NOT report to Sentry for a losing CAS racer (terminal: false, job already Failed)', async () => {
     const channel = makeChannel();
     const emitSpy = jest.fn();

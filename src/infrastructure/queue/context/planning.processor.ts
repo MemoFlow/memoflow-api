@@ -4,6 +4,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import * as Sentry from '@sentry/nestjs';
 import { Job } from 'bullmq';
 import { ProcessPlanningJobUseCase } from '../../../application/context/process-planning-job.use-case';
+import { isExpectedFailureCode } from '../../../application/context/planning-prompt';
 import { JobStatus } from '../../../domain/context/planning-job';
 
 /**
@@ -68,10 +69,13 @@ export class PlanningProcessor extends WorkerHost {
         // ProcessPlanningJobUseCase and recorded as a terminal `failed`
         // status) — never hits the HTTP filter, so report it here.
         // finalJob.errorMessage is a string, not an Error, so wrap it.
-        Sentry.captureException(
-          new Error(finalJob.errorMessage ?? 'Planning job failed'),
-          { extra: { jobId, userId, errorCode: finalJob.errorCode } },
-        );
+        // Expected outcomes (over quota, disabled user) are not incidents.
+        if (!isExpectedFailureCode(finalJob.errorCode)) {
+          Sentry.captureException(
+            new Error(finalJob.errorMessage ?? 'Planning job failed'),
+            { extra: { jobId, userId, errorCode: finalJob.errorCode } },
+          );
+        }
         this.eventEmitter.emit('planning.failed', {
           jobId,
           userId,

@@ -21,6 +21,7 @@ import {
   PgTestEnv,
 } from './utils/pg-testcontainer';
 import { startRedisContainer, RedisTestEnv } from './utils/redis-testcontainer';
+import { stopContainer } from './utils/stop-container';
 
 interface PlanningJobBody {
   job_id: string;
@@ -542,9 +543,9 @@ describeWithDocker()('RabbitMQ context-engine transport (e2e)', () => {
     // Each teardown step is independent — one failing/hanging step must
     // never prevent the others from at least being attempted.
     await app?.close().catch(() => undefined);
-    await pg?.container.stop().catch(() => undefined);
+    await stopContainer(pg?.container).catch(() => undefined);
     await mongo?.server.stop().catch(() => undefined);
-    await redis?.container.stop().catch(() => undefined);
+    await stopContainer(redis?.container).catch(() => undefined);
     await rabbitmq?.stop().catch(() => undefined);
   }, 60_000);
 

@@ -10,6 +10,7 @@ import {
 } from './utils/pg-testcontainer';
 import { startRedisContainer, RedisTestEnv } from './utils/redis-testcontainer';
 import { registerUser } from './utils/register-user';
+import { stopContainer } from './utils/stop-container';
 
 interface PlanningJobBody {
   job_id: string;
@@ -139,9 +140,9 @@ describeWithDocker()(
 
     afterAll(async () => {
       await app?.close().catch(() => undefined);
-      await pg?.container.stop().catch(() => undefined);
+      await stopContainer(pg?.container).catch(() => undefined);
       await mongo?.server.stop().catch(() => undefined);
-      await redis?.container.stop().catch(() => undefined);
+      await stopContainer(redis?.container).catch(() => undefined);
     }, 60_000);
 
     it(

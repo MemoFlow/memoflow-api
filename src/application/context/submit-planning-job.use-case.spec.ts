@@ -1,4 +1,19 @@
-import { NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  NotFoundException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
+import {
+  AiQuotaExceededError,
+  AiQuotaUnavailableError,
+} from '../../domain/ai/ai-quota.errors';
+import { LlmGateway } from '../../domain/ai/llm-gateway.port';
+import { ConnectorConnection } from '../../domain/connectors/connector-connection.entity';
+import { ConnectorConnectionRepository } from '../../domain/connectors/connector-connection.repository';
+import { ConnectorProvider } from '../../domain/connectors/connector-provider';
+import { ConnectorStatus } from '../../domain/connectors/connector-status';
+import { AiQuotaThrottledException } from '../ai/ai-quota-http';
+import { FakeAiQuota } from '../ai/testing-fakes';
 import { JobStatus, PlanningJob } from '../../domain/context/planning-job';
 import {
   CreatePlanningJobData,
@@ -185,23 +200,81 @@ function makeSection(overrides: Partial<Section> = {}): Section {
   });
 }
 
+class InMemoryConnections implements ConnectorConnectionRepository {
+  constructor(private readonly rows: ConnectorConnection[]) {}
+  findActiveByUser(userId: string): Promise<ConnectorConnection[]> {
+    return Promise.resolve(
+      this.rows.filter(
+        (c) => c.userId === userId && c.status === ConnectorStatus.Active,
+      ),
+    );
+  }
+  findById(): Promise<ConnectorConnection | null> {
+    return Promise.reject(new Error('not implemented'));
+  }
+  findByUserAndProvider(): Promise<ConnectorConnection | null> {
+    return Promise.reject(new Error('not implemented'));
+  }
+  findByComposioAccountId(): Promise<ConnectorConnection | null> {
+    return Promise.reject(new Error('not implemented'));
+  }
+  findAllByUser(): Promise<ConnectorConnection[]> {
+    return Promise.reject(new Error('not implemented'));
+  }
+  upsertInitiated(): Promise<ConnectorConnection> {
+    return Promise.reject(new Error('not implemented'));
+  }
+  updateStatus(): Promise<ConnectorConnection | null> {
+    return Promise.reject(new Error('not implemented'));
+  }
+}
+
+function makeConnection(
+  overrides: Partial<ConnectorConnection> = {},
+): ConnectorConnection {
+  return new ConnectorConnection({
+    id: 'conn-1',
+    userId: 'user-1',
+    provider: ConnectorProvider.Notion,
+    composioAccountId: 'ca_notion',
+    status: ConnectorStatus.Active,
+    connectedAt: new Date('2026-01-01T00:00:00.000Z'),
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    ...overrides,
+  });
+}
+
 function buildUseCase(opts: {
   queue?: PromptQueue;
   documents?: Document[];
   sections?: Section[];
+  connections?: ConnectorConnection[];
+  providerConfigured?: boolean;
+  quota?: FakeAiQuota;
 }): {
   useCase: SubmitPlanningJobUseCase;
   repository: InMemoryPlanningJobRepository;
+  quota: FakeAiQuota;
 } {
   const repository = new InMemoryPlanningJobRepository();
   const queue = opts.queue ?? new StubPromptQueue();
+  const quota = opts.quota ?? new FakeAiQuota();
+  const gateway: LlmGateway = {
+    isAvailable: () => opts.providerConfigured ?? true,
+    modelIdentity: () => '[]',
+    complete: () => Promise.reject(new Error('never called')),
+  };
   const useCase = new SubmitPlanningJobUseCase(
     repository,
     queue,
     new InMemoryDocumentRepository(opts.documents),
     new InMemorySectionRepository(opts.sections),
+    new InMemoryConnections(opts.connections ?? [makeConnection()]),
+    gateway,
+    quota,
   );
-  return { useCase, repository };
+  return { useCase, repository, quota };
 }
 
 describe('SubmitPlanningJobUseCase', () => {
@@ -334,5 +407,129 @@ describe('SubmitPlanningJobUseCase', () => {
         sectionId: 'section-1',
       }),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  describe('connectors', () => {
+    it("accepts providers among the caller's active connections", async () => {
+      const { useCase } = buildUseCase({
+        connections: [
+          makeConnection(),
+          makeConnection({
+            id: 'conn-2',
+            provider: ConnectorProvider.Github,
+            composioAccountId: 'ca_github',
+          }),
+        ],
+      });
+
+      const job = await useCase.execute({
+        userId: 'user-1',
+        prompt: 'Plan',
+        connectors: ['notion', 'github'],
+      });
+
+      expect(job.connectors).toEqual(['notion', 'github']);
+    });
+
+    it("400s with the same message for another user's connection, an inactive one and an unknown one", async () => {
+      const { useCase, repository } = buildUseCase({
+        connections: [
+          makeConnection({ userId: 'user-2' }),
+          makeConnection({
+            id: 'conn-3',
+            provider: ConnectorProvider.Trello,
+            status: ConnectorStatus.Revoked,
+          }),
+        ],
+      });
+
+      const messages: string[] = [];
+      for (const connector of ['notion', 'trello', 'made-up']) {
+        const err = await useCase
+          .execute({
+            userId: 'user-1',
+            prompt: 'Plan',
+            connectors: [connector],
+          })
+          .catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(BadRequestException);
+        messages.push((err as Error).message);
+      }
+
+      expect(new Set(messages)).toEqual(
+        new Set(['Connectors must be among your active connections']),
+      );
+      expect(await repository.findById('job-1')).toBeNull();
+    });
+
+    it('400s when only one of several connectors is invalid', async () => {
+      const { useCase } = buildUseCase({});
+
+      await expect(
+        useCase.execute({
+          userId: 'user-1',
+          prompt: 'Plan',
+          connectors: ['notion', 'github'],
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('does not read connections when none are requested', async () => {
+      const { useCase } = buildUseCase({ connections: [] });
+
+      await expect(
+        useCase.execute({ userId: 'user-1', prompt: 'Plan' }),
+      ).resolves.toBeDefined();
+    });
+  });
+
+  describe('quota', () => {
+    it('checks the quota without counting, before creating the job', async () => {
+      const { useCase, quota } = buildUseCase({});
+
+      await useCase.execute({ userId: 'user-1', prompt: 'Plan' });
+
+      expect(quota.checked).toEqual(['user-1']);
+      expect(quota.reserved).toEqual([]);
+    });
+
+    it('429s over quota without creating or enqueuing a job', async () => {
+      const queue = new StubPromptQueue();
+      const enqueue = jest.spyOn(queue, 'enqueue');
+      const quota = new FakeAiQuota();
+      quota.failWith = new AiQuotaExceededError(900);
+      const { useCase, repository } = buildUseCase({ queue, quota });
+
+      const err = await useCase
+        .execute({ userId: 'user-1', prompt: 'Plan' })
+        .catch((e: unknown) => e);
+
+      expect(err).toBeInstanceOf(AiQuotaThrottledException);
+      expect((err as AiQuotaThrottledException).retryAfterSeconds).toBe(900);
+      expect(await repository.findById('job-1')).toBeNull();
+      expect(enqueue).not.toHaveBeenCalled();
+    });
+
+    it('503s when the counters are unreachable (fail closed)', async () => {
+      const quota = new FakeAiQuota();
+      quota.failWith = new AiQuotaUnavailableError();
+      const { useCase, repository } = buildUseCase({ quota });
+
+      await expect(
+        useCase.execute({ userId: 'user-1', prompt: 'Plan' }),
+      ).rejects.toThrow(ServiceUnavailableException);
+      expect(await repository.findById('job-1')).toBeNull();
+    });
+
+    it('skips the check with no provider configured (the stub planner costs nothing)', async () => {
+      const quota = new FakeAiQuota(0);
+      quota.failWith = new AiQuotaExceededError(1);
+      const { useCase } = buildUseCase({ providerConfigured: false, quota });
+
+      await expect(
+        useCase.execute({ userId: 'user-1', prompt: 'Plan' }),
+      ).resolves.toBeDefined();
+      expect(quota.checked).toEqual([]);
+    });
   });
 });

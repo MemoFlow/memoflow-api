@@ -19,6 +19,7 @@ import {
 } from './utils/pg-testcontainer';
 import { startRedisContainer, RedisTestEnv } from './utils/redis-testcontainer';
 import { registerUser } from './utils/register-user';
+import { stopContainer } from './utils/stop-container';
 
 const AWS_KEY = 'AKIAIOSFODNN7EXAMPLE';
 const FEATURE_TYPES = [
@@ -33,6 +34,10 @@ const FEATURE_TYPES = [
 class ScriptedGateway {
   requests: LlmCompletionRequest[] = [];
   reply: (req: LlmCompletionRequest) => unknown = () => ({});
+
+  modelIdentity(): string {
+    return 'fake/model-1';
+  }
 
   isAvailable(): boolean {
     return true;
@@ -293,6 +298,11 @@ describeWithDocker()('RAG pipeline (e2e)', () => {
       // A key makes the planner factory pick the gateway-backed planner;
       // LLM_GATEWAY itself is replaced below, so no provider is ever called.
       OPENROUTER_API_KEY: 'e2e-not-a-real-key',
+      // These suites make many provider calls with repeated content: lift the
+      // daily caps and turn the response cache off so they test what they say.
+      AI_USER_DAILY_LIMIT: '100000',
+      AI_GLOBAL_DAILY_LIMIT: '100000',
+      AI_CACHE_TTL_SECONDS: '0',
       AI_MAX_INPUT_CHARS: '20000',
     });
 
@@ -389,9 +399,9 @@ describeWithDocker()('RAG pipeline (e2e)', () => {
 
   afterAll(async () => {
     await app?.close();
-    await pg?.container.stop();
+    await stopContainer(pg?.container);
     await mongo?.server.stop();
-    await redis?.container.stop();
+    await stopContainer(redis?.container);
   });
 
   beforeEach(() => {
