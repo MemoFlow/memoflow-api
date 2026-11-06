@@ -113,7 +113,10 @@ Rules:
   `error_code`. `started`/`gathering` are optional non-terminal progress signals.
 - On failure, publish a terminal `{ "type": "status", "status": { "phase": "failed",
   "error_code": "…", "message": "…" } }` rather than going silent — the API otherwise
-  fails the job on a timeout (`CONTEXT_ENGINE_TIMEOUT`).
+  fails the job on a timeout (`CONTEXT_ENGINE_TIMEOUT`). The API doesn't pass this `message`
+  or unlisted codes to clients, so put details in your own logs.
+- `message` on `started`/`gathering` is relayed live to the job owner, so keep it safe for
+  users to read: no internal addresses, credentials or stack traces.
 
 ## 5. Idempotency & ordering — summary
 

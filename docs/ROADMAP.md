@@ -277,7 +277,13 @@ limits, guardrails, caching and AI data consent.
   `prompt.created` / `prompt.activated`). Only user-invocable types are accepted on
   `POST /sections/:id/suggestions`; `planning` and unknown types get the same 404. `model` is recorded on
   `ai_suggestions` and `planning_jobs` and returned in their responses.
-- Slices 3–7 — pending. See the plan.
+- **Slice 3, guardrails — ✅ done.** Secrets are redacted best effort and untrusted tags neutralised before
+  text reaches the model; stored originals are unchanged. `AI_MAX_INPUT_CHARS` (default 40000) gives 422 on
+  over-limit sections, the planning prompt is capped at 5000 characters (400) and planning context is cut to
+  the limit. Output is validated and rejected if it echoes the prompt (502 for suggestions, failed job for
+  planning). Clients get fixed error messages. `OPENROUTER_MAX_RETRIES` (default 1, 0 to 3) adds
+  conservative retries sharing one deadline.
+- Slices 4–7 — pending. See the plan.
 
 ## 6. Gamification (PG) — ✅ done
 
