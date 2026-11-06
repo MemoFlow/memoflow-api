@@ -1,0 +1,66 @@
+{
+  "planPath": "docs/plans/2026-11-06-lead-scoring.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 0: Domain types and pure scorer",
+      "status": "completed",
+      "description": "**Goal:** Enums, onboarding entity, and pure functions for score, tier, suggested action and stats.\n\n**Files:**\n- Create: `src/domain/leads/lead-enums.ts`, `src/domain/leads/onboarding-profile.entity.ts`, `src/domain/leads/lead-score.ts`, `src/domain/leads/lead-stats.ts`\n- Test: `src/domain/leads/lead-score.spec.ts`, `src/domain/leads/lead-stats.spec.ts`\n\n**Acceptance Criteria:**\n- [ ] Every rule in the contract's scoring table fires with its listed points\n- [ ] 3- and 6-month boundaries, today, past dates and 30 Nov + 3 months = 28 Feb behave as the contract says\n- [ ] Tier edges 3/4/7/8 and a maximum of 13 are covered\n- [ ] Without opt-in, `suggestedAction` returns `no_outreach` for every tier\n- [ ] `computeLeadStats` zero-fills every enum key\n\n**Verify:** `npm test -- src/domain/leads` → all tests pass\n\n```json:metadata\n{\"files\": [\"src/domain/leads/\"], \"verifyCommand\": \"npm test -- src/domain/leads\", \"acceptanceCriteria\": [\"all scoring rules, boundaries and tier edges covered\", \"no_outreach without opt-in\", \"stats zero-filled\"], \"modelTier\": \"mechanical\"}\n```"
+    },
+    {
+      "id": 1,
+      "subject": "Task 1: Tables, migration and repositories",
+      "status": "completed",
+      "description": "**Goal:** Three new PG tables with a backfill migration and repositories behind domain ports.\n\n**Files:**\n- Create: `src/domain/leads/onboarding-profile.repository.ts`, `lead-signal.repository.ts`, `lead-score.repository.ts`, `lead-read.repository.ts`\n- Create: `src/infrastructure/persistence/leads/*.orm-entity.ts`, `*.typeorm.repository.ts`\n- Create: `src/infrastructure/persistence/migrations/<timestamp>-CreateLeadScoring.ts`\n- Test: repository behaviour is covered through `test/leads.e2e-spec.ts`\n\n**Acceptance Criteria:**\n- [ ] `onboarding_profiles`, `lead_signals` and `lead_scores` match `docs/database-schema.md`, each with `user_id` FK to `users` ON DELETE CASCADE\n- [ ] `marketing_opt_in_at` changes only on first insert or when the value differs, enforced in SQL\n- [ ] Repeated `lead_signals` writes keep one row per `(user_id, type)` and increment `occurrences`\n- [ ] A slower recalculation never overwrites a newer `lead_scores` row\n- [ ] Migration backfills users with an active connector at score 3, `cold`; `migration:revert` drops all three tables\n\n**Verify:** `npm run migration:run && npm run migration:revert && npm run migration:run` → all succeed on a clean DB\n\n```json:metadata\n{\"files\": [\"src/domain/leads/\", \"src/infrastructure/persistence/leads/\", \"src/infrastructure/persistence/migrations/\"], \"verifyCommand\": \"npm run migration:run && npm run migration:revert && npm run migration:run\", \"acceptanceCriteria\": [\"tables match schema doc\", \"opt-in timestamp rule enforced in SQL\", \"signals one row per user and type\", \"older recalculation cannot overwrite newer\", \"backfill scores active connectors\"], \"modelTier\": \"standard\"}\n```",
+      "blockedBy": [
+        0
+      ]
+    },
+    {
+      "id": 2,
+      "subject": "Task 2: Onboarding routes and score recalculation",
+      "status": "completed",
+      "description": "**Goal:** `GET /onboarding/me`, `PUT /onboarding/me`, `PUT /onboarding/me/consent`, `POST /lead-signals`, plus the recalculation use-case they call.\n\n**Files:**\n- Create: `src/application/leads/get-onboarding.use-case.ts`, `submit-onboarding.use-case.ts`, `update-consent.use-case.ts`, `record-lead-signal.use-case.ts`, `recalculate-lead-score.use-case.ts` (each with `.spec.ts`)\n- Create: `src/presentation/leads/onboarding.controller.ts`, `lead-signals.controller.ts`, `dto/submit-onboarding.dto.ts`, `dto/update-consent.dto.ts`, `dto/record-lead-signal.dto.ts`, `dto/onboarding-response.dto.ts`\n- Create: `src/leads.module.ts`; Modify: `src/app.module.ts`\n\n**Acceptance Criteria:**\n- [ ] Every status code and validation rule in the contract's User routes section holds\n- [ ] `marketing_opt_in: \"false\"` gets `400` on both PUT routes\n- [ ] A due date equal to the stored value is accepted even when past; a changed one before yesterday (UTC) gets `400`\n- [ ] Consent before first submit gets `409`; consent never changes `lead_scores`\n- [ ] Admin signal calls return `204` and store nothing\n- [ ] No user route response contains `score`, `tier`, `breakdown` or `suggested_action`\n\n**Verify:** `npm test -- src/application/leads` → all tests pass\n\n```json:metadata\n{\"files\": [\"src/application/leads/\", \"src/presentation/leads/\", \"src/leads.module.ts\", \"src/app.module.ts\"], \"verifyCommand\": \"npm test -- src/application/leads\", \"acceptanceCriteria\": [\"contract user routes hold\", \"string false rejected\", \"conditional due date rule\", \"consent 409 before submit\", \"admin signals ignored\", \"no score fields on user routes\"], \"modelTier\": \"standard\"}\n```",
+      "blockedBy": [
+        1
+      ]
+    },
+    {
+      "id": 3,
+      "subject": "Task 3: Recalculate on connector status changes",
+      "status": "completed",
+      "description": "**Goal:** Any connector status change recalculates the owner's score without ever failing the originating request.\n\n**Files:**\n- Create: `src/domain/connectors/connector-events.ts`, `src/presentation/leads/lead-score.listener.ts` (+ `.spec.ts`)\n- Modify: `src/application/connectors/sync-connection-status.use-case.ts`, the initiate-connection use-case that calls `upsertInitiated`, and their specs; `src/leads.module.ts`\n\n**Acceptance Criteria:**\n- [ ] `connector.status_changed` is emitted with `{ userId }` after a real status change in `applyStatus`, and not on a no-op or terminal-state refusal\n- [ ] Reconnecting a previously active connection emits it after `upsertInitiated`\n- [ ] The listener also handles the existing `CONNECTOR_REVOKED_EVENT`\n- [ ] A recalculation failure is logged and sent to Sentry, and does not propagate\n\n**Verify:** `npm test -- src/application/connectors src/presentation/leads` → all tests pass\n\n```json:metadata\n{\"files\": [\"src/domain/connectors/connector-events.ts\", \"src/application/connectors/\", \"src/presentation/leads/lead-score.listener.ts\"], \"verifyCommand\": \"npm test -- src/application/connectors src/presentation/leads\", \"acceptanceCriteria\": [\"event on real status change only\", \"reconnect emits\", \"revoke handled\", \"failures swallowed and reported\"], \"modelTier\": \"standard\"}\n```",
+      "blockedBy": [
+        2
+      ]
+    },
+    {
+      "id": 4,
+      "subject": "Task 4: Admin routes",
+      "status": "completed",
+      "description": "**Goal:** `GET /leads`, `GET /leads/stats` and `GET /leads/:id` for admins.\n\n**Files:**\n- Create: `src/application/leads/list-leads.use-case.ts`, `get-lead.use-case.ts`, `get-lead-stats.use-case.ts` (each with `.spec.ts`)\n- Create: `src/presentation/leads/leads.controller.ts`, `dto/list-leads-query.dto.ts`, `dto/lead-summary-response.dto.ts`, `dto/lead-detail-response.dto.ts`, `dto/lead-stats-response.dto.ts`\n- Modify: `src/leads.module.ts`\n\n**Acceptance Criteria:**\n- [ ] Non-admins get `403` on all three routes\n- [ ] `GET /leads/stats` reaches the stats handler, not `:id`\n- [ ] `?marketing_opt_in=false` returns only non-opted-in leads; `?marketing_opt_in=abc` gets `400`\n- [ ] `page` and `limit` clamp as the contract says, and the response returns the applied values\n- [ ] `suggested_action` reflects current opt-in, including after a consent change with no recalculation\n- [ ] Admin, disabled and unknown ids get `404` on `GET /leads/:id`\n\n**Verify:** `npm test -- src/application/leads` → all tests pass\n\n```json:metadata\n{\"files\": [\"src/application/leads/\", \"src/presentation/leads/\"], \"verifyCommand\": \"npm test -- src/application/leads\", \"acceptanceCriteria\": [\"admin only\", \"stats route order\", \"boolean filter correct\", \"clamping returns applied values\", \"action reflects current opt-in\", \"404 for ineligible\"], \"modelTier\": \"standard\"}\n```",
+      "blockedBy": [
+        3
+      ]
+    },
+    {
+      "id": 5,
+      "subject": "Task 5: End-to-end coverage",
+      "status": "completed",
+      "description": "**Goal:** Pin the whole contract against real PostgreSQL.\n\n**Files:**\n- Create: `test/leads.e2e-spec.ts`\n\n**Acceptance Criteria:**\n- [ ] New user, full submit, resubmit and consent withdrawal flow passes, including the `marketing_opt_in_at` rule\n- [ ] A submit with an apprentice, a due date under 3 months and Trello stores score 7, `warm`; adding a paywall signal makes it 10, `hot`, and a repeat signal leaves it at 10\n- [ ] A user cannot read another user's data, and non-admins get `403` on all `/leads*` routes\n- [ ] Admin and disabled accounts are absent from list and stats\n- [ ] Stats arithmetic matches seeded users, with every enum key present\n- [ ] Revoking an active connector lowers the score; seed the row directly, since Composio is not available in tests\n\n**Verify:** `npm run test:e2e -- leads` → all tests pass\n\n```json:metadata\n{\"files\": [\"test/leads.e2e-spec.ts\"], \"verifyCommand\": \"npm run test:e2e -- leads\", \"acceptanceCriteria\": [\"full flow\", \"score arithmetic\", \"authorization\", \"eligibility\", \"stats\", \"connector revoke lowers score\"], \"modelTier\": \"standard\"}\n```",
+      "blockedBy": [
+        4
+      ]
+    },
+    {
+      "id": 6,
+      "subject": "Task 6: Docs",
+      "status": "completed",
+      "description": "**Goal:** Documentation matches what shipped.\n\n**Files:**\n- Modify: `docs/database-schema.md`, `docs/diagrams/database-schema.d2`, `docs/diagrams/database-schema.svg`, `docs/privacy-data-inventory.md`, `docs/integration/frontend-guide.md`, `docs/ROADMAP.md`, `docs/contracts/lead-scoring.md`\n\n**Acceptance Criteria:**\n- [ ] Schema doc lists all three tables with indexes and delete behaviour\n- [ ] Privacy inventory records onboarding answers, profiling, consent record and that the \"No consent record\" gap is narrowed to marketing consent only\n- [ ] Frontend guide links the contract and notes the first paginated envelope\n- [ ] Contract status changes from draft to live, and ROADMAP shows the feature done\n\n**Verify:** `npm run lint && npm run build` → both pass; `d2 docs/diagrams/database-schema.d2 docs/diagrams/database-schema.svg` → renders\n\n```json:metadata\n{\"files\": [\"docs/\"], \"verifyCommand\": \"npm run lint && npm run build\", \"acceptanceCriteria\": [\"schema doc updated\", \"privacy inventory updated\", \"frontend guide links contract\", \"contract and roadmap status updated\"], \"modelTier\": \"standard\"}\n```",
+      "blockedBy": [
+        5
+      ]
+    }
+  ],
+  "lastUpdated": "2026-11-06T11:47:10.440876+00:00"
+}
