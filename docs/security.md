@@ -282,6 +282,17 @@ testing against a real model.
 - **Bounded retries.** `OPENROUTER_MAX_RETRIES` allows a few conservative retries that
   share a single deadline with the call, so retries can't extend a request indefinitely.
 
+## AI usage quota
+
+Each provider attempt first reserves one unit from a per-user and a global daily counter in Redis
+(`AI_USER_DAILY_LIMIT`, default 10; `AI_GLOBAL_DAILY_LIMIT`, default 40; UTC day). It is a cost
+control, applied before every attempt, so retries and failed attempts count. Over the limit the routes
+return 429 with `Retry-After`, and a planning job fails with `AI_QUOTA_EXCEEDED`. If Redis is
+unavailable the quota blocks AI use (503 on the routes, `AI_QUOTA_UNAVAILABLE` on a job). Counter keys
+hold a hash of the user id. Suggestion cache hits use no quota; cache errors fall through to the
+provider. The planning worker re-checks that the user is still active (`USER_INACTIVE`). Planning
+`connectors` must be the user's active providers.
+
 ## Rate-limiting note
 
 `src/shared/throttler/throttler.module.ts` registers a global default throttle

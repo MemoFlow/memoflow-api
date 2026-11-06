@@ -223,7 +223,7 @@ one, extra one, or a duplicate all reject). This is the **only** way a section's
 ```
 `featureType` is one of `suggestion`, `rewrite`, `summarize`, `expand`. Any other value
 (including `planning`, which is internal) returns `404`, the same as a section that isn't
-yours. `422` if the section text is too long for AI processing (limit set by the server). `502` if the model's reply was unusable or the provider failed. `503` if AI is unavailable right now. The response (`SuggestionResponseDto`) includes
+yours. `422` if the section text is too long for AI processing (limit set by the server). `502` if the model's reply was unusable or the provider failed. `503` if AI is unavailable right now (this includes the usage limits being unavailable). `429` when the daily AI limit is spent: each user gets a daily number of attempts and the whole service has a shared one, counted together with planning jobs and reset at UTC midnight; the `Retry-After` header gives the seconds until then, so show a "try again later" message and disable the button until it passes. A repeated identical request (same section text and feature) can return quickly from a cache as a **new** suggestion row, so do not assume each `201` took a model call. The response (`SuggestionResponseDto`) includes
 `prompt_version` and `model` (the model that served the call; `null` on suggestions
 created before models were recorded). `GET /sections/:sectionId/suggestions` lists them
 newest first, with the same fields.
@@ -246,7 +246,9 @@ immediately and follow progress over the WebSocket (REST polling is the fallback
   "model": null, "result": null, "error_code": null, "error_message": null,
   "created_at": "…", "started_at": null, "finished_at": null }
 ```
-`400` if `prompt` is longer than 5000 characters. `503` if the job couldn't be enqueued.
+`400` if `prompt` is longer than 5000 characters, or if `connectors` is not a list of at most 10 unique provider names (up to 64 characters each) that are all your **active** connections. `429` with `Retry-After` (seconds until UTC midnight) when the daily AI limit is spent; it is the same limit as suggestions, shared per user and across the service. `503` if the job couldn't be enqueued or the AI usage limits are unavailable.
+
+A job can also fail later with `error_code` `USER_INACTIVE` (the account was disabled before the job ran), `AI_QUOTA_EXCEEDED` (the daily limit was spent by the time it ran) or `AI_QUOTA_UNAVAILABLE` (limits could not be checked). Show the fixed `error_message`; for `AI_QUOTA_EXCEEDED` offer a retry the next day.
 
 ### Poll — `GET /planning-jobs/:id` (JWT) → `200` `PlanningJobResponseDto`
 `model` is `null` until the job has run, and when no model is known.
