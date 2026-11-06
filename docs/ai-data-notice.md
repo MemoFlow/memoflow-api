@@ -70,7 +70,8 @@ Read and check every suggestion before you use it.
 - Your planning requests, and any content gathered from connected apps for them.
 - Information about which of your sections were used for a planning result (their titles
   and identifiers, not their text).
-- A record that you accepted this notice: when, and which version.
+- A record that you accepted this notice: when, and which version. Each time you accept or
+  withdraw, a dated entry is also added to an audit log, which stays after you withdraw.
 
 ### Usage limits
 

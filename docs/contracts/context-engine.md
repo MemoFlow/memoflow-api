@@ -1,15 +1,16 @@
 # Context-Engine Transport Contract
 
-> **Status: live on `development`, verified end-to-end 2026-07-20.** Both sides are
-> implemented — the API side (`feature/rabbitmq-transport`) and the n8n-hosted
-> context-engine consumer/producer. Round trip measured **~600ms**; DLQ behavior
-> confirmed (a result for an unknown `job_id` dead-letters correctly instead of
-> hanging). The dev broker is CloudAMQP's free tier (actually **LavinMQ** under the
-> hood — `amqps://` TLS-only, port `5671`), confirmed compatible with this contract.
-> Flag-gated by `RABBITMQ_URL`: unset keeps the legacy synchronous
-> `ContextEngineHttpClient`/stub path active — no broker required to boot. Staging
-> and production still need their own `RABBITMQ_URL` provisioned before their first
-> deploys.
+> **Status: implemented on both sides; the dev round trip after the November 2026
+> broker rebuild is not yet confirmed from the API side.** The API side
+> (`feature/rabbitmq-transport`) and the n8n-hosted context-engine consumer/producer
+> exist. A round trip was verified end-to-end on 2026-07-20 (~600ms, and a result for an
+> unknown `job_id` dead-letters correctly instead of hanging). In November 2026 the dev
+> broker (CloudAMQP free tier, actually **LavinMQ** under the hood: `amqps://` TLS-only,
+> port `5671`) and n8n were recreated and reconnected, which the owner reports as good;
+> no end-to-end run from the API side has been recorded since. Flag-gated by
+> `RABBITMQ_URL`: unset keeps the legacy synchronous `ContextEngineHttpClient`/stub path
+> active, so no broker is required to boot. Staging and production still need their own
+> `RABBITMQ_URL` provisioned before their first deploys.
 > **Audience:** the context-engine (n8n) team and the MemoFlow frontend team.
 > **Machine-readable schemas:** [`context-request.schema.json`](./context-request.schema.json),
 > [`context-result.schema.json`](./context-result.schema.json).
@@ -91,6 +92,8 @@ Body validated by [`context-request.schema.json`](./context-request.schema.json)
 }
 ```
 
+- `connectors[]` is never empty: a job with no active connectors skips the context engine
+  and plans directly from the user's own sections, so no request is published for it.
 - `connectors[]` mirrors the API's `ConnectorMcpReference`
   (`src/domain/connectors/connector-gateway.port.ts`). `mcp_url` is **always `null`** —
   the CE resolves the live MCP from `provider` + `composio_account_id` using its own
@@ -182,5 +185,5 @@ pending ── publish request ──▶ gathering ── terminal `completed` �
 - `schema_version` is `1`; changes within v1 are **additive only** (new optional fields).
   A breaking change bumps the version and the routing keys (`ctx.gather.request.v2`).
 - **Non-goals:** this contract does not cover the CE's internal MCP orchestration, the
-  LLM planner (roadmap item 5, still stubbed), or the frontend contract (the existing REST
+  LLM planner (OpenRouter, see `ARCHITECTURE.md`), or the frontend contract (the existing REST
   + WebSocket surface, Swagger `/docs`).

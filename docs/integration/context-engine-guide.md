@@ -80,6 +80,7 @@ Request body you'll receive:
 ```
 
 ### c. Gather via MCP
+- `connectors[]` always has at least one entry: jobs with no active connectors never reach you.
 - For each `connectors[]` entry: resolve the MCP server for `provider` +
   `composio_account_id` (with your Composio creds — `mcp_url` is intentionally `null`),
   run the agent, collect context. Only active connectors are ever sent.
@@ -150,7 +151,9 @@ Rules:
 
 > Full field semantics, lifecycle, and versioning:
 > [`../contracts/context-engine.md`](../contracts/context-engine.md). The API-side
-> producer/consumer is **live on `development`**, verified end-to-end 2026-07-20
-> against a CloudAMQP free-tier broker (LavinMQ under the hood) and the external
-> n8n consumer — this guide is now the operational reference, not a contract-first
-> spec. Staging and production still need their own broker before go-live there.
+> producer/consumer is implemented and was verified end-to-end on `development` on
+> 2026-07-20. The dev broker (CloudAMQP free tier, LavinMQ under the hood) and n8n were
+> recreated and reconnected in November 2026; the owner reports both good, but the round
+> trip has not been re-tested from the API side. This guide is the operational
+> reference, not a contract-first spec. Staging and production still need their own
+> broker before go-live there.

@@ -19,6 +19,7 @@ creating or changing any entity; update it in the same PR as schema changes.
 | `npm run admin:promote` | promotes an existing user to admin and re-enables it if disabled: `ADMIN_EMAIL=<email> npm run admin:promote` (uses `POSTGRES_*`; idempotent; runs under any `NODE_ENV`; `scripts/promote-admin.ts`) |
 | `npm run templates:load` | owner-run: loads starter template `keyPoints`/`guidance` (`docs/plans/2026-11-06-template-content.json`) through the HTTP API; needs `API_BASE_URL`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`; dry run by default, write with `npm run templates:load -- --apply` (`scripts/load-template-content.ts`) |
 | `npm run smoke` | boots the app and polls `/health` |
+| `npm run ai:smoke` | owner-run live check of the AI layer against a running API (`scripts/ai-smoke.ts`; needs `API_BASE_URL`, `SMOKE_EMAIL`, `SMOKE_PASSWORD`, `OPENROUTER_API_KEY` — exits 2 as skipped without it; optional `REDIS_*`; flags `--accept-notice`, `--keep`, `--allow-production`, `--allow-insecure-http`; refuses hosts not clearly non-production) |
 | `npm run migration:generate -- src/infrastructure/persistence/migrations/<Name>` | generate migration from entity diff |
 | `npm run migration:run` / `migration:revert` / `migration:show` | apply / revert / list migrations |
 | `npm run release` / `release:dry` / `release:first` | bump version + `CHANGELOG.md` + tag from Conventional Commits — mutating release CI-only, guarded by `scripts/release.sh`; `dry` previews (always allowed), `first` cuts the initial release |

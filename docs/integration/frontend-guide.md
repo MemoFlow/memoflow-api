@@ -97,16 +97,7 @@ Handle it by prompting the user to verify (and offering resend) rather than trea
 it as a permission error. Check `email_verified` from `GET /users/me` up front to
 avoid the round trip.
 
-### AI consent gate (`403 AI_CONSENT_REQUIRED`)
-**Until the frontend ships this flow, AI is unusable: `POST /sections/:sectionId/suggestions` and `POST /planning-jobs` return `403` for every user, admins included.** The notice text itself is a draft awaiting legal review ([`../ai-data-notice.md`](../ai-data-notice.md)); do not ship the screen with it as final.
-
-1. Read `ai_consent` from `GET /users/me`: `{ accepted_at, version, current_version, required }`. It appears only in the user's own view (`/users/me`, and the response of the accept call), never on `GET /users/:id` for someone else, even for admins.
-2. If `required` is `true` (never accepted, withdrawn, or accepted an older notice), show the AI notice before any AI button works, and disable the AI actions until then. Show the notice for `current_version`; the text is in `docs/ai-data-notice.md` (a French version is still to be written).
-3. On accept, send `POST /users/me/ai-consent` with `{ "version": "<current_version>" }` -> `200` with the updated `UserResponseDto`. Accepting again simply refreshes the timestamp.
-4. `409` means the version you sent is no longer the current one (the notice changed). Re-fetch `GET /users/me`, show the new notice and ask again.
-5. Any AI create call can still return `403` with `error: "AI_CONSENT_REQUIRED"` (consent withdrawn elsewhere, or the notice version bumped). Tell it apart from `Email not verified` by the `error` field, then go back to step 2.
-6. In settings, offer withdrawal: `DELETE /users/me/ai-consent` -> `204` (idempotent). It stops new AI processing; existing suggestions and jobs are kept.
-7. A planning job that was queued when consent was withdrawn ends `failed` with `error_code` `AI_CONSENT_REQUIRED`; see Planning jobs below.
+> **AI consent:** AI routes return `403 AI_CONSENT_REQUIRED` until the user accepts the notice; the flow is in [section 6.1](#61-consent).
 
 ### Admin-only user management
 `POST /users/:id/disable` and `POST /users/:id/enable` (JWT, admin role) → `204`. Non-admins get `403`; disabling your own account is `400`.
@@ -227,7 +218,29 @@ recomputed automatically on any `PATCH` that changes `content`.
 one, extra one, or a duplicate all reject). This is the **only** way a section's
 `order` changes — it's never settable via create or update.
 
-### AI suggestions — `POST /sections/:sectionId/suggestions` (JWT, verified email, AI consent) → `201`
+> **AI suggestions** (`POST /sections/:sectionId/suggestions`) are covered in [section 6.2](#62-suggestions).
+
+## 6. AI features
+
+Suggestions on a section and planning jobs share one set of gates (verified email, AI consent) and one daily limit. Both are opt-in per user.
+
+### 6.1 Consent
+
+**Until the frontend ships this flow, AI is unusable: `POST /sections/:sectionId/suggestions` and `POST /planning-jobs` return `403` for every user, admins included.** The notice text itself is a draft awaiting legal review ([`../ai-data-notice.md`](../ai-data-notice.md)); do not ship the screen with it as final.
+
+Free models may log what they receive or train on it, so AI needs recorded consent to a specific notice version.
+
+1. Read `ai_consent` from `GET /users/me`: `{ accepted_at, version, current_version, required }`. It appears only in the user's own view (`/users/me`, and the response of the accept call), never on `GET /users/:id` for someone else, even for admins.
+2. If `required` is `true` (never accepted, withdrawn, or accepted an older notice), show the AI notice before any AI button works, and disable the AI actions until then. Show the notice for `current_version`; the text is in `docs/ai-data-notice.md` (a French version is still to be written and must carry the same version string).
+3. On accept, send `POST /users/me/ai-consent` with `{ "version": "<current_version>" }` -> `200` with the updated `UserResponseDto`. Accepting again simply refreshes the timestamp.
+4. `409` means the version you sent is no longer the current one (the notice changed). Re-fetch `GET /users/me`, show the new notice and ask again.
+5. Any AI create call can still return `403` with `error: "AI_CONSENT_REQUIRED"` (consent withdrawn elsewhere, or the notice version bumped). Tell it apart from `Email not verified` by the `error` field, then go back to step 2.
+6. In settings, offer withdrawal: `DELETE /users/me/ai-consent` -> `204` (idempotent). It stops new AI processing; existing suggestions and jobs are kept.
+7. A planning job that was queued when consent was withdrawn ends `failed` with `error_code` `AI_CONSENT_REQUIRED`; see 6.4.
+
+### 6.2 Suggestions
+
+`POST /sections/:sectionId/suggestions` (JWT, verified email, AI consent) → `201`
 ```json
 // request
 { "featureType": "rewrite" }
@@ -243,12 +256,26 @@ Secrets in section text are replaced before the text reaches the model, so `sugg
 can contain a literal `[REDACTED]`. The stored section isn't changed, but warn the user before
 applying such a suggestion, because applying it as is would put the placeholder in the document.
 
-## 6. Planning jobs (async + real-time)
+`PATCH /suggestions/:id` accepts or rejects a **pending** suggestion; `409` if it was already reviewed.
+
+### 6.3 Limits and errors at a glance
+
+| status | where | meaning | what to do |
+| --- | --- | --- | --- |
+| `403` `Email not verified` | both create routes | account unverified | prompt to verify, offer resend |
+| `403` `error: AI_CONSENT_REQUIRED` | both create routes | no consent, or for an older notice | show the notice (6.1) |
+| `404` | suggestions | section not yours, or `featureType` not user-invocable | check the id and feature type |
+| `422` | suggestions | section text over the server's input limit, or the model refused | ask the user to shorten the section |
+| `429` + `Retry-After` | both create routes | daily AI limit spent (per user or service-wide, shared by suggestions and planning, resets at UTC midnight) | disable AI actions until the header's seconds pass |
+| `502` | suggestions | the reply was unusable or the provider failed | offer a retry; each retry counts against the daily limit |
+| `503` | both create routes | AI not configured, provider down, or usage counters unreachable | "AI is unavailable right now" |
+
+### 6.4 Planning jobs (async + real-time)
 
 Submitting a job kicks off async context-gathering + planning; you get a `job_id`
 immediately and follow progress over the WebSocket (REST polling is the fallback).
 
-### Submit — `POST /planning-jobs` (JWT) → `202`
+#### Submit — `POST /planning-jobs` (JWT) → `202`
 ```json
 // request — connectors is optional; only the user's ACTIVE connectors are used
 { "prompt": "Draft an outline for chapter 3", "connectors": ["trello", "notion"] }
@@ -261,19 +288,18 @@ immediately and follow progress over the WebSocket (REST polling is the fallback
 
 A job can also fail later with `error_code` `AI_CONSENT_REQUIRED` (the user withdrew consent, or the notice changed, before the job ran: send the user back to the consent screen) or `USER_INACTIVE` (the account was disabled before the job ran), `AI_QUOTA_EXCEEDED` (the daily limit was spent by the time it ran) or `AI_QUOTA_UNAVAILABLE` (limits could not be checked). Show the fixed `error_message`; for `AI_QUOTA_EXCEEDED` offer a retry the next day.
 
-### Poll — `GET /planning-jobs/:id` (JWT) → `200` `PlanningJobResponseDto`
+#### Poll — `GET /planning-jobs/:id` (JWT) → `200` `PlanningJobResponseDto`
 `model` is `null` until the job has run, and when no model is known.
 
 `status` ∈ `pending | running | gathering | planning | completed | failed`. `running`
 is the legacy synchronous context-gather path; `gathering`/`planning` only appear
-when the environment has the async RabbitMQ transport enabled (live on
-`development` as of 2026-07-20 — see
-[`../contracts/context-engine.md`](../contracts/context-engine.md)). `result` is
+when the environment has the async RabbitMQ transport enabled (`RABBITMQ_URL`; see
+[`../contracts/context-engine.md`](../contracts/context-engine.md) for its current status on `development`). `result` is
 populated on `completed`; `error_code`/`error_message` on `failed`; `error_message` is a fixed, generic message, so show it as-is and don't parse it. `error_code` doesn't name the specific connector or cause. Treat `result` and suggestion text as untrusted model output and let users review it before applying. `404` if not
 yours. This is the **durable source of truth** and the fallback when a socket isn't
 connected.
 
-### Result shape and citations
+#### Result shape and citations
 Planning draws on the user's own sections (and connector context) as numbered sources.
 On `completed`:
 ```json
@@ -297,6 +323,20 @@ On `completed`:
   `sectionId` always includes that document's sections; other documents are included
   only when they match the prompt's words. Matching is by exact word (any language, no
   stemming), so `plan` does not match `planning`.
+
+### 6.5 What the frontend must handle
+
+- **Consent screen** for `ai_consent.required`, with accept, `409` re-fetch and withdrawal in settings (6.1). Disable AI actions until consent is recorded.
+- **Two different `403`s** on AI create routes: `Email not verified` and `AI_CONSENT_REQUIRED`; tell them apart by the `error` field.
+- **Daily limit:** `429` with `Retry-After` on both create routes; a planning job can also fail later with `AI_QUOTA_EXCEEDED`. Disable the AI buttons until the limit resets (UTC midnight) and say why.
+- **Unavailable AI:** `503` on both create routes (not configured, provider down, limits unreachable), and `AI_QUOTA_UNAVAILABLE` on a job.
+- **Cache:** an identical repeat request can return quickly as a **new** suggestion row; do not assume each `201` took a model call.
+- **`[REDACTED]`** can appear in `suggested_text`; warn the user before applying it.
+- **Model output is untrusted:** show it for review, never apply it automatically, never render it as HTML.
+- **Planning job failures** (`failed` + `error_code`): `AI_CONSENT_REQUIRED` (back to the consent screen), `USER_INACTIVE`, `AI_QUOTA_EXCEEDED` (retry tomorrow), `AI_QUOTA_UNAVAILABLE`. Show the fixed `error_message` as is.
+- **Citations:** resolve `[S1]` markers against `result.sources`; ids are per job; `context_used.retrieval.failed` means the plan ran without the user's sections.
+- **WebSocket** drops at token expiry and on logout; reconnect and `subscribe` again (section 7). Use `GET /planning-jobs/:id` as the fallback.
+- **Notice version:** a new `AI_NOTICE_VERSION` forces everyone to accept again; handle it without a reload.
 
 ## 7. Real-time WebSocket (Socket.IO)
 
@@ -332,7 +372,7 @@ socket.on('planning.error',     (p) => {/* { jobId, message } — e.g. subscribe
 - `subscribe {jobId}` replays the job's **current** state once (catch-up), then live
   `@OnEvent` relays continue. Delivery is best-effort — `GET /planning-jobs/:id` remains
   the durable fallback.
-- **`planning.chunk` is live on `development`** (verified end-to-end 2026-07-20): once
+- **`planning.chunk` depends on the transport:** once
   the async RabbitMQ context-engine transport is enabled for an environment
   (`RABBITMQ_URL` set — see [`../contracts/context-engine.md`](../contracts/context-engine.md)),
   each gathered context chunk relays as a `planning.chunk` event as it arrives, in
@@ -372,8 +412,9 @@ Two things differ from the rest of the API:
 
 - With `OPENROUTER_API_KEY` unset the planner is a **stub echo** (`sources` is `[]`);
   see section 6 for the real `result` shape.
-- Documents/sections exist (roadmap item 2, section 5 above), but `planning_jobs`
-  still has no `document_id`/`section_id` bound to them — that wiring is item 5's
-  remaining work.
+- `POST /planning-jobs` accepts an optional `documentId`/`sectionId` you own; a bound job
+  always draws on that document's sections (section 6.4).
+- AI is only usable once the consent screen (6.1) exists and the environment has an
+  `OPENROUTER_API_KEY`; the live check (`npm run ai:smoke`) has not been run yet.
 - `/docs` (Swagger) is generated from the code and is always authoritative if this guide
   and the API ever disagree.

@@ -45,7 +45,7 @@ Modules:
 - **Auth** — authentication and authorization (JWT + Passport); the trust boundary for every client request.
 - **Document** — document metadata CRUD and persistence.
 - **Section** — section content, ordering, status, and word counts; the granular unit most product features operate on.
-- **AI** — the in-document writing features (rephrase, tone check, structure check). Provider-agnostic; wraps the LLM behind an interface with versioned prompts.
+- **AI** — the in-document writing features (`suggestion`, `rewrite`, `summarize`, `expand`). Provider-agnostic; wraps the LLM behind the `LlmGateway` port with versioned, admin-managed prompts, input and output guards, a daily quota, a response cache and recorded user consent.
 - **Search** — user-facing full-text search, backed by Elasticsearch.
 - **Gamification** — XP, levels, milestones, daily missions, and leaderboard.
 - **Prompt** — versioned LLM prompt templates, queried by the AI and Context modules at call time.
@@ -57,9 +57,9 @@ Modules:
 The part of the system dedicated to context gathering and connector-driven LLM planning ("help me plan this section using my Notion / GitHub / Trello data"). It lives **inside the Core API** as a module, not as a separate deployment, but it is deliberately kept self-contained so extraction is cheap later. Responsibilities:
 
 - **Connectors** — integrations that pull data from external sources (Notion, GitHub, Trello, Gmail) behind a common `IConnector` interface, so new connectors are plug-ins.
-- **OAuth vault** — encrypted-at-rest storage and refresh of third-party OAuth tokens.
+- **OAuth vault** — provider tokens are held by Composio, not by this API; the API stores only a connection reference and status (`connector_connections`).
 - **Context assembly** — truncation and relevance filtering of fetched data into a coherent, size-bounded context payload for the model.
-- **LLM planning** — orchestrating the model call through the provider abstraction and structuring the response (suggestions, outline, cited sources).
+- **LLM planning** — orchestrating the model call through the `LlmGateway` port and structuring the response (suggestions, outline, cited sources).
 - **Retrieval** — before planning, a shared `PlanningPipeline` (used by both the in-process and the RabbitMQ transports) searches the job owner's own sections through the `SectionRetriever` port (Postgres full-text search over `sections.search_vector`, always scoped to the job's user), merges them with the connector context, fits them to the input budget (bound-document sections first), and renders them as numbered `[S1]` sources. After the model call, citations of sources that don't exist are removed. Only metadata about the sources is stored on the job, never their text.
 
 The planning feature is intentionally scoped to help the user *plan and structure* a document, never to *write* it.
@@ -87,7 +87,7 @@ Stateful backing services used by the Core API.
 |---|---|---|
 | **PostgreSQL** | Primary data store / system of record | All relational, transactional, join-heavy data: users, documents, sections, AI suggestions, connector tokens, gamification, prompts, templates. Freeform-but-bounded fields (mission criteria, template style config) use `JSONB` columns. |
 | **MongoDB** | Specialist store | Only two collections, both write-once/read-occasionally freeform blobs: `document_versions` (full snapshot trees, high volume) and `planning_jobs` (Context module job log with evolving per-connector shapes). |
-| **Redis** | Queue + cache + rate limiting | BullMQ job state (hard dependency), ephemeral cache with TTL, per-user/per-feature rate-limit counters, session metadata. Not a system of record — recoverable from PostgreSQL. Run with AOF persistence so the job queue survives a restart. |
+| **Redis** | Queue + cache + counters | BullMQ job state (hard dependency); the AI daily quota counters (per user and global, UTC day, keyed by a hash of the user id) and the per-user suggestion cache (TTL `AI_CACHE_TTL_SECONDS`); the login attempt counter. Not a system of record. The quota fails closed (Redis down means AI is refused), the cache fails open (an error is a miss). Run with AOF persistence so the job queue survives a restart. |
 | **Elasticsearch** | Full-text search | Indexes section content (mirrored from PostgreSQL) with an English analyzer; powers user-facing search over document content. |
 | **S3** | File uploads | Object storage for user-uploaded files (PDF/DOCX) and binary assets. |
 
@@ -104,11 +104,26 @@ Third-party dependencies, kept behind internal abstractions so the rest of the s
 
 ## Request lifecycles
 
-**In-document AI feature (rephrase / tone / structure):**
-client selects text → Core API `AI` module validates, rate-limits and reserves daily AI quota (Redis; a per-user response cache can answer repeats without a provider call) → calls the LLM through the provider gateway with the active prompt version → logs the suggestion (`ai_suggestions`) → returns the suggestion for inline accept/reject.
+**In-document AI suggestion** (`POST /sections/:sectionId/suggestions`), in order:
 
-**Connector-driven planning:**
-client requests a plan → Core API validates JWT and connector permissions → enqueues a BullMQ planning job, returns `202` + jobId → Context module worker fetches connector data, assembles context, calls the LLM → writes `planning_jobs` result in MongoDB → Core API pushes the result to the browser over WebSocket.
+1. **Auth and gates.** JWT, then the email-verification gate, then `AiConsentGuard`: no recorded consent to the current notice version (`AI_NOTICE_VERSION`) is `403 AI_CONSENT_REQUIRED`. The guard reads the user loaded on each request, so withdrawal applies at once.
+2. **Preconditions.** The section must belong to the caller (404), an active user-invocable prompt must exist for the feature type (404), the generator must be configured (503 without `OPENROUTER_API_KEY`), and the section text must fit `AI_MAX_INPUT_CHARS` (422). No provider call and no quota use so far.
+3. **Input guards.** The section text and a light context (document title, previous and next section titles) are redacted best effort, look-alikes of the untrusted-data tags are neutralised, and both are rendered into the active prompt inside nonce-tagged fences. The stored section is not changed.
+4. **Cache.** The key is a hash of user id, feature type, prompt version, model scope and the prepared input. A hit is re-validated and returns without a provider call or quota use; it still creates a new `ai_suggestions` row. A cache error is a miss.
+5. **Quota and gateway.** On a miss the call goes through `OpenRouterGateway`, which reserves one unit from the user and global daily counters before every provider attempt, retries included. Over a cap: `429` with `Retry-After`. Counters unreachable: `503`. The gateway sends a `json_schema` response format, retries conservatively within one deadline, and allows one repair retry for unparsable JSON.
+6. **Output guards.** The reply is parsed into a typed shape and rejected (`502`) if empty, oversized, or if it echoes the system prompt or the input. Only validated output is cached.
+7. **Persist.** An `ai_suggestions` row is written (original text, suggested text, prompt version, model) and returned for inline accept or reject (`PATCH /suggestions/:id`).
+
+**Connector-driven planning** (`POST /planning-jobs`), in order:
+
+1. **Submit.** Auth, verification and consent gates as above, then the prompt (max 5000 characters), ownership of any bound `documentId`/`sectionId`, and `connectors` (the caller's active providers) are validated. With a real provider the daily quota is checked, not spent (`429`/`503`), so a user already over a cap hears it now. A `pending` job is written to `planning_jobs` in MongoDB and enqueued on BullMQ; the response is `202` with `job_id`.
+2. **Worker start.** The worker claims the job and re-checks the user: disabled or deleted fails the job `USER_INACTIVE`, withdrawn or stale consent fails it `AI_CONSENT_REQUIRED`. Both checks run before anything leaves the API.
+3. **Gather.** Connector context comes from the context engine over RabbitMQ (`gathering`, chunks relayed live over WebSocket) when `RABBITMQ_URL` is set, otherwise from the synchronous HTTP client or the stub (`running`).
+4. **Retrieve.** The shared `PlanningPipeline` searches the job owner's own sections (Postgres full-text search, always scoped to the job's user; at most 8, bound document first), merges the connector context, applies the input budget, and renders numbered `[S1]` sources, each redacted before it is cut to 4000 characters. A retrieval error is logged by name only and the job continues without it. Consent and user status are checked again right before the model call.
+5. **Plan.** The planner calls the gateway, which reserves quota before each attempt (`AI_QUOTA_EXCEEDED` or `AI_QUOTA_UNAVAILABLE` fail the job). The same input and output guards apply; a reply that echoes the prompt fails the job.
+6. **Validate and store.** Citations of sources that don't exist are removed. The job is stored `completed` (or `failed` with a fixed `error_code`/`error_message`) in MongoDB with `context_used.retrieval` holding metadata only, never retrieved text, and the result is pushed to the browser over WebSocket (`GET /planning-jobs/:id` is the durable fallback).
+
+Where this flow is not yet proven: it is covered by unit and e2e tests with a fake provider, and `npm run ai:smoke` is the owner-run live check (see `docs/ROADMAP.md`).
 
 ## Design principles worth keeping in mind
 

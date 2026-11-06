@@ -4,6 +4,8 @@ import * as Sentry from '@sentry/nestjs';
 import { Job } from 'bullmq';
 import { ConnectorConnection } from '../../../domain/connectors/connector-connection.entity';
 import { ConnectorConnectionRepository } from '../../../domain/connectors/connector-connection.repository';
+import { ConnectorProvider } from '../../../domain/connectors/connector-provider';
+import { ConnectorStatus } from '../../../domain/connectors/connector-status';
 import { ContextGatherer } from '../../../domain/context/context-gatherer.port';
 import {
   ContextRequestPublisher,
@@ -105,8 +107,17 @@ class InMemoryPlanningJobRepository implements PlanningJobRepository {
     return Promise.reject(new Error('not implemented'));
   }
 
-  claimForPlanning(): Promise<PlanningJob | null> {
-    return Promise.reject(new Error('not implemented'));
+  claimForPlanning(id: string): Promise<PlanningJob | null> {
+    const existing = this.jobs.get(id);
+    if (!existing || existing.status !== JobStatus.Gathering) {
+      return Promise.resolve(null);
+    }
+    const claimed = new PlanningJob({
+      ...existing,
+      status: JobStatus.Planning,
+    });
+    this.jobs.set(id, claimed);
+    return Promise.resolve(claimed);
   }
 
   failIfStillGathering(): Promise<PlanningJob | null> {
@@ -143,6 +154,7 @@ class FakeContextRequestPublisher implements ContextRequestPublisher {
 }
 
 class FakeConnectorConnectionRepository implements ConnectorConnectionRepository {
+  constructor(private readonly active: ConnectorConnection[] = []) {}
   findById(): ReturnType<ConnectorConnectionRepository['findById']> {
     return Promise.reject(new Error('not implemented'));
   }
@@ -160,7 +172,7 @@ class FakeConnectorConnectionRepository implements ConnectorConnectionRepository
     return Promise.reject(new Error('not implemented'));
   }
   findActiveByUser(): Promise<ConnectorConnection[]> {
-    return Promise.resolve([]);
+    return Promise.resolve(this.active);
   }
   upsertInitiated(): ReturnType<
     ConnectorConnectionRepository['upsertInitiated']
@@ -172,6 +184,19 @@ class FakeConnectorConnectionRepository implements ConnectorConnectionRepository
   }
 }
 
+function makeConnection(): ConnectorConnection {
+  return new ConnectorConnection({
+    id: 'conn-1',
+    userId: 'user-1',
+    provider: ConnectorProvider.Trello,
+    composioAccountId: 'ca_trello',
+    status: ConnectorStatus.Active,
+    connectedAt: new Date('2026-01-01T00:00:00.000Z'),
+    createdAt: new Date('2026-01-01T00:00:00.000Z'),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+  });
+}
+
 function makeJob(overrides: Partial<PlanningJob> = {}): PlanningJob {
   return new PlanningJob({
     id: 'job-1',
@@ -180,7 +205,7 @@ function makeJob(overrides: Partial<PlanningJob> = {}): PlanningJob {
     sectionId: null,
     status: JobStatus.Pending,
     prompt: 'Plan my chapter',
-    connectors: [],
+    connectors: ['trello'],
     result: null,
     errorCode: null,
     errorMessage: null,
@@ -207,7 +232,7 @@ describe('PlanningProcessor + ProcessPlanningJobUseCase, wired exactly as produc
         new FakePromptRepository(),
         new FakeUserRepository(),
         publisher,
-        new FakeConnectorConnectionRepository(),
+        new FakeConnectorConnectionRepository([makeConnection()]),
       );
       const eventEmitter = new EventEmitter2();
       const emitSpy = jest.spyOn(eventEmitter, 'emit');
@@ -243,6 +268,47 @@ describe('PlanningProcessor + ProcessPlanningJobUseCase, wired exactly as produc
     },
   );
 
+  it('a job with no connectors completes without a publish and emits planning.completed', async () => {
+    const repository = new InMemoryPlanningJobRepository();
+    repository.seed(makeJob({ connectors: [] }));
+    const publisher = new FakeContextRequestPublisher();
+    const planner: LlmPlanner = {
+      plan: () =>
+        Promise.resolve({
+          suggestions: ['a plan'],
+          outline: null,
+          sources: [],
+          model: 'test/planner',
+        }),
+    };
+    const useCase = new ProcessPlanningJobUseCase(
+      repository,
+      new UnreachableGatherer(),
+      makePipeline(planner),
+      new FakePromptRepository(),
+      new FakeUserRepository(),
+      publisher,
+      new FakeConnectorConnectionRepository(),
+    );
+    const eventEmitter = new EventEmitter2();
+    const emitSpy = jest.spyOn(eventEmitter, 'emit');
+    const processor = new PlanningProcessor(useCase, eventEmitter);
+
+    await processor.process({
+      data: { jobId: 'job-1', userId: 'user-1' },
+    } as Job<{ jobId: string; userId: string }>);
+
+    expect(publisher.published).toHaveLength(0);
+    expect((await repository.findById('job-1'))?.status).toBe(
+      JobStatus.Completed,
+    );
+    expect(emitSpy).toHaveBeenCalledWith(
+      'planning.completed',
+      expect.objectContaining({ jobId: 'job-1', status: JobStatus.Completed }),
+    );
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
   it('a second, redundant process() call for the same job is a race-safe no-op (never republishes)', async () => {
     const repository = new InMemoryPlanningJobRepository();
     repository.seed(makeJob());
@@ -254,7 +320,7 @@ describe('PlanningProcessor + ProcessPlanningJobUseCase, wired exactly as produc
       new FakePromptRepository(),
       new FakeUserRepository(),
       publisher,
-      new FakeConnectorConnectionRepository(),
+      new FakeConnectorConnectionRepository([makeConnection()]),
     );
     const eventEmitter = new EventEmitter2();
     const processor = new PlanningProcessor(useCase, eventEmitter);

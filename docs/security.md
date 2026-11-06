@@ -15,6 +15,7 @@ security-hardening plan's ops items (43, 44, 23, 39, 7, 41, 27).
 | 5xx rate | general service health | Render metrics/logs |
 | `audit_logs` rows with `action = 'auth.login_failed'`, rate/spikes | brute-force indicator — pairs with the login endpoint's tight throttle cap | query PG directly (`audit_logs`, see `docs/database-schema.md`) |
 | 429 rate from `ThrottlerGuard` | scraping/abuse or a cap set too low | Render logs (throttled responses are logged) |
+| 429 and 503 on `POST /sections/:sectionId/suggestions` and `POST /planning-jobs` | the daily AI limits being spent, or the quota counters (Redis) being unreachable; also watch spend in the OpenRouter dashboard | Render logs, OpenRouter dashboard |
 | Render deploy status `update_failed` | a deploy silently failed and the old process kept serving — this is exactly how the 2026-07 dev outage (see [`docs/ROADMAP.md`](ROADMAP.md), "0. CI/CD bootstrap" incident note) went undetected for two weeks | Render dashboard / deploy hook response |
 
 Dashboards in use today (all manual, no alerts configured):
@@ -160,6 +161,19 @@ production), and re-check on every environment's secret rotation:
       Postgres before it) provisions a single owner role by default today, so this
       is currently a gap to close before staging/production, not a solved problem
       to just document.
+- [ ] AI layer: `OPENROUTER_API_KEY` is a deliberate choice per environment. Unset, the
+      suggestions route answers `503` and planning stays on the stub planner; boot is
+      unaffected. On staging and production, set it only once the AI data notice has been
+      legally reviewed (and has a French version), since free models may log prompts. A
+      `development` run with synthetic data and a throwaway account is allowed before then.
+      The quota and cache use the
+      environment's Redis, and the quota refuses AI when Redis is down, so check Redis
+      first. Review `AI_USER_DAILY_LIMIT` (10), `AI_GLOBAL_DAILY_LIMIT` (40),
+      `AI_MAX_INPUT_CHARS` (40000) and `AI_CACHE_TTL_SECONDS` (86400) against the key's
+      real budget; `0` on either daily limit blocks all AI use.
+- [ ] AI consent: the notice text the frontend shows matches `AI_NOTICE_VERSION`
+      (`src/domain/ai/ai-consent.ts`), and the frontend consent screen is deployed before
+      the key is set, otherwise every AI request returns `403 AI_CONSENT_REQUIRED`.
 - [ ] `RESEND_API_KEY`, `EMAIL_FROM` (on a verified sending domain) and `APP_BASE_URL`
       are set — required at boot in staging/production; see "Email identity".
 - [ ] `SENTRY_DSN` set if this environment should report errors to Sentry — optional
@@ -240,18 +254,24 @@ Content reaches the model only through `OpenRouterGateway`
 `src/infrastructure/ai/gateway-suggestion-generator.ts` and
 `src/infrastructure/context/gateway-llm-planner.ts`.
 
-**Result: layered defenses in place (slice 3); injection risk is reduced, not
-eliminated.** Delimiters, redaction and output checks make attacks harder and limit
-what a successful one can do, but none of them is a guarantee. Treat all model output
-as untrusted data: never execute it or act on it automatically, and always show it to
-the user for review before it is applied. Slice 7 revisits this section with live
-testing against a real model.
+**Result: layered defenses in place; injection risk is reduced, not eliminated.**
+Delimiters, redaction, output checks, the retrieval scope, the quota and recorded consent
+make attacks harder and limit what a successful one can do, but none of them is a
+guarantee. Treat all model output as untrusted data: never execute it or act on it
+automatically, and always show it to the user for review before it is applied.
+**Not yet validated against a live model:** the defenses are covered by unit and e2e
+tests with scripted fake providers. The owner-run `npm run ai:smoke` (needs the
+`OPENROUTER_API_KEY` in the target environment) is the first live check, and it exercises
+the flow rather than adversarial inputs. Revisit this section once real runs exist.
 
 - The use-cases render the active prompt's `system_template` and user template with a
   random per-request nonce, and the adapters forward them unchanged as the `system` and
   `user` messages through the `LlmGateway` port. Document and connector text goes only
   in the user message, inside `<untrusted_{{nonce}}>` tags; system templates accept no
   other placeholder. Admins author the prompts, so they're trusted with the system text.
+  Everything that comes from users or connected apps is untrusted input: the section
+  text, the light suggestion context (document and neighbouring section titles), the
+  planning prompt, retrieved sections and connector context.
 - Both requests set a `json_schema` `response_format` and the reply is parsed
   with `JSON.parse` into a typed shape; malformed output throws rather than being
   interpreted as instructions. Neither file ever `eval`s or execs the model's output.
@@ -278,6 +298,11 @@ testing against a real model.
   planning context is cut to the limit.
 - **Output validation.** Replies are validated against the expected shape, and a reply
   that echoes the prompt is rejected: `502` for suggestions, a failed job for planning.
+- **Cached output.** A cached suggestion is keyed by a hash that includes the user id, so
+  one user's entry is never served to another, and the key reveals none of its inputs.
+  A hit is validated again before use, and only validated output is ever stored.
+- **Order of controls.** Consent first, then ownership and size checks, the cache, and only
+  then the quota and the provider call; see `ARCHITECTURE.md`, "Request lifecycles".
 - **Fixed client errors.** Clients see fixed error messages. Provider detail goes only to
   logs and Sentry, and logs carry no document or prompt content.
 - **Bounded retries.** `OPENROUTER_MAX_RETRIES` allows a few conservative retries that

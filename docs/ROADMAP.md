@@ -53,8 +53,17 @@ Legend: ✅ done · ◐ in progress · ☐ not started
   `COMPOSIO_WEBHOOK_SECRET` were missing from the `memoflow-dev-api` Render service —
   every dev deploy from 2026-07-04 silently failed (Render `update_failed`, old
   process stayed live) until this was caught and the secrets were set 2026-07-19.
-  Deploys have been green since. `RABBITMQ_URL` is also now set on the dev service
-  (see the Context module async backbone section below).
+  Deploys have been green since. `RABBITMQ_URL` was also set on the dev service
+  (see the Context module async backbone section below for its current state).
+- **Incident, fixed 2026-11-06:** the dev API hung with no response. Causes found: the
+  Atlas M0 cluster had auto-paused, the Upstash database was marked deleted and the
+  CloudAMQP instance was gone (`403 ACCESS_REFUSED` on `RABBITMQ_URL`). The owner restored
+  the datastores in their dashboards and `/health` returned to 200. PR #65 fixed the boot
+  hang (a broken `RABBITMQ_URL` no longer stops the API listening). The dev broker and n8n
+  were recreated and reconnected in November 2026; per the owner both are good, but the
+  round trip is not tested end to end from the API side. Lesson: idle free tiers get paused
+  or reaped (Render Postgres ~30 days, Atlas ~60 days, Upstash and CloudAMQP when unused),
+  so dev needs traffic or paid tiers to stay up.
 - **Incident, fixed 2026-09-14:** Render's own managed free-tier Postgres for the
   `development` tier **expired** (Render free-plan databases live ~30 days) sometime
   around 2026-08→2026-09, silently crash-looping the dev API at boot (TypeORM
@@ -187,8 +196,8 @@ worker → push). Item 7's context-gatherer is real when `CONTEXT_ENGINE_URL` is
 (stub fallback otherwise); the LLM planner is likewise real when `OPENROUTER_API_KEY`
 is set (stub fallback otherwise) — see item 5 below.
 
-**External context-engine transport — live on `development`, verified end-to-end
-2026-07-20:** the async API↔context-engine transport specified in
+**External context-engine transport — implemented; verified end-to-end on `development`
+2026-07-20, not re-tested since the November 2026 broker rebuild:** the async API↔context-engine transport specified in
 `docs/contracts/context-engine.md` (RabbitMQ both ways — `ctx.gather.requests`
 API→n8n, `ctx.gather.results` n8n→API, correlated by `job_id`; replaces the gRPC
 option considered in `ARCHITECTURE.md`) landed on `feature/rabbitmq-transport`
@@ -198,14 +207,16 @@ default in local dev via `.env`, test/e2e, and any environment without a provisi
 broker) keeps `ContextEngineHttpClient` (HTTP, see item 7 branch 3) as the fallback
 path, with `running` as its status.
 
-On the `development` Render service, `RABBITMQ_URL` is now set (dashboard secret,
-already declared `sync: false` in `render.yaml`) to a **CloudAMQP free-tier broker**
-(actually **LavinMQ** under the hood — `amqps://` TLS-only, port `5671`) shared with
-the external, n8n-hosted context engine, which now consumes `ctx.gather.requests` and
-replies on `ctx.gather.results` — both sides are implemented and live. Verified
-round trip **~600ms**; DLQ behavior confirmed (a result for an unknown `job_id`
-dead-letters correctly instead of hanging). Staging and production still need their
-own `RABBITMQ_URL` provisioned before their first deploys.
+On the `development` Render service, `RABBITMQ_URL` is set (dashboard secret, already
+declared `sync: false` in `render.yaml`) to a **CloudAMQP free-tier broker** (actually
+**LavinMQ** under the hood — `amqps://` TLS-only, port `5671`) shared with the external,
+n8n-hosted context engine, which consumes `ctx.gather.requests` and replies on
+`ctx.gather.results`. On 2026-07-20 the round trip was verified at **~600ms** with DLQ
+behavior confirmed (a result for an unknown `job_id` dead-letters correctly instead of
+hanging). In November 2026 the dev broker and n8n were recreated and reconnected; per the
+owner both are good, but the round trip has not been tested end to end from the API side
+since. Staging and production still need their own `RABBITMQ_URL` provisioned before
+their first deploys.
 
 ## 5. AI layer — ✅ done
 
@@ -253,7 +264,7 @@ own `RABBITMQ_URL` provisioned before their first deploys.
 - Depended on items 2 and 4, and on the Context module async backbone above
   (queue/worker/WS foundation); unblocks nothing further on the roadmap.
 
-## AI rework on OpenRouter — ◐ in progress
+## AI rework on OpenRouter — ◐ code complete, not yet proven live
 
 Plan: [`docs/plans/2026-11-06-ai-rework.md`](plans/2026-11-06-ai-rework.md), with task state in its
 `.tasks.json`. Moves the AI layer from Anthropic to OpenRouter and adds versioned prompts, retrieval,
@@ -306,7 +317,25 @@ limits, guardrails, caching and AI data consent.
   `ai.consent_withdrawn`. **Owner actions still open:** legal review of the draft
   [`docs/ai-data-notice.md`](ai-data-notice.md) (plus a French version), and the frontend consent screen
   ([guide](integration/frontend-guide.md)); until the frontend ships it, AI is unusable.
-- Slice 7 — pending. See the plan.
+- **Slice 7, docs sweep and live smoke — ◐ code and docs done, live run pending.** Security
+  runbook, privacy inventory, README, `ARCHITECTURE.md`, frontend guide and this file are
+  current. `npm run ai:smoke` (`scripts/ai-smoke.ts`) is the owner-run live check: a
+  suggestion, a repeat that should hit the cache, a planning job and the quota counters,
+  gated on `OPENROUTER_API_KEY`. It has not been run against a real key, so the layer is
+  covered by tests with fake providers only.
+
+**Outstanding before the AI layer can be called done (owner actions):**
+
+- ☐ Set `OPENROUTER_API_KEY` in the Render `development` service (a deploy of `development`
+  then picks it up).
+- ☐ Run `npm run ai:smoke` against `development` with non-sensitive data and record the
+  result (`--accept-notice` records consent for the smoke user).
+- ☐ Choose the model from the smoke output (`OPENROUTER_MODEL` / `OPENROUTER_FALLBACK_MODELS`);
+  `openrouter/free` is a default, not a decision.
+- ☐ Legal review of [`ai-data-notice.md`](ai-data-notice.md) and a French version with the
+  same version string; resolve its "To confirm before publishing" table.
+- ☐ Frontend consent screen (`memoflow-client`; see the [guide](integration/frontend-guide.md#6-ai-features)).
+  Until it ships, AI is unusable for every user.
 
 ## 6. Gamification (PG) — ✅ done
 
@@ -428,19 +457,20 @@ work already flagged as deferred in the sections above, not a numbered feature:
   tier deploys today (Render web service + MongoDB Atlas + Upstash Redis + Neon
   Postgres, all datastores external to Render). Land staging/production workflows
   once the user picks hosting for those tiers; don't invent infrastructure.
-- **RabbitMQ context-engine transport is live on `development`, verified
-  end-to-end 2026-07-20** (see the Context module async backbone section and
-  `docs/contracts/context-engine.md`) — `RABBITMQ_URL` is set on the dev Render
-  service (CloudAMQP/LavinMQ free tier) and the n8n-hosted context engine consumes
-  `ctx.gather.requests` / replies on `ctx.gather.results`. `ContextEngineHttpClient`
-  (HTTP) remains the fallback path for item 7's context-engine push wherever
-  `RABBITMQ_URL` is unset — still every environment other than `development`.
+- **RabbitMQ context-engine transport: implemented, verified end-to-end on `development`
+  2026-07-20, not re-tested since the November 2026 broker rebuild** (see the Context
+  module async backbone section and `docs/contracts/context-engine.md`) — `RABBITMQ_URL`
+  is set on the dev Render service (CloudAMQP/LavinMQ free tier, recreated in November
+  2026) and the n8n-hosted context engine was reconnected; per the owner both are good.
+  `ContextEngineHttpClient` (HTTP) remains the fallback path for item 7's context-engine
+  push wherever `RABBITMQ_URL` is unset — still every environment other than `development`.
   Outstanding: provisioning `RABBITMQ_URL` for staging/production before their
   first deploys.
-- **`OPENROUTER_API_KEY` is unset on `development`** — the AI suggestion endpoint
-  returns 503 ("AI not configured") and the planning-job LLM planner stays on
-  `StubLlmPlanner` ("(stub plan)") on the deployed dev service. Item 5's code is
-  done; this is a deploy-config gap, not a missing feature.
+- **`OPENROUTER_API_KEY` is not confirmed set on `development`** (last recorded unset) —
+  unset, the AI suggestion endpoint returns 503 ("AI not configured") and the
+  planning-job LLM planner stays on `StubLlmPlanner` ("(stub plan)") on the deployed dev
+  service. The AI code is done; this is a deploy-config gap, not a missing feature. See
+  "AI rework on OpenRouter" for what is outstanding.
 - **`CORS_ORIGIN` / `WS_CORS_ORIGIN` are active on `development`** — declared in
   `render.yaml` (PR #46) and confirmed active on 2026-09-14. Staging/production are
   set per environment at their first deploys.

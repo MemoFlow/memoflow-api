@@ -13,15 +13,8 @@ import {
 import { PLANNING_JOB_REPOSITORY } from '../../domain/context/planning-job.repository';
 import { USER_REPOSITORY } from '../../domain/users/user.repository';
 import type { UserRepository } from '../../domain/users/user.repository';
-import type { ValidatedPlanningResult } from './planning-citations';
 import { PlanningPipeline } from './planning-pipeline';
-import {
-  assertJobUserActive,
-  errorName,
-  failureErrorCode,
-  resolvePlanningPrompt,
-  safeFailureMessage,
-} from './planning-prompt';
+import { runClaimedPlanning } from './run-claimed-planning';
 import type {
   AppendResultChunkData,
   PlanningJobRepository,
@@ -194,77 +187,17 @@ export class HandleContextResultChunkUseCase {
       return null;
     }
 
-    const resolvedPrompt = await resolvePlanningPrompt(this.promptRepository);
-    const promptVersion = resolvedPrompt.promptVersion;
-
-    // Connector chunks plus the retrieved-source metadata; recorded on the
-    // job whether planning then succeeds or fails.
-    let contextUsed: Record<string, unknown> = assembled;
-    let result: ValidatedPlanningResult;
-    try {
-      // Before retrieval or any provider call: the user may have been
-      // disabled or deleted while the job was gathering.
-      await assertJobUserActive(this.userRepository, claimed.userId);
-      const prepared = await this.planningPipeline.prepare(claimed, assembled);
-      contextUsed = prepared.contextUsed;
-      // The user may have withdrawn consent during retrieval: check again
-      // right before the provider call.
-      await assertJobUserActive(this.userRepository, claimed.userId);
-      result = await this.planningPipeline.plan(
-        resolvedPrompt,
-        claimed,
-        prepared,
-      );
-    } catch (err) {
-      // Clients read the message: only typed (fixed) messages pass through,
-      // and only the error name is logged.
-      this.logger.error(
-        `Planning job ${claimed.id} failed (${errorName(err)})`,
-      );
-      const errorMessage = safeFailureMessage(err);
-      const errorCode = failureErrorCode(err);
-      const failed = await this.planningJobRepository.updateStatus(claimed.id, {
-        status: JobStatus.Failed,
-        errorCode,
-        errorMessage,
-        finishedAt: new Date(),
-        promptVersion,
-        contextUsed,
-      });
-      return (
-        failed ?? {
-          ...claimed,
-          status: JobStatus.Failed,
-          errorCode,
-          errorMessage,
-          promptVersion,
-          contextUsed,
-        }
-      );
-    }
-
-    const { model, ...resultFields } = result;
-    const resultDoc: Record<string, unknown> = { ...resultFields };
-    const completed = await this.planningJobRepository.updateStatus(
-      claimed.id,
+    // Retrieval, planning and the terminal write only run for the winner.
+    return runClaimedPlanning(
       {
-        status: JobStatus.Completed,
-        result: resultDoc,
-        finishedAt: new Date(),
-        promptVersion,
-        model,
-        contextUsed,
+        planningJobRepository: this.planningJobRepository,
+        planningPipeline: this.planningPipeline,
+        promptRepository: this.promptRepository,
+        userRepository: this.userRepository,
+        logger: this.logger,
       },
-    );
-    return (
-      completed ?? {
-        ...claimed,
-        status: JobStatus.Completed,
-        result: resultDoc,
-        promptVersion,
-        model,
-        contextUsed,
-      }
+      claimed,
+      assembled,
     );
   }
 

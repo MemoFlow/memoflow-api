@@ -65,12 +65,12 @@
     {
       "id": 8,
       "subject": "Slice 7: Docs sweep and live smoke",
-      "status": "pending",
+      "status": "in_progress",
       "blockedBy": [
         7
       ],
-      "description": "**Goal:** Docs reflect the new AI layer, and it is proven live on dev.\n**Acceptance Criteria:** security.md injection posture rewritten; privacy inventory updated for OpenRouter, upstream providers, retrieved content and cached text; ROADMAP and README current; live smoke script gated on OPENROUTER_API_KEY confirms a suggestion, a planning job, a cache hit and quota counters. Needs the user's key in Render.\n**Verify:** Run smoke on dev with non-sensitive data; /health 200 after deploy.\n```json:metadata\n{\"modelTier\": \"mechanical\", \"verifyCommand\": \"npm run lint && npm run build && npm test && REDIS_HOST=localhost REDIS_PORT=<port> npm run test:e2e\"}\n```"
+      "description": "**Goal:** Docs reflect the new AI layer, and it is proven live on dev.\n**Acceptance Criteria:** security.md injection posture rewritten; privacy inventory updated for OpenRouter, upstream providers, retrieved content and cached text; ROADMAP and README current; live smoke script gated on OPENROUTER_API_KEY confirms a suggestion, a planning job, a cache hit and quota counters. Needs the user's key in Render.\n**Verify:** Run smoke on dev with non-sensitive data; /health 200 after deploy.\n**Status:** Code and docs done (docs sweep, `scripts/ai-smoke.ts`, `npm run ai:smoke`). Live run pending: needs the owner's OPENROUTER_API_KEY in Render and a run of `npm run ai:smoke` against dev.\n```json:metadata\n{\"modelTier\": \"mechanical\", \"verifyCommand\": \"npm run lint && npm run build && npm test && REDIS_HOST=localhost REDIS_PORT=<port> npm run test:e2e\"}\n```"
     }
   ],
-  "lastUpdated": "2026-11-06T20:43:13+00:00"
+  "lastUpdated": "2026-11-06T21:03:59+00:00"
 }
