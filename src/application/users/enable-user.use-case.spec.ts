@@ -1,4 +1,6 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { USER_ENABLED_EVENT } from '../../domain/users/user-events';
 import { UserRole } from '../../domain/users/user-role';
 import { User } from '../../domain/users/user.entity';
 import { UserRepository } from '../../domain/users/user.repository';
@@ -62,11 +64,16 @@ function makeUser(id: string, disabledAt: Date | null = null): User {
 }
 
 describe('EnableUserUseCase', () => {
+  const emit = jest.fn();
+  const emitter = { emit } as unknown as EventEmitter2;
+
+  beforeEach(() => emit.mockClear());
+
   it('clears disabledAt on a disabled user', async () => {
     const repository = new InMemoryUserRepository([
       makeUser('user-1', new Date()),
     ]);
-    const useCase = new EnableUserUseCase(repository);
+    const useCase = new EnableUserUseCase(repository, emitter);
 
     await useCase.execute({
       actorId: 'admin-1',
@@ -75,11 +82,15 @@ describe('EnableUserUseCase', () => {
     });
 
     expect(repository.setCalls).toEqual([{ id: 'user-1', disabledAt: null }]);
+    expect(emit).toHaveBeenCalledWith(USER_ENABLED_EVENT, {
+      userId: 'user-1',
+      actorId: 'admin-1',
+    });
   });
 
   it('is idempotent for an already active user', async () => {
     const repository = new InMemoryUserRepository([makeUser('user-1')]);
-    const useCase = new EnableUserUseCase(repository);
+    const useCase = new EnableUserUseCase(repository, emitter);
 
     await useCase.execute({
       actorId: 'admin-1',
@@ -88,10 +99,14 @@ describe('EnableUserUseCase', () => {
     });
 
     expect(repository.setCalls).toEqual([]);
+    expect(emit).not.toHaveBeenCalled();
   });
 
   it('throws NotFoundException for an unknown user', async () => {
-    const useCase = new EnableUserUseCase(new InMemoryUserRepository([]));
+    const useCase = new EnableUserUseCase(
+      new InMemoryUserRepository([]),
+      emitter,
+    );
 
     await expect(
       useCase.execute({
@@ -106,7 +121,7 @@ describe('EnableUserUseCase', () => {
     const repository = new InMemoryUserRepository([
       makeUser('user-1', new Date()),
     ]);
-    const useCase = new EnableUserUseCase(repository);
+    const useCase = new EnableUserUseCase(repository, emitter);
 
     await expect(
       useCase.execute({

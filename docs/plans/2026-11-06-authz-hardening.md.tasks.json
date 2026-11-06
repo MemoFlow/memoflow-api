@@ -45,11 +45,11 @@
     {
       "id": 6,
       "subject": "Phase 6: Remaining items",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         2
       ],
-      "description": "**Goal:** Close the remaining smaller items. Generic provider errors and the featureType allowlist moved to docs/plans/2026-11-06-ai-rework.md.\n**Acceptance Criteria:** Audit events for template publish, update, delete, admin actions and role changes; per-tier broker credentials with restricted queue permissions and trust boundary documented in docs/security.md; Swagger off on staging; doc-type check on apply; connector reconnect reviewed for leftover Composio accounts and fixed if needed; Postgres TLS verifies the server certificate (typeorm data source and app config currently use rejectUnauthorized false), confirming Neon CA compatibility; non-admin template update made conditional on is_published at the DB so a concurrent publish can't be overwritten.\n**Verify:** npm run lint && npm run build && npm test && npm run test:e2e\n```json:metadata\n{\"modelTier\": \"standard\", \"verifyCommand\": \"npm run lint && npm run build && npm test && npm run test:e2e\", \"acceptanceCriteria\": [\"Audit events recorded\", \"Swagger off on staging\", \"Connector reconnect resolved\"]}\n```"
+      "description": "**Goal:** Close the remaining smaller items. Done in code; per-tier broker credentials remain an operator action (documented in docs/security.md, not yet applied on development or later tiers). Generic provider errors and the featureType allowlist moved to docs/plans/2026-11-06-ai-rework.md.\n**Acceptance Criteria:** Audit events for template publish, update, delete, admin actions and role changes; per-tier broker credentials with restricted queue permissions and trust boundary documented in docs/security.md; Swagger off on staging; doc-type check on apply; connector reconnect reviewed for leftover Composio accounts and fixed if needed; Postgres TLS verifies the server certificate (typeorm data source and app config currently use rejectUnauthorized false), confirming Neon CA compatibility; non-admin template update made conditional on is_published at the DB so a concurrent publish can't be overwritten.\n**Verify:** npm run lint && npm run build && npm test && npm run test:e2e\n```json:metadata\n{\"modelTier\": \"standard\", \"verifyCommand\": \"npm run lint && npm run build && npm test && npm run test:e2e\", \"acceptanceCriteria\": [\"Audit events recorded\", \"Swagger off on staging\", \"Connector reconnect resolved\"]}\n```"
     },
     {
       "id": 7,
@@ -59,5 +59,5 @@
       "description": "**Goal:** Store section keyPoints and guidance for the starter templates.\n**Acceptance Criteria:** template_sections gains key_points (jsonb) and guidance (text), both nullable, with migration and schema doc; the fields carried through every layer: domain TemplateSection and TemplateSectionData, TemplateSectionInput and toTemplateSectionData, ORM entity and toDomain mapping, request DTO with class-validator and Swagger, response DTO as snake_case key_points and guidance; unit and e2e tests proving a round trip. The ValidationPipe whitelist strips unknown fields without an error, so a PATCH sent before deploy reports success and loses the content. Decided 2026-11-06: apply does not copy them into the document; they stay on the template for the frontend to show as guidance. After the deploy to development, each of the five templates PATCHed as an admin from docs/plans/2026-11-06-template-content.json, then read back and compared. PATCH replaces sections wholesale, so section ids change.\n**Verify:** npm run lint && npm run build && npm test && npm run test:e2e\n```json:metadata\n{\"modelTier\": \"standard\", \"verifyCommand\": \"npm run lint && npm run build && npm test && npm run test:e2e\", \"acceptanceCriteria\": [\"Fields stored and returned\", \"All five templates match the JSON\"]}\n```"
     }
   ],
-  "lastUpdated": "2026-11-06T18:00:00Z"
+  "lastUpdated": "2026-11-06T20:00:00Z"
 }

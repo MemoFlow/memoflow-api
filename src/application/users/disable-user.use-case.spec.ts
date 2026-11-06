@@ -92,6 +92,7 @@ describe('DisableUserUseCase', () => {
     expect(repository.setCalls[0].disabledAt).toBeInstanceOf(Date);
     expect(emitter.emit).toHaveBeenCalledWith(USER_DISABLED_EVENT, {
       userId: 'user-1',
+      actorId: 'admin-1',
     });
   });
 
@@ -113,6 +114,7 @@ describe('DisableUserUseCase', () => {
     expect(repository.setCalls).toEqual([]);
     expect(emitter.emit).toHaveBeenCalledWith(USER_DISABLED_EVENT, {
       userId: 'user-1',
+      actorId: 'admin-1',
     });
   });
 

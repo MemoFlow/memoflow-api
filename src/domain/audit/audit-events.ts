@@ -21,10 +21,17 @@ export const AUTH_PASSWORD_RESET_REQUESTED_EVENT =
 export const AUTH_PASSWORD_RESET_COMPLETED_EVENT =
   'auth.password_reset_completed';
 export const AUTH_PASSWORD_CHANGED_EVENT = 'auth.password_changed';
+export const AUTH_LOGIN_THROTTLED_EVENT = 'auth.login_throttled';
 export const AUTH_LOGOUT_EVENT = 'auth.logout';
 export const AUTH_EMAIL_VERIFIED_EVENT = 'auth.email_verified';
 export const CONNECTOR_REVOKED_EVENT = 'connector.revoked';
 export const SUGGESTION_REVIEWED_EVENT = 'suggestion.reviewed';
+export const TEMPLATE_CREATED_EVENT = 'template.created';
+export const TEMPLATE_UPDATED_EVENT = 'template.updated';
+export const TEMPLATE_PUBLISHED_EVENT = 'template.published';
+export const TEMPLATE_UNPUBLISHED_EVENT = 'template.unpublished';
+export const TEMPLATE_DELETED_EVENT = 'template.deleted';
+export const USER_ROLE_CHANGED_EVENT = 'user.role_changed';
 export const PROMPT_CREATED_EVENT = 'prompt.created';
 export const PROMPT_ACTIVATED_EVENT = 'prompt.activated';
 
@@ -35,6 +42,12 @@ export interface AuthLoginEventPayload {
 export interface AuthLoginFailedEventPayload {
   /** null when the email doesn't match any account. */
   userId: string | null;
+  email: string;
+}
+
+export interface AuthLoginThrottledEventPayload {
+  /** Always null: the throttle fires before any account lookup. */
+  userId: null;
   email: string;
 }
 
@@ -61,4 +74,15 @@ export interface PromptAuditEventPayload {
   promptId: string;
   featureType: string;
   version: string;
+}
+
+/**
+ * Shared by the template audit events; `userId` is the acting user. Ids and
+ * field names only — never template content. `changedFields` is set on
+ * `template.updated` (names of the patch keys that were present).
+ */
+export interface TemplateAuditEventPayload {
+  userId: string;
+  templateId: string;
+  changedFields?: string[];
 }

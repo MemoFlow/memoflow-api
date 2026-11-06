@@ -7,7 +7,9 @@ import {
   CreateTemplateData,
   TemplateFilters,
   TemplateRepository,
+  TemplatePublishedError,
   UpdateTemplateData,
+  UpdateTemplateOptions,
 } from '../../../domain/templates/template.repository';
 import { TemplateSectionOrmEntity } from './template-section.orm-entity';
 import { TemplateOrmEntity } from './template.orm-entity';
@@ -102,10 +104,27 @@ export class TemplateTypeOrmRepository implements TemplateRepository {
     );
   }
 
-  async update(id: string, patch: UpdateTemplateData): Promise<Template> {
+  async update(
+    id: string,
+    patch: UpdateTemplateData,
+    options: UpdateTemplateOptions = {},
+  ): Promise<Template> {
     return this.dataSource.transaction(async (manager) => {
       const templateRepo = manager.getRepository(TemplateOrmEntity);
       const sectionRepo = manager.getRepository(TemplateSectionOrmEntity);
+
+      // Lock the row first so a concurrent publish/update serializes with
+      // this one; the published check below then sees the committed state.
+      const locked = await templateRepo.findOne({
+        where: { id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!locked) {
+        throw new NotFoundException(`Template ${id} not found`);
+      }
+      if (options.onlyIfUnpublished && locked.isPublished) {
+        throw new TemplatePublishedError();
+      }
 
       const { sections, ...rest } = patch;
       const entity = await templateRepo.preload({ id, ...rest });

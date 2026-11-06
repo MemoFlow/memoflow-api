@@ -5,7 +5,9 @@ import * as bcrypt from 'bcrypt';
 import {
   AUTH_LOGIN_EVENT,
   AUTH_LOGIN_FAILED_EVENT,
+  AUTH_LOGIN_THROTTLED_EVENT,
 } from '../../domain/audit/audit-events';
+import { LOGIN_MAX_ATTEMPTS } from '../../domain/auth/login-attempt-limiter.port';
 import { UserRole } from '../../domain/users/user-role';
 import { User } from '../../domain/users/user.entity';
 import {
@@ -75,7 +77,11 @@ class InMemoryUserRepository implements UserRepository {
 class FakeLimiter implements LoginAttemptLimiter {
   readonly registered: string[] = [];
   readonly cleared: string[] = [];
-  result: LoginAttemptResult = { allowed: true, retryAfterSeconds: 0 };
+  result: LoginAttemptResult = {
+    allowed: true,
+    retryAfterSeconds: 0,
+    attempts: 1,
+  };
 
   registerAttempt(email: string): Promise<LoginAttemptResult> {
     this.registered.push(email);
@@ -240,7 +246,11 @@ describe('LoginUserUseCase', () => {
     });
 
     it('throws LoginThrottledException without touching the repository or bcrypt when blocked', async () => {
-      limiter.result = { allowed: false, retryAfterSeconds: 42 };
+      limiter.result = {
+        allowed: false,
+        retryAfterSeconds: 42,
+        attempts: LOGIN_MAX_ATTEMPTS + 2,
+      };
       const findByEmail = jest.spyOn(repository, 'findByEmail');
       const compare = bcrypt.compare as unknown as jest.Mock;
 
@@ -254,6 +264,24 @@ describe('LoginUserUseCase', () => {
       expect(findByEmail).not.toHaveBeenCalled();
       expect(compare).not.toHaveBeenCalled();
       expect(eventEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    it('emits auth.login_throttled only on the first blocked attempt of a window', async () => {
+      limiter.result = {
+        allowed: false,
+        retryAfterSeconds: 42,
+        attempts: LOGIN_MAX_ATTEMPTS + 1,
+      };
+
+      await expect(
+        useCase.execute({ email: ' Ada@Example.com ', password: 'x' }),
+      ).rejects.toThrow(LoginThrottledException);
+
+      expect(eventEmitter.emit).toHaveBeenCalledTimes(1);
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        AUTH_LOGIN_THROTTLED_EVENT,
+        { userId: null, email: 'ada@example.com' },
+      );
     });
   });
 

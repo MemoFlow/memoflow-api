@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ConnectorConnection } from '../../domain/connectors/connector-connection.entity';
 import {
@@ -132,8 +133,14 @@ class FakeConnectorGateway implements ConnectorGateway {
     return Promise.reject(new Error('not implemented'));
   }
 
-  revoke(): Promise<void> {
-    return Promise.reject(new Error('not implemented'));
+  public revokeCalls: string[] = [];
+  public revokeError: Error | null = null;
+
+  revoke(composioAccountId: string): Promise<void> {
+    this.revokeCalls.push(composioAccountId);
+    return this.revokeError
+      ? Promise.reject(this.revokeError)
+      : Promise.resolve();
   }
 }
 
@@ -242,5 +249,103 @@ describe('InitiateConnectionUseCase', () => {
     const all = await repository.findAllByUser('user-1');
     expect(all).toHaveLength(1);
     expect(all[0].composioAccountId).toBe('ca_second');
+  });
+
+  describe('replacing a previous Composio account', () => {
+    function gatewayFor(composioAccountId: string) {
+      return new FakeConnectorGateway({
+        redirectUrl: `https://composio.dev/connect/${composioAccountId}`,
+        composioAccountId,
+        status: ConnectorStatus.Initiated,
+      });
+    }
+
+    async function connect(
+      gateway: FakeConnectorGateway,
+      repository: InMemoryConnectorConnectionRepository,
+    ) {
+      return new InitiateConnectionUseCase(
+        gateway,
+        repository,
+        emitter as unknown as EventEmitter2,
+      ).execute({ userId: 'user-1', provider: ConnectorProvider.Notion });
+    }
+
+    it('revokes the old account after the new row is stored', async () => {
+      const repository = new InMemoryConnectorConnectionRepository();
+      await connect(gatewayFor('ca_old'), repository);
+
+      const gateway = gatewayFor('ca_new');
+      const upsert = jest.spyOn(repository, 'upsertInitiated');
+      const revoke = jest.spyOn(gateway, 'revoke');
+      await connect(gateway, repository);
+
+      expect(gateway.revokeCalls).toEqual(['ca_old']);
+      expect(upsert.mock.invocationCallOrder[0]).toBeLessThan(
+        revoke.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('emits connector.status_changed before awaiting the old-account revoke', async () => {
+      const repository = new InMemoryConnectorConnectionRepository();
+      await connect(gatewayFor('ca_old'), repository);
+      emitter.emit.mockClear();
+
+      const gateway = gatewayFor('ca_new');
+      const revoke = jest.spyOn(gateway, 'revoke');
+      await connect(gateway, repository);
+
+      expect(emitter.emit.mock.invocationCallOrder[0]).toBeLessThan(
+        revoke.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('does not revoke on the first connection', async () => {
+      const gateway = gatewayFor('ca_first');
+      await connect(gateway, new InMemoryConnectorConnectionRepository());
+      expect(gateway.revokeCalls).toEqual([]);
+    });
+
+    it('does not revoke when the account id is unchanged', async () => {
+      const repository = new InMemoryConnectorConnectionRepository();
+      await connect(gatewayFor('ca_same'), repository);
+      const gateway = gatewayFor('ca_same');
+      await connect(gateway, repository);
+      expect(gateway.revokeCalls).toEqual([]);
+    });
+
+    it('does not revoke an account that was already revoked', async () => {
+      const repository = new InMemoryConnectorConnectionRepository();
+      const first = await connect(gatewayFor('ca_old'), repository);
+      await repository.updateStatus(first.connectionId, {
+        status: ConnectorStatus.Revoked,
+      });
+      const gateway = gatewayFor('ca_new');
+      await connect(gateway, repository);
+      expect(gateway.revokeCalls).toEqual([]);
+    });
+
+    it('tolerates a revoke failure: the request succeeds and a warning names the connection and provider only', async () => {
+      const warn = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      const repository = new InMemoryConnectorConnectionRepository();
+      await connect(gatewayFor('ca_old'), repository);
+      const gateway = gatewayFor('ca_new');
+      gateway.revokeError = new Error('composio down');
+
+      const result = await connect(gateway, repository);
+
+      expect(result.redirectUrl).toContain('ca_new');
+      expect((await repository.findAllByUser('user-1'))[0]).toMatchObject({
+        composioAccountId: 'ca_new',
+      });
+      expect(warn).toHaveBeenCalledTimes(1);
+      const message = String(warn.mock.calls[0][0]);
+      expect(message).toContain(result.connectionId);
+      expect(message).toContain(ConnectorProvider.Notion);
+      expect(message).not.toContain('ca_old');
+      warn.mockRestore();
+    });
   });
 });

@@ -9,6 +9,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { isSwaggerEnabled } from './shared/swagger-exposure';
 import { HttpExceptionFilter } from './shared/filters/http-exception.filter';
 import { LoggingInterceptor } from './shared/interceptors/logging.interceptor';
 
@@ -66,8 +67,10 @@ async function bootstrap() {
   const config = app.get(ConfigService);
 
   // Swagger UI + the underlying OpenAPI JSON are a discovery surface for the
-  // API's shape (routes, DTOs, auth scheme) — production must not expose it.
-  if (config.get<string>('NODE_ENV') !== 'production') {
+  // API's shape (routes, DTOs, auth scheme) — served only on an explicit
+  // allowlist of tiers (development, test); staging, production and any
+  // unknown tier default to off.
+  if (isSwaggerEnabled(config.get<string>('NODE_ENV'))) {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('MemoFlow API')
       .setDescription(

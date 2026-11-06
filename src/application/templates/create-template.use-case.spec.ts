@@ -1,4 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { UserRole } from '../../domain/users/user-role';
 import { randomUUID } from 'node:crypto';
 import { Template } from '../../domain/templates/template.entity';
@@ -60,9 +61,14 @@ class InMemoryTemplateRepository implements TemplateRepository {
 }
 
 describe('CreateTemplateUseCase', () => {
+  const emit = jest.fn();
+  const emitter = { emit } as unknown as EventEmitter2;
+
+  beforeEach(() => emit.mockClear());
+
   it('creates a template defaulting isPublished to false and styleConfig to null', async () => {
     const repository = new InMemoryTemplateRepository();
-    const useCase = new CreateTemplateUseCase(repository);
+    const useCase = new CreateTemplateUseCase(repository, emitter);
 
     const template = await useCase.execute({
       userId: 'user-1',
@@ -90,7 +96,7 @@ describe('CreateTemplateUseCase', () => {
 
   it('lets an admin publish and honors an explicit isPublished, styleConfig, and per-section isRequired', async () => {
     const repository = new InMemoryTemplateRepository();
-    const useCase = new CreateTemplateUseCase(repository);
+    const useCase = new CreateTemplateUseCase(repository, emitter);
 
     const template = await useCase.execute({
       userId: 'user-1',
@@ -118,7 +124,7 @@ describe('CreateTemplateUseCase', () => {
 
   it('throws ForbiddenException when a non-admin creates a published template', async () => {
     const repository = new InMemoryTemplateRepository();
-    const useCase = new CreateTemplateUseCase(repository);
+    const useCase = new CreateTemplateUseCase(repository, emitter);
 
     await expect(
       useCase.execute({
@@ -131,5 +137,46 @@ describe('CreateTemplateUseCase', () => {
         sections: [],
       }),
     ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('emits template.created, and template.published when created published', async () => {
+    const useCase = new CreateTemplateUseCase(
+      new InMemoryTemplateRepository(),
+      emitter,
+    );
+
+    const created = await useCase.execute({
+      userId: 'admin-1',
+      role: UserRole.Admin,
+      title: 'T',
+      docType: 'blog',
+      scope: 'personal',
+      isPublished: true,
+      sections: [],
+    });
+
+    const payload = { userId: 'admin-1', templateId: created.id };
+    expect(emit).toHaveBeenCalledWith('template.created', payload);
+    expect(emit).toHaveBeenCalledWith('template.published', payload);
+  });
+
+  it('emits only template.created for an unpublished template', async () => {
+    const useCase = new CreateTemplateUseCase(
+      new InMemoryTemplateRepository(),
+      emitter,
+    );
+
+    await useCase.execute({
+      userId: 'user-1',
+      role: UserRole.User,
+      title: 'T',
+      docType: 'blog',
+      scope: 'personal',
+      sections: [],
+    });
+
+    expect(emit.mock.calls.map((c: unknown[]) => c[0])).toEqual([
+      'template.created',
+    ]);
   });
 });

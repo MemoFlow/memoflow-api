@@ -558,4 +558,69 @@ describe('env.validation deployed-tier safety checks', () => {
     const example = readFileSync(join(__dirname, '../../.env.example'), 'utf8');
     expect(example).toContain(`JWT_SECRET=${JWT_SECRET_PLACEHOLDER}`);
   });
+
+  describe('POSTGRES_SSL_REJECT_UNAUTHORIZED', () => {
+    it.each(['staging', 'production'])('rejects false in %s', (NODE_ENV) => {
+      expect(() =>
+        validate(
+          baseConfig({
+            NODE_ENV,
+            ...mail,
+            POSTGRES_SSL: 'true',
+            POSTGRES_SSL_REJECT_UNAUTHORIZED: 'false',
+          }),
+        ),
+      ).toThrow('POSTGRES_SSL_REJECT_UNAUTHORIZED');
+    });
+
+    it.each(['staging', 'production'])(
+      'accepts it unset or true in %s',
+      (NODE_ENV) => {
+        expect(() =>
+          validate(baseConfig({ NODE_ENV, ...mail, POSTGRES_SSL: 'true' })),
+        ).not.toThrow();
+        expect(() =>
+          validate(
+            baseConfig({
+              NODE_ENV,
+              ...mail,
+              POSTGRES_SSL_REJECT_UNAUTHORIZED: 'TRUE',
+            }),
+          ),
+        ).not.toThrow();
+      },
+    );
+
+    it.each(['development', 'test'])('allows false in %s', (NODE_ENV) => {
+      const result = validate(
+        baseConfig({ NODE_ENV, POSTGRES_SSL_REJECT_UNAUTHORIZED: 'false' }),
+      );
+      expect(result.POSTGRES_SSL_REJECT_UNAUTHORIZED).toBe(false);
+    });
+
+    it.each(['development', 'test', 'staging', 'production'])(
+      'rejects an unparsable value in %s',
+      (NODE_ENV) => {
+        expect(() =>
+          validate(
+            baseConfig({
+              NODE_ENV,
+              ...mail,
+              POSTGRES_SSL_REJECT_UNAUTHORIZED: 'fasle',
+            }),
+          ),
+        ).toThrow('POSTGRES_SSL_REJECT_UNAUTHORIZED');
+      },
+    );
+
+    it('defaults to true when unset or blank', () => {
+      expect(validate(baseConfig()).POSTGRES_SSL_REJECT_UNAUTHORIZED).toBe(
+        true,
+      );
+      expect(
+        validate(baseConfig({ POSTGRES_SSL_REJECT_UNAUTHORIZED: '' }))
+          .POSTGRES_SSL_REJECT_UNAUTHORIZED,
+      ).toBe(true);
+    });
+  });
 });

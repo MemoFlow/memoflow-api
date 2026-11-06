@@ -1,15 +1,22 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { UserRole } from '../../domain/users/user-role';
 import { Template } from '../../domain/templates/template.entity';
 import { TemplateSection } from '../../domain/templates/template-section.entity';
 import {
+  TemplatePublishedError,
   TemplateRepository,
   UpdateTemplateData,
+  UpdateTemplateOptions,
 } from '../../domain/templates/template.repository';
 import { UpdateTemplateUseCase } from './update-template.use-case';
 
 class InMemoryTemplateRepository implements TemplateRepository {
-  public updateCalls: { id: string; patch: UpdateTemplateData }[] = [];
+  public updateCalls: {
+    id: string;
+    patch: UpdateTemplateData;
+    options?: UpdateTemplateOptions;
+  }[] = [];
 
   constructor(private readonly templates: Template[] = []) {}
 
@@ -25,8 +32,12 @@ class InMemoryTemplateRepository implements TemplateRepository {
     return Promise.reject(new Error('not implemented'));
   }
 
-  update(id: string, patch: UpdateTemplateData): Promise<Template> {
-    this.updateCalls.push({ id, patch });
+  update(
+    id: string,
+    patch: UpdateTemplateData,
+    options?: UpdateTemplateOptions,
+  ): Promise<Template> {
+    this.updateCalls.push({ id, patch, options });
     const existing = this.templates.find((t) => t.id === id);
     if (!existing) {
       return Promise.reject(new Error('not found'));
@@ -75,9 +86,14 @@ function makeTemplate(overrides: Partial<Template> = {}): Template {
 }
 
 describe('UpdateTemplateUseCase', () => {
+  const emit = jest.fn();
+  const emitter = { emit } as unknown as EventEmitter2;
+
+  beforeEach(() => emit.mockClear());
+
   it('updates (and, as an admin, publishes) a template owned by the requesting user', async () => {
     const repository = new InMemoryTemplateRepository([makeTemplate()]);
-    const useCase = new UpdateTemplateUseCase(repository);
+    const useCase = new UpdateTemplateUseCase(repository, emitter);
 
     const result = await useCase.execute({
       userId: 'user-1',
@@ -92,7 +108,7 @@ describe('UpdateTemplateUseCase', () => {
 
   it('replaces sections wholesale when sections are provided in the patch', async () => {
     const repository = new InMemoryTemplateRepository([makeTemplate()]);
-    const useCase = new UpdateTemplateUseCase(repository);
+    const useCase = new UpdateTemplateUseCase(repository, emitter);
 
     const result = await useCase.execute({
       userId: 'user-1',
@@ -126,6 +142,7 @@ describe('UpdateTemplateUseCase', () => {
   it('throws NotFoundException when the template does not exist', async () => {
     const useCase = new UpdateTemplateUseCase(
       new InMemoryTemplateRepository([]),
+      emitter,
     );
 
     await expect(
@@ -141,6 +158,7 @@ describe('UpdateTemplateUseCase', () => {
   it('throws NotFoundException when a different user attempts to edit', async () => {
     const useCase = new UpdateTemplateUseCase(
       new InMemoryTemplateRepository([makeTemplate({ createdBy: 'user-1' })]),
+      emitter,
     );
 
     await expect(
@@ -158,6 +176,7 @@ describe('UpdateTemplateUseCase', () => {
       new InMemoryTemplateRepository([
         makeTemplate({ createdBy: null, isPublished: true }),
       ]),
+      emitter,
     );
 
     await expect(
@@ -172,7 +191,7 @@ describe('UpdateTemplateUseCase', () => {
 
   it('throws ForbiddenException when a non-admin publishes their own template', async () => {
     const repository = new InMemoryTemplateRepository([makeTemplate()]);
-    const useCase = new UpdateTemplateUseCase(repository);
+    const useCase = new UpdateTemplateUseCase(repository, emitter);
 
     await expect(
       useCase.execute({
@@ -189,7 +208,7 @@ describe('UpdateTemplateUseCase', () => {
     const repository = new InMemoryTemplateRepository([
       makeTemplate({ isPublished: true }),
     ]);
-    const useCase = new UpdateTemplateUseCase(repository);
+    const useCase = new UpdateTemplateUseCase(repository, emitter);
 
     await expect(
       useCase.execute({
@@ -206,7 +225,7 @@ describe('UpdateTemplateUseCase', () => {
     const repository = new InMemoryTemplateRepository([
       makeTemplate({ isPublished: true }),
     ]);
-    const useCase = new UpdateTemplateUseCase(repository);
+    const useCase = new UpdateTemplateUseCase(repository, emitter);
 
     const result = await useCase.execute({
       userId: 'admin-1',
@@ -224,6 +243,7 @@ describe('UpdateTemplateUseCase', () => {
       new InMemoryTemplateRepository([
         makeTemplate({ createdBy: null, isPublished: true }),
       ]),
+      emitter,
     );
 
     const result = await useCase.execute({
@@ -234,5 +254,125 @@ describe('UpdateTemplateUseCase', () => {
     });
 
     expect(result.title).toBe('Edited');
+  });
+
+  it('emits template.updated with the changed field names only', async () => {
+    const useCase = new UpdateTemplateUseCase(
+      new InMemoryTemplateRepository([makeTemplate()]),
+      emitter,
+    );
+
+    await useCase.execute({
+      userId: 'user-1',
+      role: UserRole.User,
+      templateId: 'template-1',
+      patch: { title: 'Renamed', scope: undefined },
+    });
+
+    expect(emit).toHaveBeenCalledTimes(1);
+    expect(emit).toHaveBeenCalledWith('template.updated', {
+      userId: 'user-1',
+      templateId: 'template-1',
+      changedFields: ['title'],
+    });
+  });
+
+  it('also emits template.published when the patch publishes', async () => {
+    const useCase = new UpdateTemplateUseCase(
+      new InMemoryTemplateRepository([makeTemplate()]),
+      emitter,
+    );
+
+    await useCase.execute({
+      userId: 'admin-1',
+      role: UserRole.Admin,
+      templateId: 'template-1',
+      patch: { isPublished: true },
+    });
+
+    expect(emit.mock.calls.map((c: unknown[]) => c[0])).toEqual([
+      'template.updated',
+      'template.published',
+    ]);
+    expect(emit).toHaveBeenCalledWith('template.published', {
+      userId: 'admin-1',
+      templateId: 'template-1',
+    });
+  });
+
+  it('also emits template.unpublished when the patch unpublishes', async () => {
+    const useCase = new UpdateTemplateUseCase(
+      new InMemoryTemplateRepository([makeTemplate({ isPublished: true })]),
+      emitter,
+    );
+
+    await useCase.execute({
+      userId: 'admin-1',
+      role: UserRole.Admin,
+      templateId: 'template-1',
+      patch: { isPublished: false },
+    });
+
+    expect(emit.mock.calls.map((c: unknown[]) => c[0])).toEqual([
+      'template.updated',
+      'template.unpublished',
+    ]);
+  });
+
+  it('does not emit publish events when is_published is unchanged', async () => {
+    const useCase = new UpdateTemplateUseCase(
+      new InMemoryTemplateRepository([makeTemplate({ isPublished: true })]),
+      emitter,
+    );
+
+    await useCase.execute({
+      userId: 'admin-1',
+      role: UserRole.Admin,
+      templateId: 'template-1',
+      patch: { isPublished: true },
+    });
+
+    expect(emit.mock.calls.map((c: unknown[]) => c[0])).toEqual([
+      'template.updated',
+    ]);
+  });
+
+  it('asks the repository to enforce unpublished-only for non-admins, not admins', async () => {
+    const repository = new InMemoryTemplateRepository([makeTemplate()]);
+    const useCase = new UpdateTemplateUseCase(repository, emitter);
+
+    await useCase.execute({
+      userId: 'user-1',
+      role: UserRole.User,
+      templateId: 'template-1',
+      patch: { title: 'A' },
+    });
+    await useCase.execute({
+      userId: 'admin-1',
+      role: UserRole.Admin,
+      templateId: 'template-1',
+      patch: { title: 'B' },
+    });
+
+    expect(repository.updateCalls.map((c) => c.options)).toEqual([
+      { onlyIfUnpublished: true },
+      { onlyIfUnpublished: false },
+    ]);
+  });
+
+  it('maps a concurrent publish detected by the repository to 403 and emits nothing', async () => {
+    const repository = new InMemoryTemplateRepository([makeTemplate()]);
+    repository.update = () => Promise.reject(new TemplatePublishedError());
+    const useCase = new UpdateTemplateUseCase(repository, emitter);
+
+    await expect(
+      useCase.execute({
+        userId: 'user-1',
+        role: UserRole.User,
+        templateId: 'template-1',
+        patch: { title: 'Late edit' },
+      }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(emit).not.toHaveBeenCalled();
   });
 });

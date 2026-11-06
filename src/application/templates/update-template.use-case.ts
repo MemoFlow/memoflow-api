@@ -1,7 +1,15 @@
 import { ForbiddenException, Inject, Injectable } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import {
+  TEMPLATE_PUBLISHED_EVENT,
+  TEMPLATE_UNPUBLISHED_EVENT,
+  TEMPLATE_UPDATED_EVENT,
+} from '../../domain/audit/audit-events';
+import type { TemplateAuditEventPayload } from '../../domain/audit/audit-events';
 import { Template } from '../../domain/templates/template.entity';
 import { UserRole } from '../../domain/users/user-role';
 import { TEMPLATE_REPOSITORY } from '../../domain/templates/template.repository';
+import { TemplatePublishedError } from '../../domain/templates/template.repository';
 import type { TemplateRepository } from '../../domain/templates/template.repository';
 import { assertTemplateEditable } from './template-access';
 import {
@@ -35,6 +43,7 @@ export class UpdateTemplateUseCase {
   constructor(
     @Inject(TEMPLATE_REPOSITORY)
     private readonly templateRepository: TemplateRepository,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async execute(input: UpdateTemplateInput): Promise<Template> {
@@ -58,9 +67,42 @@ export class UpdateTemplateUseCase {
     }
 
     const { sections, ...rest } = input.patch;
-    return this.templateRepository.update(input.templateId, {
-      ...rest,
-      sections: sections?.map(toTemplateSectionData),
+    let updated: Template;
+    try {
+      // The early checks above give a fast answer; this makes them hold
+      // against a concurrent publish by re-checking under a row lock.
+      updated = await this.templateRepository.update(
+        input.templateId,
+        { ...rest, sections: sections?.map(toTemplateSectionData) },
+        { onlyIfUnpublished: input.role !== UserRole.Admin },
+      );
+    } catch (err) {
+      if (err instanceof TemplatePublishedError) {
+        throw new ForbiddenException(
+          'Only an admin can modify a published template',
+        );
+      }
+      throw err;
+    }
+
+    const base: TemplateAuditEventPayload = {
+      userId: input.userId,
+      templateId: updated.id,
+    };
+    this.eventEmitter.emit(TEMPLATE_UPDATED_EVENT, {
+      ...base,
+      changedFields: Object.entries(input.patch)
+        .filter(([, value]) => value !== undefined)
+        .map(([key]) => key),
     });
+    if (updated.isPublished !== editable.isPublished) {
+      this.eventEmitter.emit(
+        updated.isPublished
+          ? TEMPLATE_PUBLISHED_EVENT
+          : TEMPLATE_UNPUBLISHED_EVENT,
+        base,
+      );
+    }
+    return updated;
   }
 }

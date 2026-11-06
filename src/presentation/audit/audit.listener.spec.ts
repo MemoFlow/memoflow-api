@@ -1,12 +1,22 @@
 import {
   AUTH_LOGIN_EVENT,
   AUTH_LOGIN_FAILED_EVENT,
+  AUTH_LOGIN_THROTTLED_EVENT,
   AUTH_LOGOUT_EVENT,
   CONNECTOR_REVOKED_EVENT,
   PROMPT_ACTIVATED_EVENT,
   PROMPT_CREATED_EVENT,
   SUGGESTION_REVIEWED_EVENT,
+  TEMPLATE_CREATED_EVENT,
+  TEMPLATE_DELETED_EVENT,
+  TEMPLATE_PUBLISHED_EVENT,
+  TEMPLATE_UNPUBLISHED_EVENT,
+  TEMPLATE_UPDATED_EVENT,
 } from '../../domain/audit/audit-events';
+import {
+  USER_DISABLED_EVENT,
+  USER_ENABLED_EVENT,
+} from '../../domain/users/user-events';
 import { RecordAuditEventUseCase } from '../../application/audit/record-audit-event.use-case';
 import { AuditListener } from './audit.listener';
 
@@ -150,4 +160,91 @@ describe('AuditListener', () => {
       });
     },
   );
+
+  it.each([
+    ['onTemplateCreated', TEMPLATE_CREATED_EVENT],
+    ['onTemplateUpdated', TEMPLATE_UPDATED_EVENT],
+    ['onTemplatePublished', TEMPLATE_PUBLISHED_EVENT],
+    ['onTemplateUnpublished', TEMPLATE_UNPUBLISHED_EVENT],
+    ['onTemplateDeleted', TEMPLATE_DELETED_EVENT],
+  ] as const)(
+    '%s records the acting user and template id',
+    async (method, action) => {
+      const useCase = makeUseCase();
+      useCase.execute.mockResolvedValue(undefined as never);
+      const listener = new AuditListener(
+        useCase as unknown as RecordAuditEventUseCase,
+      );
+
+      await listener[method]({ userId: 'user-1', templateId: 't-1' });
+
+      expect(useCase.execute).toHaveBeenCalledWith({
+        action,
+        userId: 'user-1',
+        metadata: { templateId: 't-1' },
+        ip: null,
+      });
+    },
+  );
+
+  it('includes changedFields (names only) on template.updated', async () => {
+    const useCase = makeUseCase();
+    useCase.execute.mockResolvedValue(undefined as never);
+    const listener = new AuditListener(
+      useCase as unknown as RecordAuditEventUseCase,
+    );
+
+    await listener.onTemplateUpdated({
+      userId: 'user-1',
+      templateId: 't-1',
+      changedFields: ['title', 'sections'],
+    });
+
+    expect(useCase.execute).toHaveBeenCalledWith({
+      action: TEMPLATE_UPDATED_EVENT,
+      userId: 'user-1',
+      metadata: { templateId: 't-1', changedFields: ['title', 'sections'] },
+      ip: null,
+    });
+  });
+
+  it.each([
+    ['onUserDisabled', USER_DISABLED_EVENT],
+    ['onUserEnabled', USER_ENABLED_EVENT],
+  ] as const)(
+    '%s records the acting admin and the target user',
+    async (method, action) => {
+      const useCase = makeUseCase();
+      useCase.execute.mockResolvedValue(undefined as never);
+      const listener = new AuditListener(
+        useCase as unknown as RecordAuditEventUseCase,
+      );
+
+      await listener[method]({ userId: 'target-1', actorId: 'admin-1' });
+
+      expect(useCase.execute).toHaveBeenCalledWith({
+        action,
+        userId: 'admin-1',
+        metadata: { targetUserId: 'target-1' },
+        ip: null,
+      });
+    },
+  );
+
+  it('maps auth.login_throttled with a null userId and the email', async () => {
+    const useCase = makeUseCase();
+    useCase.execute.mockResolvedValue(undefined as never);
+    const listener = new AuditListener(
+      useCase as unknown as RecordAuditEventUseCase,
+    );
+
+    await listener.onAuthLoginThrottled({ userId: null, email: 'a@b.com' });
+
+    expect(useCase.execute).toHaveBeenCalledWith({
+      action: AUTH_LOGIN_THROTTLED_EVENT,
+      userId: null,
+      metadata: { email: 'a@b.com' },
+      ip: null,
+    });
+  });
 });

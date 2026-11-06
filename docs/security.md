@@ -166,6 +166,60 @@ production), and re-check on every environment's secret rotation:
       (unset keeps Sentry a complete no-op, see "Error tracking / observability"
       above), but a deliberate choice per environment, not an oversight; currently
       set on `development` only — still unset on staging/production.
+- [ ] `POSTGRES_SSL=true` with `POSTGRES_SSL_REJECT_UNAUTHORIZED` left at its default
+      (`true`) — see "Postgres TLS". Boot fails on staging/production if it is `false`.
+- [ ] Swagger is not served: it is on only for `NODE_ENV` `development` and `test`;
+      staging, production and any other value serve neither `/docs` nor the OpenAPI JSON.
+- [ ] Each tier has its own broker credentials, with queue permissions restricted to
+      what it needs — see "Message broker".
+
+## Postgres TLS
+
+With `POSTGRES_SSL=true` the app verifies the database server's certificate and
+hostname, in both the runtime connection and the TypeORM CLI data source. Neon
+presents a publicly trusted chain, so no setting is needed there.
+`POSTGRES_SSL_REJECT_UNAUTHORIZED=false` exists only for a private-CA database on
+`development`; boot and migrations fail with that value on staging and production. Any
+value other than `true` or `false` (or unset or blank) fails boot, so a typo can't
+disable verification.
+
+## Swagger exposure
+
+Swagger UI (`/docs`) and the OpenAPI JSON are served only when `NODE_ENV` is
+`development` or `test`. It is an allowlist, so staging, production and any unknown
+tier have no API documentation endpoint.
+
+## Message broker
+
+Planning jobs use RabbitMQ (`RABBITMQ_URL`) to talk to the context engine.
+
+- Each tier (development, staging, production) uses its own broker credentials, never
+  shared across tiers.
+- Queue permissions are restricted to what that tier needs: the API publishes to
+  `ctx.gather.requests` and consumes `ctx.gather.results`; nothing broader.
+- **Trust boundary:** messages arriving from the broker are treated as coming from the
+  context engine. Anyone holding broker credentials can therefore feed planning
+  jobs, so those credentials are secrets to be rotated like any other.
+
+Each tier needs its own credentials with those restricted permissions, set through
+`RABBITMQ_URL` on that tier's service.
+
+## Audit coverage
+
+Beyond login, logout, password, connector and prompt events, `audit_logs` records:
+`template.created`, `template.updated` (with the names of the changed fields, not their
+values), `template.published`, `template.unpublished`, `template.deleted`,
+`user.disabled`, `user.enabled`, `user.role_changed` and `auth.login_throttled`. For
+admin actions the acting admin is the row's user and the target account is in
+metadata. Role changes come from `npm run admin:promote`, which records them with no
+acting user. Rows hold ids and field names, never template content.
+
+Template edits by non-admins are checked against the stored published state at write
+time, so an edit that races an admin publish is refused with `403`.
+
+Reconnecting a connector replaces the stored reference and revokes the previous
+Composio account (best effort; a failed revoke is logged and does not fail the
+reconnect).
 
 ## SSRF note (item 23)
 
