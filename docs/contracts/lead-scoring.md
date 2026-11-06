@@ -1,7 +1,7 @@
 # Onboarding and Lead Scoring API Contract
 
-> **Status: draft, not implemented.** Every route below returns `404` until it ships, so
-> mock from this document until then. Once review ends, the contract is frozen: additive
+> **Status: implemented on `feature/lead-scoring` (not yet merged or deployed).** Routes
+> are live only in environments that have this branch. The shapes are frozen: additive
 > changes only, and any breaking change is announced first.
 > **Audience:** the MemoFlow frontend team.
 
@@ -176,7 +176,7 @@ interface LeadDetail extends LeadSummary {
 | --- | --- |
 | `tier` | optional `LeadTier` |
 | `onboarding_completed`, `marketing_opt_in` | optional; exactly `true` or `false`, anything else gets `400` |
-| `page` | integer, default `1`; below 1 is clamped to 1, a non-integer gets `400` |
+| `page` | integer, default `1`; below 1 is clamped to 1, above 1,000,000,000 is clamped to 1,000,000,000, a non-integer gets `400` |
 | `limit` | integer, default `25`; outside 1..100 is clamped, a non-integer gets `400` |
 
 The response returns the `page` and `limit` actually applied. A page past the end returns

@@ -90,6 +90,13 @@ via `@nestjs/jwt` and validated by Passport-JWT.
 | `DELETE` | `/connectors/:id` | JWT | owner-scoped; revokes the Composio connection, sets status `revoked`; returns **204** |
 | `GET` | `/gamification/me` | JWT | the caller's `xp`/`level`, awarded milestones, and today's active daily missions with progress/completed |
 | `GET` | `/gamification/leaderboard` | JWT | top users by `xp`; `?limit=` optional (default 10, max 50); entries carry `is_me` (no `user_id`) |
+| `GET` | `/onboarding/me` | JWT | the caller's onboarding answers (`completed: false` before the first submit) |
+| `PUT` | `/onboarding/me` | JWT | submits all onboarding answers, replacing earlier ones; body is snake_case |
+| `PUT` | `/onboarding/me/consent` | JWT | changes only `marketing_opt_in`; **409** before the first submit |
+| `POST` | `/lead-signals` | JWT | records a behaviour signal (`export_paywall_hit`); returns **204** |
+| `GET` | `/leads` | JWT (admin) | paged leads by stored score; filters `tier`, `onboarding_completed`, `marketing_opt_in`; returns `{ items, total, page, limit }` |
+| `GET` | `/leads/stats` | JWT (admin) | aggregate lead counts and answer distributions |
+| `GET` | `/leads/:id` | JWT (admin) | lead detail with score breakdown, onboarding answers and signals |
 
 Protected routes require `Authorization: Bearer <accessToken>`. Full request/response
 shapes are in Swagger (`/docs`).

@@ -233,6 +233,22 @@ socket.on('planning.error',     (p) => {/* { jobId, message } — e.g. subscribe
    environments only) / `planning.completed` / `planning.failed`; if the socket
    drops, fall back to `GET /planning-jobs/:id`.
 
+## 9. Onboarding and lead scoring
+
+The "Personnalise ton espace" answers, marketing consent, paywall signals and the admin
+lead views are specified in [`../contracts/lead-scoring.md`](../contracts/lead-scoring.md)
+(implemented on `feature/lead-scoring`, shapes frozen, additive changes only). Routes:
+`GET/PUT /onboarding/me`, `PUT /onboarding/me/consent`, `POST /lead-signals`, and admin
+`GET /leads`, `GET /leads/stats`, `GET /leads/:id`. Score and tier appear only on admin
+routes; never show a user their own score.
+
+Two things differ from the rest of the API:
+
+- `GET /leads` returns the **first paginated envelope** in the API:
+  `{ items, total, page, limit }`. Other list routes return bare arrays.
+- **JSON request bodies on these routes are snake_case** (`due_date`, `marketing_opt_in`),
+  unlike the documents routes, whose bodies are camelCase.
+
 ## Notes & non-final surfaces
 
 - The planning `result` payload is a **stub echo** today; its final shape

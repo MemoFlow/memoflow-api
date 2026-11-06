@@ -393,6 +393,15 @@ work already flagged as deferred in the sections above, not a numbered feature:
   admin-only template publishing, owner-scoped user reads, leaderboard `is_me`
   (replacing `user_id`), account disable/enable, and `npm run admin:promote`. See
   [`docs/security.md`](security.md#role-model).
+- **Onboarding and lead scoring — ◐ implemented, not merged**
+  ([plan](plans/2026-11-06-lead-scoring.md), [contract](contracts/lead-scoring.md)).
+  Implemented on `feature/lead-scoring`: onboarding answers with marketing consent,
+  paywall signals, stored lead score and tier, and admin lead list/stats/detail routes;
+  tables `onboarding_profiles`, `lead_signals`, `lead_scores` plus `users.created_at`
+  (migration `CreateLeadScoring`). Known limitation: the stored score is only
+  recalculated on submit, signal and connector status change, not as time passes, so
+  due-date points go stale. Out of scope: sending email (`suggested_action` is advice
+  for admins only).
 - **gRPC and a separate Context-module worker deployment remain explicitly deferred**
   (Context module async backbone section) — only built if a concrete trigger from
   `ARCHITECTURE.md`'s "Service boundaries" appears.
