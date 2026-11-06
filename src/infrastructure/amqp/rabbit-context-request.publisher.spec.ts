@@ -1,5 +1,8 @@
 import { ConnectorProvider } from '../../domain/connectors/connector-provider';
-import { RabbitContextRequestPublisher } from './rabbit-context-request.publisher';
+import {
+  PUBLISH_TIMEOUT_MS,
+  RabbitContextRequestPublisher,
+} from './rabbit-context-request.publisher';
 import { RabbitMqConnectionProvider } from './rabbitmq-connection.provider';
 import {
   CONTEXT_EXCHANGE,
@@ -9,6 +12,7 @@ import {
 function makeConnectionProvider(channel: {
   waitForConnect: jest.Mock;
   publish: jest.Mock;
+  on?: jest.Mock;
 }): RabbitMqConnectionProvider {
   const createChannel = jest.fn().mockReturnValue(channel);
   const connection = { createChannel };
@@ -22,6 +26,7 @@ describe('RabbitContextRequestPublisher', () => {
     const channel = {
       waitForConnect: jest.fn().mockResolvedValue(undefined),
       publish: jest.fn().mockResolvedValue(true),
+      on: jest.fn(),
     };
     const publisher = new RabbitContextRequestPublisher(
       makeConnectionProvider(channel),
@@ -63,6 +68,7 @@ describe('RabbitContextRequestPublisher', () => {
       messageId: '665f1a2b3c4d5e6f7a8b9c0d',
       correlationId: '665f1a2b3c4d5e6f7a8b9c0d',
       persistent: true,
+      timeout: PUBLISH_TIMEOUT_MS,
     });
     expect(typeof options.timestamp).toBe('number');
   });
@@ -71,6 +77,7 @@ describe('RabbitContextRequestPublisher', () => {
     const channel = {
       waitForConnect: jest.fn().mockResolvedValue(undefined),
       publish: jest.fn().mockResolvedValue(true),
+      on: jest.fn(),
     };
     const publisher = new RabbitContextRequestPublisher(
       makeConnectionProvider(channel),
@@ -90,5 +97,47 @@ describe('RabbitContextRequestPublisher', () => {
       Buffer,
     ];
     expect(JSON.parse(content.toString('utf-8')).connectors).toEqual([]);
+  });
+
+  it('does not wait for the broker in onModuleInit', async () => {
+    const channel = {
+      waitForConnect: jest.fn().mockReturnValue(new Promise(() => undefined)),
+      publish: jest.fn(),
+      on: jest.fn(),
+    };
+    const publisher = new RabbitContextRequestPublisher(
+      makeConnectionProvider(channel),
+    );
+
+    await publisher.onModuleInit();
+
+    expect(channel.waitForConnect).not.toHaveBeenCalled();
+    expect(channel.on).toHaveBeenCalledWith('connect', expect.any(Function));
+    expect(channel.on).toHaveBeenCalledWith('error', expect.any(Function));
+  });
+
+  it('rethrows a publish failure as a client-safe error and logs the original', async () => {
+    const channel = {
+      waitForConnect: jest.fn(),
+      publish: jest.fn().mockRejectedValue(new Error('timeout')),
+      on: jest.fn(),
+    };
+    const publisher = new RabbitContextRequestPublisher(
+      makeConnectionProvider(channel),
+    );
+    const logSpy = jest
+      .spyOn((publisher as any).logger, 'error')
+      .mockImplementation(() => undefined);
+
+    await expect(
+      publisher.publishGatherRequest({
+        jobId: 'job-1',
+        userId: 'user-1',
+        prompt: 'hi',
+        connectors: [],
+        requestedAt: new Date('2026-01-01T00:00:00.000Z'),
+      }),
+    ).rejects.toThrow(new Error('Context engine unavailable'));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('timeout'));
   });
 });
