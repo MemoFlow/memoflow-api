@@ -34,6 +34,15 @@ export class UserOrmEntity {
   })
   lastActiveAt: Date;
 
+  // Account creation time. Persistence-only: not on the domain User entity or
+  // any user route; read by the lead read repository as `registered_at`.
+  @Column({
+    type: 'timestamptz',
+    name: 'created_at',
+    default: () => 'now()',
+  })
+  createdAt: Date;
+
   @Column({ type: 'timestamptz', name: 'disabled_at', nullable: true })
   disabledAt: Date | null;
 }
