@@ -18,15 +18,14 @@ the real-time WebSocket. The live, always-current reference is **Swagger at `/do
 All non-auth endpoints require a **Bearer JWT**. Tokens are short-lived
 (default **15 min** — `JWT_EXPIRES_IN`); plan for re-login/refresh on `401`.
 
-### Register — `POST /auth/register` → `201`
+### Register — `POST /auth/register` → `202`
 ```json
 // request
 { "email": "ada@example.com", "password": "min-8-chars", "display_name": "Ada Lovelace" }
-// response (UserResponseDto — never includes password)
-{ "id": "uuid", "email": "ada@example.com", "display_name": "Ada Lovelace",
-  "role": "user", "xp": 0, "level": 1, "last_active_at": "2026-07-05T..." }
 ```
-`409` if the email is already registered.
+Always answers `202` with the same `{ "message": "..." }` body, whether or not the address
+already has an account, so don't expect a user object or a `409`. Send the user to a "check
+your email" screen. They log in separately once they can.
 
 ### Login — `POST /auth/login` → `200`
 ```json
@@ -35,10 +34,24 @@ All non-auth endpoints require a **Bearer JWT**. Tokens are short-lived
 // response
 { "accessToken": "eyJhbGciOi..." }
 ```
-`401` on bad credentials. Send the token on every subsequent call:
+`401` on bad credentials. `429` after 10 attempts for the same email within 15 minutes;
+read the `Retry-After` header (seconds) and disable the form until then. A successful
+login or password reset resets the count. The password length limit below isn't checked on login.
+
+Send the token on every subsequent call:
 ```
 Authorization: Bearer <accessToken>
 ```
+
+### Logout — `POST /auth/logout` (JWT) -> `204`
+Ends **all** of the user's sessions, on every device, not just this one: every token
+issued so far stops working and open WebSocket connections are closed. Discard the
+stored token and send the user to the login screen.
+
+### Password length
+`register`, `reset-password` and `change-password` return `400` when the password is
+over **72 bytes**. It's a byte count, so non-ASCII characters count for 2 to 4 each; a
+length counter in characters will under-report. Show the server's message.
 
 ### Current user — `GET /users/me` (JWT) → `200` `UserResponseDto`
 `GET /users/:id` (JWT) is available for your own id or, for admins, any id; otherwise `404`.
@@ -248,6 +261,10 @@ socket.on('planning.error',     (p) => {/* { jobId, message } — e.g. subscribe
 
 - **Auth failure** (missing/invalid/expired token) → the server disconnects the socket
   immediately (no event). Reconnect with a fresh token.
+- **Sockets end when the token does.** The server disconnects a socket at its JWT's expiry
+  (default 15 min), also with no event. On `disconnect`, get a fresh token (log in again if
+  yours expired) and call `io(...)` again; then `subscribe` to any job you're following.
+  Logout and password changes also drop the socket.
 - **Rooms are server-derived** from the verified token — you only ever receive your own
   jobs; there's no client-supplied room to set.
 - `subscribe {jobId}` replays the job's **current** state once (catch-up), then live
