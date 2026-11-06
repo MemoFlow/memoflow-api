@@ -106,6 +106,11 @@ avoid the round trip.
 - `POST /templates/:id/apply` returns `400` when the template's `doc_type` differs from the document's; offer only templates matching the document's type.
 - `created_by` in template responses is `null` unless the viewer owns the template or is an admin.
 
+### Templates — section `key_points` and `guidance`
+- Template sections carry optional `key_points` (string array or `null`) and `guidance` (string or `null`) in responses; send them as `keyPoints` and `guidance` in request bodies (`keyPoints`: max 50 items of 2000 chars; `guidance`: max 5000 chars).
+- They are guidance to show while the user writes. `POST /templates/:id/apply` does **not** copy them into the document's sections; read them from the template.
+- `PATCH` with `sections` replaces all sections wholesale, so section ids change, and any omitted `keyPoints`/`guidance` become `null`.
+
 ### Leaderboard — `GET /gamification/leaderboard` (JWT)
 **Breaking change:** entries no longer include `user_id`. Each entry has `is_me` (boolean) to identify the caller's own row; do not rely on user ids to match rows.
 
