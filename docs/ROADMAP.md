@@ -411,9 +411,9 @@ work already flagged as deferred in the sections above, not a numbered feature:
   must be set per tier (required at boot in staging/production), and a verified
   sending domain is needed before staging/production; on development verification
   stays off. See [`docs/security.md`](security.md#email-identity).
-- **Onboarding and lead scoring — ◐ implemented, not merged**
+- **Onboarding and lead scoring — ◐ merged to `development`, not yet promoted**
   ([plan](plans/2026-11-06-lead-scoring.md), [contract](contracts/lead-scoring.md)).
-  Implemented on `feature/lead-scoring`: onboarding answers with marketing consent,
+  Merged in PR #67: onboarding answers with marketing consent,
   paywall signals, stored lead score and tier, and admin lead list/stats/detail routes;
   tables `onboarding_profiles`, `lead_signals`, `lead_scores` plus `users.created_at`
   (migration `CreateLeadScoring`). Known limitation: the stored score is only
