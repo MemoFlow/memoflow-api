@@ -804,6 +804,7 @@ describeWithDocker()('Leads (e2e)', () => {
         instagram: 0,
         linkedin: 0,
         google: 0,
+        ai: 0,
         other: 0,
       });
     });

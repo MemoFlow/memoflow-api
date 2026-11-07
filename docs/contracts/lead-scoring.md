@@ -30,7 +30,7 @@ type DeliverableType = 'thesis' | 'apprenticeship_report' | 'internship_report' 
 type AcademicLevel = 'l3' | 'm1' | 'm2' | 'other';
 type WorkTool = 'trello' | 'notion' | 'teams' | 'slack' | 'email' | 'drive' | 'other';
 type Blocker = 'getting_started' | 'finding_past_work' | 'structuring' | 'writing' | 'lack_of_time';
-type AcquisitionChannel = 'friend' | 'school' | 'tiktok' | 'instagram' | 'linkedin' | 'google' | 'other';
+type AcquisitionChannel = 'friend' | 'school' | 'tiktok' | 'instagram' | 'linkedin' | 'google' | 'ai' | 'other'; // ai = ChatGPT ou une autre IA
 type LeadSignalType = 'export_paywall_hit';
 type LeadTier = 'hot' | 'warm' | 'cold';
 type ConnectorProvider = 'trello' | 'notion' | 'github'; // what can be connected, unlike WorkTool
@@ -212,7 +212,7 @@ Distributions count submitted answers only, and multi-select fields (`work_tools
     "academic_level": { "l3": 15, "m1": 20, "m2": 35, "other": 5 },
     "work_tools": { "trello": 18, "notion": 30, "teams": 40, "slack": 12, "email": 55, "drive": 48, "other": 6 },
     "blockers": { "getting_started": 30, "finding_past_work": 42, "structuring": 25, "writing": 20, "lack_of_time": 38 },
-    "acquisition_channel": { "friend": 28, "school": 12, "tiktok": 12, "instagram": 7, "linkedin": 4, "google": 10, "other": 2 }
+    "acquisition_channel": { "friend": 28, "school": 12, "tiktok": 12, "instagram": 7, "linkedin": 4, "google": 10, "ai": 0, "other": 2 }
   }
 }
 ```

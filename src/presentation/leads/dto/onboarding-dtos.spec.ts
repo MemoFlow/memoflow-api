@@ -33,6 +33,12 @@ describe('SubmitOnboardingDto', () => {
     });
   });
 
+  it('accepts acquisition_channel "ai"', async () => {
+    await expect(
+      submit({ ...validBody(), acquisition_channel: 'ai' }),
+    ).resolves.toMatchObject({ acquisition_channel: 'ai' });
+  });
+
   it.each(['false', 'true', 'FALSE', '0', 1, 0, null])(
     'rejects non-boolean marketing_opt_in %p with 400 (implicit conversion must not coerce)',
     async (value) => {
