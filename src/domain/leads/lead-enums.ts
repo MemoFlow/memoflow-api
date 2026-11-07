@@ -47,6 +47,7 @@ export enum AcquisitionChannel {
   Instagram = 'instagram',
   Linkedin = 'linkedin',
   Google = 'google',
+  Ai = 'ai',
   Other = 'other',
 }
 
