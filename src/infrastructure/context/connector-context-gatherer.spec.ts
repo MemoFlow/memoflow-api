@@ -40,4 +40,21 @@ describe('ConnectorContextGatherer', () => {
       gatherer.gather({ userId: 'user-1', connectors: [], prompt: 'hi' }),
     ).rejects.toThrow('context engine unavailable');
   });
+
+  it('formats the request (trims prompt, dedupes connectors) before delegating', async () => {
+    const engine = new FakeContextEngine();
+    const gatherer = new ConnectorContextGatherer(engine);
+
+    await gatherer.gather({
+      userId: 'user-1',
+      connectors: ['trello', 'trello'],
+      prompt: '  Plan   my chapter  ',
+    });
+
+    expect(engine.lastInput).toEqual({
+      userId: 'user-1',
+      connectors: ['trello'],
+      prompt: 'Plan my chapter',
+    });
+  });
 });
