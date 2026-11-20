@@ -7,6 +7,9 @@ import {
 import { Section } from '../../domain/documents/section.entity';
 import { SECTION_REPOSITORY } from '../../domain/documents/section.repository';
 import type { SectionRepository } from '../../domain/documents/section.repository';
+import { STORAGE_LIMITS } from '../../domain/limits/storage-limits';
+import type { StorageLimits } from '../../domain/limits/storage-limits';
+import { conflictOnLimit } from '../shared/limit-conflict';
 import { GetDocumentUseCase } from './get-document.use-case';
 import { wordCount } from './word-count';
 
@@ -25,6 +28,7 @@ export class CreateSectionUseCase {
     @Inject(SECTION_REPOSITORY)
     private readonly sectionRepository: SectionRepository,
     private readonly eventEmitter: EventEmitter2,
+    @Inject(STORAGE_LIMITS) private readonly limits: StorageLimits,
   ) {}
 
   async execute(input: CreateSectionInput): Promise<Section> {
@@ -38,14 +42,21 @@ export class CreateSectionUseCase {
     const maxOrder = await this.sectionRepository.maxOrder(input.documentId);
     const order = (maxOrder ?? -1) + 1;
 
-    const section = await this.sectionRepository.create({
-      documentId: input.documentId,
-      title: input.title,
-      content: input.content,
-      order,
-      status: input.status ?? 'draft',
-      wordCount: wordCount(input.content),
-    });
+    // The cap is enforced inside the repository (document-row lock + count
+    // + insert in one transaction); over it, 409.
+    const section = await conflictOnLimit(() =>
+      this.sectionRepository.create(
+        {
+          documentId: input.documentId,
+          title: input.title,
+          content: input.content,
+          order,
+          status: input.status ?? 'draft',
+          wordCount: wordCount(input.content),
+        },
+        { maxPerDocument: this.limits.maxSectionsPerDocument },
+      ),
+    );
 
     // Emitted only after the write commits.
     const payload: SectionCreatedEventPayload = {

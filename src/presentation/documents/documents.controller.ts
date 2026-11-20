@@ -46,6 +46,7 @@ export class DocumentsController {
   @ApiOperation({ summary: 'Create a document' })
   @ApiResponse({ status: 201, type: DocumentResponseDto })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 409, description: 'Per-user document limit reached' })
   async create(
     @CurrentUser() user: User,
     @Body() dto: CreateDocumentDto,

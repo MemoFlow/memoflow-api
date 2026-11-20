@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import {
   DocumentVersion,
   DocumentVersionMetadata,
@@ -15,6 +15,7 @@ import {
   SectionRepository,
   SectionTitle,
 } from '../../domain/documents/section.repository';
+import { DEFAULT_STORAGE_LIMITS } from '../../domain/limits/storage-limits';
 import { SaveVersionUseCase } from './save-version.use-case';
 
 class InMemoryDocumentRepository implements DocumentRepository {
@@ -114,6 +115,12 @@ class InMemoryDocumentVersionRepository implements DocumentVersionRepository {
     return Promise.reject(new Error('not implemented'));
   }
 
+  countByDocumentId(documentId: string): Promise<number> {
+    return Promise.resolve(
+      this.versions.filter((v) => v.documentId === documentId).length,
+    );
+  }
+
   maxVersion(documentId: string): Promise<number | null> {
     const existing = this.versions.filter((v) => v.documentId === documentId);
     return Promise.resolve(
@@ -163,6 +170,7 @@ describe('SaveVersionUseCase', () => {
       documentRepository,
       sectionRepository,
       documentVersionRepository,
+      DEFAULT_STORAGE_LIMITS,
     );
 
     const result = await useCase.execute({
@@ -203,6 +211,7 @@ describe('SaveVersionUseCase', () => {
       documentRepository,
       sectionRepository,
       documentVersionRepository,
+      DEFAULT_STORAGE_LIMITS,
     );
 
     const result = await useCase.execute({
@@ -225,6 +234,7 @@ describe('SaveVersionUseCase', () => {
       documentRepository,
       sectionRepository,
       documentVersionRepository,
+      DEFAULT_STORAGE_LIMITS,
     );
 
     const first = await useCase.execute({
@@ -245,6 +255,7 @@ describe('SaveVersionUseCase', () => {
       new InMemoryDocumentRepository([]),
       new InMemorySectionRepository([]),
       new InMemoryDocumentVersionRepository(),
+      DEFAULT_STORAGE_LIMITS,
     );
 
     await expect(
@@ -260,10 +271,34 @@ describe('SaveVersionUseCase', () => {
       documentRepository,
       new InMemorySectionRepository([]),
       new InMemoryDocumentVersionRepository(),
+      DEFAULT_STORAGE_LIMITS,
     );
 
     await expect(
       useCase.execute({ userId: 'user-2', documentId: 'doc-1' }),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  it('answers 409 once the document holds the maximum number of versions', async () => {
+    const documentRepository = new InMemoryDocumentRepository([makeDocument()]);
+    const documentVersionRepository = new InMemoryDocumentVersionRepository();
+    const useCase = new SaveVersionUseCase(
+      documentRepository,
+      new InMemorySectionRepository([]),
+      documentVersionRepository,
+      { ...DEFAULT_STORAGE_LIMITS, maxVersionsPerDocument: 2 },
+    );
+    const input = { userId: 'user-1', documentId: 'doc-1' };
+    await useCase.execute(input);
+    await useCase.execute(input);
+    documentVersionRepository.createCalls.length = 0;
+
+    const err: unknown = await useCase.execute(input).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ConflictException);
+    expect((err as ConflictException).message).toBe(
+      'Version limit reached (2)',
+    );
+    expect(documentVersionRepository.createCalls).toEqual([]);
   });
 });

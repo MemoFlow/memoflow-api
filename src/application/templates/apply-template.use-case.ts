@@ -10,6 +10,9 @@ import { DOCUMENT_TEMPLATE_REPOSITORY } from '../../domain/templates/document-te
 import type { DocumentTemplateRepository } from '../../domain/templates/document-template.repository';
 import { TEMPLATE_REPOSITORY } from '../../domain/templates/template.repository';
 import type { TemplateRepository } from '../../domain/templates/template.repository';
+import { STORAGE_LIMITS } from '../../domain/limits/storage-limits';
+import type { StorageLimits } from '../../domain/limits/storage-limits';
+import { conflictOnLimit } from '../shared/limit-conflict';
 import { assertTemplateVisible } from './template-access';
 
 export interface ApplyTemplateInput {
@@ -51,6 +54,7 @@ export class ApplyTemplateUseCase {
     private readonly documentTemplateRepository: DocumentTemplateRepository,
     @Inject(DOCUMENT_REPOSITORY)
     private readonly documentRepository: DocumentRepository,
+    @Inject(STORAGE_LIMITS) private readonly limits: StorageLimits,
   ) {}
 
   async execute(input: ApplyTemplateInput): Promise<ApplyTemplateResult> {
@@ -66,7 +70,7 @@ export class ApplyTemplateUseCase {
     }
 
     // After the ownership check so a mismatch never reveals another user's
-    // document. Exact match: doc types are free-form strings until Phase 4.
+    // document. Exact match.
     if (template.docType !== document.docType) {
       throw new BadRequestException(
         `Template doc type '${template.docType}' does not match document doc type '${document.docType}'`,
@@ -77,18 +81,24 @@ export class ApplyTemplateUseCase {
       (a, b) => a.order - b.order,
     );
 
-    const { documentTemplate, sectionsCreated } =
-      await this.documentTemplateRepository.applyToDocument({
-        documentId: input.documentId,
-        templateId: input.templateId,
-        appliedAt: new Date(),
-        sections: orderedSections.map((section) => ({
-          title: section.title,
-          content: '',
-          status: 'draft',
-          wordCount: 0,
-        })),
-      });
+    // The per-document section cap is checked under the document row lock
+    // inside the repository; over it, 409 and nothing is written.
+    const { documentTemplate, sectionsCreated } = await conflictOnLimit(() =>
+      this.documentTemplateRepository.applyToDocument(
+        {
+          documentId: input.documentId,
+          templateId: input.templateId,
+          appliedAt: new Date(),
+          sections: orderedSections.map((section) => ({
+            title: section.title,
+            content: '',
+            status: 'draft',
+            wordCount: 0,
+          })),
+        },
+        { maxSectionsPerDocument: this.limits.maxSectionsPerDocument },
+      ),
+    );
 
     return {
       documentTemplateId: documentTemplate.id,

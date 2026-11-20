@@ -24,6 +24,14 @@ export interface ApplyToDocumentData {
   sections: ApplyTemplateSectionData[];
 }
 
+export interface ApplyToDocumentOptions {
+  /**
+   * Max sections the document may hold after the append; checked under the
+   * document row lock. Over the cap: `LimitReachedError`, nothing written.
+   */
+  maxSectionsPerDocument: number;
+}
+
 export interface ApplyToDocumentResult {
   documentTemplate: DocumentTemplate;
   sectionsCreated: number;
@@ -36,5 +44,8 @@ export interface DocumentTemplateRepository {
    * failure partway through can't orphan sections without a recorded
    * application (or vice versa).
    */
-  applyToDocument(data: ApplyToDocumentData): Promise<ApplyToDocumentResult>;
+  applyToDocument(
+    data: ApplyToDocumentData,
+    options: ApplyToDocumentOptions,
+  ): Promise<ApplyToDocumentResult>;
 }

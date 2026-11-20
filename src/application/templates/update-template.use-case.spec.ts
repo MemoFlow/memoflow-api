@@ -45,6 +45,7 @@ class InMemoryTemplateRepository implements TemplateRepository {
     const updated = new Template({
       ...existing,
       title: patch.title ?? existing.title,
+      scope: patch.scope ?? existing.scope,
       isPublished: patch.isPublished ?? existing.isPublished,
       sections: patch.sections
         ? patch.sections.map(
@@ -378,5 +379,34 @@ describe('UpdateTemplateUseCase', () => {
       }),
     ).rejects.toThrow(ForbiddenException);
     expect(emit).not.toHaveBeenCalled();
+  });
+
+  it("rejects setting scope 'global' as a non-admin with 403", async () => {
+    const repository = new InMemoryTemplateRepository([makeTemplate()]);
+    const useCase = new UpdateTemplateUseCase(repository, emitter);
+
+    await expect(
+      useCase.execute({
+        userId: 'user-1',
+        role: UserRole.User,
+        templateId: 'template-1',
+        patch: { scope: 'global' },
+      }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(repository.updateCalls).toEqual([]);
+  });
+
+  it("lets an admin set scope 'global'", async () => {
+    const repository = new InMemoryTemplateRepository([makeTemplate()]);
+    const useCase = new UpdateTemplateUseCase(repository, emitter);
+
+    const result = await useCase.execute({
+      userId: 'user-1',
+      role: UserRole.Admin,
+      templateId: 'template-1',
+      patch: { scope: 'global' },
+    });
+
+    expect(result.scope).toBe('global');
   });
 });

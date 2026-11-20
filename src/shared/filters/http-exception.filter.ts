@@ -17,6 +17,22 @@ interface ErrorBody {
   timestamp: string;
 }
 
+interface ClientHttpError extends Error {
+  status: number;
+  expose: true;
+}
+
+function isClientHttpError(exception: unknown): exception is ClientHttpError {
+  if (!(exception instanceof Error)) return false;
+  const { status, expose } = exception as Partial<ClientHttpError>;
+  return (
+    expose === true &&
+    typeof status === 'number' &&
+    status >= 400 &&
+    status < 500
+  );
+}
+
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(HttpExceptionFilter.name);
@@ -41,6 +57,20 @@ export class HttpExceptionFilter implements ExceptionFilter {
         message = (asRecord.message as string | string[]) ?? exception.message;
         error = (asRecord.error as string) ?? exception.name;
       }
+    } else if (isClientHttpError(exception)) {
+      // Errors raised by Express middleware (body-parser: 413 payload too
+      // large, 400 malformed JSON, ...) are not Nest HttpExceptions but carry
+      // a 4xx `status` and `expose: true` — answer them as the client errors
+      // they are instead of a misleading 500.
+      statusCode = exception.status;
+      message = exception.message;
+      error = HttpStatus[exception.status]
+        ? String(HttpStatus[exception.status])
+            .toLowerCase()
+            .split('_')
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(' ')
+        : exception.name;
     } else {
       // Unexpected error: log the details, never leak them to the client.
       this.logger.error(

@@ -17,6 +17,11 @@ import { TemplateOrmEntity } from './infrastructure/persistence/templates/templa
 import { TemplatesController } from './presentation/templates/templates.controller';
 import { UsersModule } from './users.module';
 
+import {
+  DEFAULT_STORAGE_LIMITS,
+  STORAGE_LIMITS,
+} from './domain/limits/storage-limits';
+
 /**
  * Roadmap item 3 — templates (PG). Imports `DocumentsModule` to reuse
  * `DOCUMENT_REPOSITORY` (exported there) in `ApplyTemplateUseCase` to
@@ -43,6 +48,7 @@ import { UsersModule } from './users.module';
       provide: DOCUMENT_TEMPLATE_REPOSITORY,
       useClass: DocumentTemplateTypeOrmRepository,
     },
+    { provide: STORAGE_LIMITS, useValue: DEFAULT_STORAGE_LIMITS },
     CreateTemplateUseCase,
     ListTemplatesUseCase,
     GetTemplateUseCase,

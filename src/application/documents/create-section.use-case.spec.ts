@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { randomUUID } from 'node:crypto';
 import { SECTION_CREATED_EVENT } from '../../domain/documents/document-events';
@@ -7,9 +7,12 @@ import { DocumentRepository } from '../../domain/documents/document.repository';
 import { Section } from '../../domain/documents/section.entity';
 import {
   CreateSectionData,
+  CreateSectionOptions,
   SectionRepository,
   SectionTitle,
 } from '../../domain/documents/section.repository';
+import { LimitReachedError } from '../../domain/limits/storage-limits';
+import { DEFAULT_STORAGE_LIMITS } from '../../domain/limits/storage-limits';
 import { CreateSectionUseCase } from './create-section.use-case';
 import { GetDocumentUseCase } from './get-document.use-case';
 
@@ -44,7 +47,18 @@ class InMemoryDocumentRepository implements DocumentRepository {
 class InMemorySectionRepository implements SectionRepository {
   private readonly sections: Section[] = [];
 
-  create(data: CreateSectionData): Promise<Section> {
+  create(
+    data: CreateSectionData,
+    options: CreateSectionOptions,
+  ): Promise<Section> {
+    if (
+      this.sections.filter((s) => s.documentId === data.documentId).length >=
+      options.maxPerDocument
+    ) {
+      return Promise.reject(
+        new LimitReachedError('section', options.maxPerDocument),
+      );
+    }
     const section = new Section({
       id: randomUUID(),
       documentId: data.documentId,
@@ -121,6 +135,7 @@ describe('CreateSectionUseCase', () => {
       new GetDocumentUseCase(documentRepository),
       sectionRepository,
       eventEmitter as unknown as EventEmitter2,
+      DEFAULT_STORAGE_LIMITS,
     );
 
     const section = await useCase.execute({
@@ -141,6 +156,7 @@ describe('CreateSectionUseCase', () => {
       new GetDocumentUseCase(documentRepository),
       sectionRepository,
       eventEmitter as unknown as EventEmitter2,
+      DEFAULT_STORAGE_LIMITS,
     );
 
     const section = await useCase.execute({
@@ -161,6 +177,7 @@ describe('CreateSectionUseCase', () => {
       new GetDocumentUseCase(documentRepository),
       sectionRepository,
       eventEmitter as unknown as EventEmitter2,
+      DEFAULT_STORAGE_LIMITS,
     );
 
     const first = await useCase.execute({
@@ -188,6 +205,7 @@ describe('CreateSectionUseCase', () => {
       new GetDocumentUseCase(documentRepository),
       sectionRepository,
       eventEmitter as unknown as EventEmitter2,
+      DEFAULT_STORAGE_LIMITS,
     );
 
     await useCase.execute({
@@ -218,6 +236,7 @@ describe('CreateSectionUseCase', () => {
       new GetDocumentUseCase(documentRepository),
       sectionRepository,
       eventEmitter as unknown as EventEmitter2,
+      DEFAULT_STORAGE_LIMITS,
     );
 
     await expect(
@@ -238,6 +257,7 @@ describe('CreateSectionUseCase', () => {
       new GetDocumentUseCase(documentRepository),
       sectionRepository,
       eventEmitter as unknown as EventEmitter2,
+      DEFAULT_STORAGE_LIMITS,
     );
 
     const section = await useCase.execute({
@@ -253,5 +273,35 @@ describe('CreateSectionUseCase', () => {
       documentId: 'doc-1',
       sectionId: section.id,
     });
+  });
+
+  it('answers 409 once the document holds the maximum number of sections', async () => {
+    const documentRepository = new InMemoryDocumentRepository([makeDocument()]);
+    const sectionRepository = new InMemorySectionRepository();
+    const eventEmitter = makeEventEmitter();
+    const useCase = new CreateSectionUseCase(
+      new GetDocumentUseCase(documentRepository),
+      sectionRepository,
+      eventEmitter as unknown as EventEmitter2,
+      { ...DEFAULT_STORAGE_LIMITS, maxSectionsPerDocument: 2 },
+    );
+    const input = {
+      userId: 'user-1',
+      documentId: 'doc-1',
+      title: 'S',
+      content: 'x',
+    };
+    await useCase.execute(input);
+    await useCase.execute(input);
+    eventEmitter.emit.mockClear();
+
+    const err: unknown = await useCase.execute(input).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ConflictException);
+    expect((err as ConflictException).message).toBe(
+      'Section limit reached (2)',
+    );
+    expect(eventEmitter.emit).not.toHaveBeenCalled();
+    expect(await sectionRepository.findByDocument('doc-1')).toHaveLength(2);
   });
 });

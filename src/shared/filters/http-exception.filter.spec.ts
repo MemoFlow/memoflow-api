@@ -96,4 +96,30 @@ describe('HttpExceptionFilter', () => {
     const body = json.mock.calls[0][0] as { statusCode: number };
     expect(body.statusCode).toBe(400);
   });
+
+  it('answers a body-parser style 4xx error (status + expose) as that status, not a 500', () => {
+    const { host, json, status } = createHost();
+    const error = Object.assign(new Error('request entity too large'), {
+      status: 413,
+      expose: true,
+      type: 'entity.too.large',
+    });
+
+    filter.catch(error, host);
+
+    expect(status).toHaveBeenCalledWith(413);
+    expect(json.mock.calls[0][0]).toMatchObject({
+      statusCode: 413,
+      message: 'request entity too large',
+      error: 'Payload Too Large',
+    });
+    expect(Sentry.captureException).not.toHaveBeenCalled();
+  });
+
+  it('still treats an error with a 5xx status or no expose flag as unexpected', () => {
+    const { host, status } = createHost();
+    filter.catch(Object.assign(new Error('x'), { status: 413 }), host);
+    expect(status).toHaveBeenCalledWith(500);
+    expect(Sentry.captureException).toHaveBeenCalledTimes(1);
+  });
 });

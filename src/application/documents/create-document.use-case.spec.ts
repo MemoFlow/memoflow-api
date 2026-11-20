@@ -1,17 +1,32 @@
+import { ConflictException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { randomUUID } from 'node:crypto';
 import { DOCUMENT_CREATED_EVENT } from '../../domain/documents/document-events';
 import { Document } from '../../domain/documents/document.entity';
 import {
   CreateDocumentData,
+  CreateDocumentOptions,
   DocumentRepository,
 } from '../../domain/documents/document.repository';
+import { LimitReachedError } from '../../domain/limits/storage-limits';
+import { DEFAULT_STORAGE_LIMITS } from '../../domain/limits/storage-limits';
 import { CreateDocumentUseCase } from './create-document.use-case';
 
 class InMemoryDocumentRepository implements DocumentRepository {
   private readonly documents: Document[] = [];
 
-  create(data: CreateDocumentData): Promise<Document> {
+  create(
+    data: CreateDocumentData,
+    options: CreateDocumentOptions,
+  ): Promise<Document> {
+    if (
+      this.documents.filter((d) => d.userId === data.userId).length >=
+      options.maxPerUser
+    ) {
+      return Promise.reject(
+        new LimitReachedError('document', options.maxPerUser),
+      );
+    }
     const document = new Document({
       id: randomUUID(),
       userId: data.userId,
@@ -54,6 +69,7 @@ describe('CreateDocumentUseCase', () => {
     const useCase = new CreateDocumentUseCase(
       repository,
       eventEmitter as unknown as EventEmitter2,
+      DEFAULT_STORAGE_LIMITS,
     );
 
     const document = await useCase.execute({
@@ -75,6 +91,7 @@ describe('CreateDocumentUseCase', () => {
     const useCase = new CreateDocumentUseCase(
       repository,
       eventEmitter as unknown as EventEmitter2,
+      DEFAULT_STORAGE_LIMITS,
     );
 
     const document = await useCase.execute({
@@ -95,6 +112,7 @@ describe('CreateDocumentUseCase', () => {
     const useCase = new CreateDocumentUseCase(
       repository,
       eventEmitter as unknown as EventEmitter2,
+      DEFAULT_STORAGE_LIMITS,
     );
 
     const document = await useCase.execute({
@@ -108,5 +126,42 @@ describe('CreateDocumentUseCase', () => {
       userId: 'user-1',
       documentId: document.id,
     });
+  });
+
+  it('answers 409 once the user holds the maximum number of documents', async () => {
+    const repository = new InMemoryDocumentRepository();
+    const useCase = new CreateDocumentUseCase(
+      repository,
+      makeEventEmitter() as unknown as EventEmitter2,
+      { ...DEFAULT_STORAGE_LIMITS, maxDocumentsPerUser: 2 },
+    );
+    const input = { userId: 'user-1', title: 'Doc', docType: 'blog' };
+    await useCase.execute(input);
+    await useCase.execute(input);
+
+    const err: unknown = await useCase.execute(input).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ConflictException);
+    expect((err as ConflictException).message).toBe(
+      'Document limit reached (2)',
+    );
+    // Another user is unaffected, and no event fires for the rejected create.
+    await expect(
+      useCase.execute({ ...input, userId: 'user-2' }),
+    ).resolves.toBeDefined();
+  });
+
+  it('does not emit document.created when the cap rejects the create', async () => {
+    const eventEmitter = makeEventEmitter();
+    const useCase = new CreateDocumentUseCase(
+      new InMemoryDocumentRepository(),
+      eventEmitter as unknown as EventEmitter2,
+      { ...DEFAULT_STORAGE_LIMITS, maxDocumentsPerUser: 0 },
+    );
+
+    await expect(
+      useCase.execute({ userId: 'u', title: 'T', docType: 'blog' }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(eventEmitter.emit).not.toHaveBeenCalled();
   });
 });

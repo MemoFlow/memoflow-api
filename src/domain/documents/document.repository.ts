@@ -17,8 +17,20 @@ export interface UpdateDocumentData {
   styleConfig?: Record<string, unknown>;
 }
 
+export interface CreateDocumentOptions {
+  /**
+   * Max documents the owner may hold. Enforced in the same transaction that
+   * locks the owner's user row, then counts, then inserts — so concurrent
+   * creates can't overshoot. Over the cap: `LimitReachedError`.
+   */
+  maxPerUser: number;
+}
+
 export interface DocumentRepository {
-  create(data: CreateDocumentData): Promise<Document>;
+  create(
+    data: CreateDocumentData,
+    options: CreateDocumentOptions,
+  ): Promise<Document>;
   findById(id: string): Promise<Document | null>;
   findByUser(userId: string): Promise<Document[]>;
   update(id: string, patch: UpdateDocumentData): Promise<Document>;

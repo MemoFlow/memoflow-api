@@ -5,39 +5,52 @@ import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsObject,
   IsOptional,
   IsString,
   MaxLength,
+  Max,
   Min,
   ValidateNested,
 } from 'class-validator';
+import { DOC_TYPES } from '../../../domain/documents/doc-types';
+import { DEFAULT_STORAGE_LIMITS } from '../../../domain/limits/storage-limits';
+import { TEMPLATE_SCOPES } from '../../../domain/templates/template-scopes';
+import {
+  MAX_JSON_OBJECT_BYTES,
+  MaxJsonSize,
+} from '../../../shared/validators/max-json-size.validator';
 import {
   UniqueSectionOrders,
   WordCountRangeValid,
 } from './template-section.validators';
 
 export class TemplateSectionDto {
-  @ApiProperty({ example: 'Introduction' })
+  @ApiProperty({ example: 'Introduction', maxLength: 200 })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(200)
   title: string;
 
-  @ApiProperty({ example: 0 })
+  @ApiProperty({ example: 0, maximum: 10_000 })
   @IsInt()
   @Min(0)
+  @Max(10_000)
   order: number;
 
-  @ApiProperty({ example: 50 })
+  @ApiProperty({ example: 50, maximum: 100_000 })
   @IsInt()
   @Min(0)
+  @Max(100_000)
   wordCountMin: number;
 
-  @ApiProperty({ example: 200 })
+  @ApiProperty({ example: 200, maximum: 100_000 })
   @IsInt()
   @Min(0)
+  @Max(100_000)
   @WordCountRangeValid()
   wordCountMax: number;
 
@@ -73,24 +86,33 @@ export class TemplateSectionDto {
 }
 
 export class CreateTemplateDto {
-  @ApiProperty({ example: 'Standard Blog Post' })
+  @ApiProperty({ example: 'Standard Blog Post', maxLength: 200 })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(200)
   title: string;
 
-  @ApiProperty({ example: 'blog' })
+  @ApiProperty({ example: 'blog', enum: DOC_TYPES })
   @IsString()
-  @IsNotEmpty()
+  @IsIn(DOC_TYPES)
   docType: string;
 
-  @ApiProperty({ example: 'personal' })
+  @ApiProperty({
+    example: 'personal',
+    enum: TEMPLATE_SCOPES,
+    description: "'global' is admin-only (403 otherwise)",
+  })
   @IsString()
-  @IsNotEmpty()
+  @IsIn(TEMPLATE_SCOPES)
   scope: string;
 
-  @ApiPropertyOptional({ example: {} })
+  @ApiPropertyOptional({
+    example: {},
+    description: `Free-form object, at most ${MAX_JSON_OBJECT_BYTES} bytes serialized`,
+  })
   @IsOptional()
   @IsObject()
+  @MaxJsonSize()
   styleConfig?: Record<string, unknown>;
 
   @ApiPropertyOptional({ example: false })
@@ -98,9 +120,14 @@ export class CreateTemplateDto {
   @IsBoolean()
   isPublished?: boolean;
 
-  @ApiProperty({ type: [TemplateSectionDto] })
+  @ApiProperty({
+    type: [TemplateSectionDto],
+    minItems: 1,
+    maxItems: DEFAULT_STORAGE_LIMITS.maxSectionsPerDocument,
+  })
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(DEFAULT_STORAGE_LIMITS.maxSectionsPerDocument)
   @ValidateNested({ each: true })
   @Type(() => TemplateSectionDto)
   @UniqueSectionOrders()

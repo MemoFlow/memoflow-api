@@ -52,7 +52,14 @@ export class TemplatesController {
   @ApiOperation({ summary: 'Create a template' })
   @ApiResponse({ status: 201, type: TemplateResponseDto })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 403, description: 'Only an admin can publish' })
+  @ApiResponse({
+    status: 403,
+    description: "Only an admin can publish or use scope 'global'",
+  })
+  @ApiResponse({
+    status: 409,
+    description: 'Per-user template limit reached (admins exempt)',
+  })
   async create(
     @CurrentUser() user: User,
     @Body() dto: CreateTemplateDto,
@@ -72,7 +79,8 @@ export class TemplatesController {
 
   @Get()
   @ApiOperation({
-    summary: 'List templates visible to the current user (published or own)',
+    summary:
+      'List templates visible to the current user (published or own), paged (limit 1..100, default 20; offset)',
   })
   @ApiResponse({ status: 200, type: [TemplateResponseDto] })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
@@ -84,6 +92,8 @@ export class TemplatesController {
       userId: user.id,
       docType: query.docType,
       scope: query.scope,
+      limit: query.limit,
+      offset: query.offset,
     });
     return templates.map((template) =>
       TemplateResponseDto.fromEntity(template, user),
@@ -115,7 +125,8 @@ export class TemplatesController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({
     status: 403,
-    description: 'Only an admin can publish or modify a published template',
+    description:
+      "Only an admin can publish, set scope 'global', or modify a published template",
   })
   @ApiResponse({ status: 404, description: 'Template not found' })
   async update(
@@ -165,6 +176,10 @@ export class TemplatesController {
   @ApiResponse({
     status: 404,
     description: 'Template or document not found',
+  })
+  @ApiResponse({
+    status: 409,
+    description: "Applying would exceed the document's section limit",
   })
   async apply(
     @CurrentUser() user: User,

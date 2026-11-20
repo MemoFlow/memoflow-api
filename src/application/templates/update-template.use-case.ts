@@ -11,6 +11,7 @@ import { UserRole } from '../../domain/users/user-role';
 import { TEMPLATE_REPOSITORY } from '../../domain/templates/template.repository';
 import { TemplatePublishedError } from '../../domain/templates/template.repository';
 import type { TemplateRepository } from '../../domain/templates/template.repository';
+import { GLOBAL_TEMPLATE_SCOPE } from '../../domain/templates/template-scopes';
 import { assertTemplateEditable } from './template-access';
 import {
   TemplateSectionInput,
@@ -54,6 +55,15 @@ export class UpdateTemplateUseCase {
       input.templateId,
       input.role,
     );
+
+    if (
+      input.patch.scope === GLOBAL_TEMPLATE_SCOPE &&
+      input.role !== UserRole.Admin
+    ) {
+      throw new ForbiddenException(
+        "Only an admin can set a template's scope to 'global'",
+      );
+    }
 
     if (input.role !== UserRole.Admin) {
       if (editable.isPublished) {

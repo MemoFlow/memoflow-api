@@ -2,8 +2,10 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Section } from '../../../domain/documents/section.entity';
+import { LimitReachedError } from '../../../domain/limits/storage-limits';
 import {
   CreateSectionData,
+  CreateSectionOptions,
   ReplaceSectionData,
   SectionRepository,
   SectionTitle,
@@ -20,17 +22,35 @@ export class SectionTypeOrmRepository implements SectionRepository {
     private readonly dataSource: DataSource,
   ) {}
 
-  async create(data: CreateSectionData): Promise<Section> {
-    const entity = this.repository.create({
-      documentId: data.documentId,
-      title: data.title,
-      content: data.content,
-      order: data.order,
-      status: data.status,
-      wordCount: data.wordCount,
+  async create(
+    data: CreateSectionData,
+    options: CreateSectionOptions,
+  ): Promise<Section> {
+    return this.dataSource.transaction(async (manager) => {
+      // Lock the parent document row so concurrent creates for the same
+      // document serialize: count-then-insert can't both see "one slot left".
+      await manager.query('SELECT id FROM documents WHERE id = $1 FOR UPDATE', [
+        data.documentId,
+      ]);
+      const repo = manager.getRepository(SectionOrmEntity);
+      const count = await repo.count({
+        where: { documentId: data.documentId },
+      });
+      if (count >= options.maxPerDocument) {
+        throw new LimitReachedError('section', options.maxPerDocument);
+      }
+      const saved = await repo.save(
+        repo.create({
+          documentId: data.documentId,
+          title: data.title,
+          content: data.content,
+          order: data.order,
+          status: data.status,
+          wordCount: data.wordCount,
+        }),
+      );
+      return this.toDomain(saved);
     });
-    const saved = await this.repository.save(entity);
-    return this.toDomain(saved);
   }
 
   async findById(id: string): Promise<Section | null> {

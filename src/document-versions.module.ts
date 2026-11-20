@@ -13,6 +13,11 @@ import {
 } from './infrastructure/persistence/document-versions/document-version.schema';
 import { DocumentVersionsController } from './presentation/document-versions/document-versions.controller';
 
+import {
+  DEFAULT_STORAGE_LIMITS,
+  STORAGE_LIMITS,
+} from './domain/limits/storage-limits';
+
 /**
  * Roadmap item 4 — versioning (Mongo `document_versions`). Imports
  * `DocumentsModule` to reuse `DOCUMENT_REPOSITORY`/`SECTION_REPOSITORY`
@@ -34,6 +39,7 @@ import { DocumentVersionsController } from './presentation/document-versions/doc
       provide: DOCUMENT_VERSION_REPOSITORY,
       useClass: DocumentVersionMongooseRepository,
     },
+    { provide: STORAGE_LIMITS, useValue: DEFAULT_STORAGE_LIMITS },
     SaveVersionUseCase,
     ListVersionsUseCase,
     GetVersionUseCase,

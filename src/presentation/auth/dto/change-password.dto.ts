@@ -1,14 +1,15 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, MinLength } from 'class-validator';
+import { IsNotEmpty, IsString, MaxLength, MinLength } from 'class-validator';
 import {
   BCRYPT_MAX_PASSWORD_BYTES,
   MaxByteLength,
 } from '../../../shared/validators/max-byte-length.validator';
 
 export class ChangePasswordDto {
-  @ApiProperty()
+  @ApiProperty({ maxLength: 1024 })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(1024)
   current_password: string;
 
   @ApiProperty({

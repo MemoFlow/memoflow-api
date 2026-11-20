@@ -28,6 +28,8 @@ export interface DocumentVersionRepository {
   findById(id: string): Promise<DocumentVersion | null>;
   /** Metadata-only projection (no `sectionsSnapshot`), ordered `savedAt` desc. */
   findByDocumentId(documentId: string): Promise<DocumentVersionMetadata[]>;
+  /** Number of saved versions for a document. */
+  countByDocumentId(documentId: string): Promise<number>;
   /** Highest existing `version` for a document, or `null` if it has none yet. */
   maxVersion(documentId: string): Promise<number | null>;
 }

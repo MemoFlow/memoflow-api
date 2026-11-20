@@ -33,8 +33,20 @@ export interface SectionTitle {
   title: string;
 }
 
+export interface CreateSectionOptions {
+  /**
+   * Max sections one document may hold. Enforced in the same transaction
+   * that locks the document row, then counts, then inserts. Over the cap:
+   * `LimitReachedError`.
+   */
+  maxPerDocument: number;
+}
+
 export interface SectionRepository {
-  create(data: CreateSectionData): Promise<Section>;
+  create(
+    data: CreateSectionData,
+    options: CreateSectionOptions,
+  ): Promise<Section>;
   findById(id: string): Promise<Section | null>;
   /** Ordered by `order` ASC. */
   findByDocument(documentId: string): Promise<Section[]>;
