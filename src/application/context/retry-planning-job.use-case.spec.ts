@@ -262,7 +262,7 @@ describe('planning rate-limit retry', () => {
     );
     // Make the failure escape runClaimedPlanning's own catch: its failed
     // write throws once.
-    const original = repo.updateStatus;
+    const original: typeof repo.updateStatus = repo.updateStatus.bind(repo);
     let thrown = false;
     repo.updateStatus = (id: string, patch: Record<string, unknown>) => {
       if (!thrown) {
