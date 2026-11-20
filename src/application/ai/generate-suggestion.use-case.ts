@@ -59,6 +59,8 @@ const INVALID_OUTPUT_MESSAGE = 'The AI provider returned an invalid response';
 
 export interface GenerateSuggestionInput {
   userId: string;
+  /** From the freshly loaded user: admins have no daily AI quota. */
+  isAdmin?: boolean;
   sectionId: string;
   featureType: string;
 }
@@ -73,7 +75,7 @@ export interface GenerateSuggestionInput {
  * 4. the actual generation call is wrapped so typed provider errors map to
  *    the right HTTP status (422 refusal, 502 truncated/other provider
  *    failure, 503 rate-limited/unavailable) instead of a bare 500; a spent
- *    daily quota is 429 with a retry hint, an unreachable one 503.
+ *    daily quota (never for admins) is 429 with a retry hint, an unreachable one 503.
  *
  * Before the generator, the validated output of an identical earlier request
  * by the same user is looked up. A hit makes no provider call and uses no
@@ -186,6 +188,7 @@ export class GenerateSuggestionUseCase {
           user,
           featureType: input.featureType,
           userId: input.userId,
+          quotaExempt: input.isAdmin === true,
         });
         this.assertValidOutput(generated.suggestedText, {
           nonce,

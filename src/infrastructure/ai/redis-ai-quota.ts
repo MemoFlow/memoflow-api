@@ -19,7 +19,8 @@ const EXPIRY_GRACE_SECONDS = 3600;
  * Atomic. Reads both counters first: if either is at its limit, rejects and
  * increments nothing. Otherwise (mode `reserve`) increments both and sets the
  * absolute expiry. Mode `check` stops after the reads and counts nothing.
- * Returns 1 when allowed, 0 when a limit is spent.
+ * Returns 1 when allowed, 2 when the user cap is spent, 3 when only the
+ * global cap is spent (the user cap takes precedence).
  *
  * KEYS: user counter, global counter.
  * ARGV: user limit, global limit, expiry (unix seconds), mode.
@@ -27,8 +28,11 @@ const EXPIRY_GRACE_SECONDS = 3600;
 export const QUOTA_SCRIPT = `
 local userCount = tonumber(redis.call('GET', KEYS[1]) or '0')
 local globalCount = tonumber(redis.call('GET', KEYS[2]) or '0')
-if userCount >= tonumber(ARGV[1]) or globalCount >= tonumber(ARGV[2]) then
-  return 0
+if userCount >= tonumber(ARGV[1]) then
+  return 2
+end
+if globalCount >= tonumber(ARGV[2]) then
+  return 3
 end
 if ARGV[4] == 'reserve' then
   redis.call('INCR', KEYS[1])
@@ -126,8 +130,25 @@ export class RedisAiQuota implements AiQuota, OnModuleDestroy {
       );
       throw new AiQuotaUnavailableError();
     }
+    if (allowed === 2) {
+      throw new AiQuotaExceededError(
+        'user',
+        this.userLimit,
+        retryAfterSeconds,
+        now,
+      );
+    }
+    if (allowed === 3) {
+      throw new AiQuotaExceededError(
+        'global',
+        this.globalLimit,
+        retryAfterSeconds,
+        now,
+      );
+    }
     if (allowed !== 1) {
-      throw new AiQuotaExceededError(retryAfterSeconds);
+      // An unknown script verdict is not a green light.
+      throw new AiQuotaUnavailableError();
     }
   }
 }

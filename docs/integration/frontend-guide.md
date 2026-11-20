@@ -255,7 +255,7 @@ Free models may log what they receive or train on it, so AI needs recorded conse
 ```
 `featureType` is one of `suggestion`, `rewrite`, `summarize`, `expand`. Any other value
 (including `planning`, which is internal) returns `404`, the same as a section that isn't
-yours. `422` if the section text is too long for AI processing (limit set by the server). `502` if the model's reply was unusable or the provider failed. `503` if AI is unavailable right now (this includes the usage limits being unavailable). `429` when the daily AI limit is spent: each user gets a daily number of attempts and the whole service has a shared one, counted together with planning jobs and reset at UTC midnight; the `Retry-After` header gives the seconds until then, so show a "try again later" message and disable the button until it passes. A repeated identical request (same section text and feature) can return quickly from a cache as a **new** suggestion row, so do not assume each `201` took a model call. The response (`SuggestionResponseDto`) includes
+yours. `422` if the section text is too long for AI processing (limit set by the server). `502` if the model's reply was unusable or the provider failed. `503` if AI is unavailable right now (this includes the usage limits being unavailable). `429` when the daily AI limit is spent: each user gets a daily number of attempts and the whole service has a shared one, counted together with planning jobs and reset at UTC midnight. Admin accounts have no daily limit. The body's `error` says which cap was hit (`AI_QUOTA_EXCEEDED` for the user's own, `AI_GLOBAL_QUOTA_EXCEEDED` for the service-wide one) and `message` is ready to show: "You've used all 10 AI requests for today. Your quota resets at 00:00 UTC (in 3 h 20 min)." or "MemoFlow's AI capacity for today has been reached. It resets at 00:00 UTC (in 45 min)." Show that message instead of a generic "too many attempts", and disable the button until the `Retry-After` header's seconds pass (the login throttle `429` is separate and has a different `error`). A repeated identical request (same section text and feature) can return quickly from a cache as a **new** suggestion row, so do not assume each `201` took a model call. The response (`SuggestionResponseDto`) includes
 `prompt_version` and `model` (the model that served the call; `null` on suggestions
 created before models were recorded). `GET /sections/:sectionId/suggestions` lists them
 newest first, with the same fields.
@@ -274,7 +274,7 @@ applying such a suggestion, because applying it as is would put the placeholder 
 | `403` `error: AI_CONSENT_REQUIRED` | both create routes | no consent, or for an older notice | show the notice (6.1) |
 | `404` | suggestions | section not yours, or `featureType` not user-invocable | check the id and feature type |
 | `422` | suggestions | section text over the server's input limit, or the model refused | ask the user to shorten the section |
-| `429` + `Retry-After` | both create routes | daily AI limit spent (per user or service-wide, shared by suggestions and planning, resets at UTC midnight) | disable AI actions until the header's seconds pass |
+| `429` `error: AI_QUOTA_EXCEEDED` / `AI_GLOBAL_QUOTA_EXCEEDED` + `Retry-After` | both create routes | daily AI limit spent: the user's own / service-wide (shared by suggestions and planning, resets at 00:00 UTC; admins exempt) | show `message` as is (it states the time to reset), disable AI actions until the header's seconds pass |
 | `502` | suggestions | the reply was unusable or the provider failed | offer a retry; each retry counts against the daily limit |
 | `503` | both create routes | AI not configured, provider down, or usage counters unreachable | "AI is unavailable right now" |
 
@@ -294,7 +294,7 @@ immediately and follow progress over the WebSocket (REST polling is the fallback
 ```
 `400` if `prompt` is longer than 5000 characters, or if `connectors` is not a list of at most 10 unique provider names (up to 64 characters each) that are all your **active** connections. `429` with `Retry-After` (seconds until UTC midnight) when the daily AI limit is spent; it is the same limit as suggestions, shared per user and across the service. `503` if the job couldn't be enqueued or the AI usage limits are unavailable.
 
-A job can also fail later with `error_code` `AI_CONSENT_REQUIRED` (the user withdrew consent, or the notice changed, before the job ran: send the user back to the consent screen) or `USER_INACTIVE` (the account was disabled before the job ran), `AI_QUOTA_EXCEEDED` (the daily limit was spent by the time it ran) or `AI_QUOTA_UNAVAILABLE` (limits could not be checked). Show the fixed `error_message`; for `AI_QUOTA_EXCEEDED` offer a retry the next day.
+A job can also fail later with `error_code` `AI_CONSENT_REQUIRED` (the user withdrew consent, or the notice changed, before the job ran: send the user back to the consent screen) or `USER_INACTIVE` (the account was disabled before the job ran), `AI_QUOTA_EXCEEDED` (the user's own daily limit was spent by the time it ran), `AI_GLOBAL_QUOTA_EXCEEDED` (the service-wide limit was) or `AI_QUOTA_UNAVAILABLE` (limits could not be checked). Show the `error_message`, which for both quota codes states when the quota resets; offer a retry after that.
 
 Provider limits: if the AI provider is rate-limited, the job is not failed. It stays `running`/`planning` and is retried automatically (about 30 s, then about 120 s later, longer if the provider asks), with `planning_retry_count` and `next_retry_at` set in `GET /planning-jobs/:id` while a retry is pending. If it is still limited after 2 retries the job fails with `AI_PROVIDER_RATE_LIMITED`; show "AI is busy, try again shortly" and let the user resubmit. `AI_PROVIDER_UNAVAILABLE` means the provider is down; show a generic "AI is temporarily unavailable" message.
 
@@ -338,12 +338,12 @@ On `completed`:
 
 - **Consent screen** for `ai_consent.required`, with accept, `409` re-fetch and withdrawal in settings (6.1). Disable AI actions until consent is recorded.
 - **Two different `403`s** on AI create routes: `Email not verified` and `AI_CONSENT_REQUIRED`; tell them apart by the `error` field.
-- **Daily limit:** `429` with `Retry-After` on both create routes; a planning job can also fail later with `AI_QUOTA_EXCEEDED`. Disable the AI buttons until the limit resets (UTC midnight) and say why.
+- **Daily limit:** `429` with `Retry-After` on both create routes, `error` `AI_QUOTA_EXCEEDED` (user) or `AI_GLOBAL_QUOTA_EXCEEDED` (service-wide); a planning job can also fail later with the same codes. Show the API `message` (not a generic "too many attempts") and disable the AI buttons until the limit resets (00:00 UTC). Admins have no limit.
 - **Unavailable AI:** `503` on both create routes (not configured, provider down, limits unreachable), and `AI_QUOTA_UNAVAILABLE` on a job.
 - **Cache:** an identical repeat request can return quickly as a **new** suggestion row; do not assume each `201` took a model call.
 - **`[REDACTED]`** can appear in `suggested_text`; warn the user before applying it.
 - **Model output is untrusted:** show it for review, never apply it automatically, never render it as HTML.
-- **Planning job failures** (`failed` + `error_code`): `AI_CONSENT_REQUIRED` (back to the consent screen), `USER_INACTIVE`, `AI_QUOTA_EXCEEDED` (retry tomorrow), `AI_QUOTA_UNAVAILABLE`, `AI_PROVIDER_RATE_LIMITED` ("AI is busy, try again shortly"), `AI_PROVIDER_UNAVAILABLE`. Show the fixed `error_message` as is.
+- **Planning job failures** (`failed` + `error_code`): `AI_CONSENT_REQUIRED` (back to the consent screen), `USER_INACTIVE`, `AI_QUOTA_EXCEEDED` / `AI_GLOBAL_QUOTA_EXCEEDED` (retry after the reset), `AI_QUOTA_UNAVAILABLE`, `AI_PROVIDER_RATE_LIMITED` ("AI is busy, try again shortly"), `AI_PROVIDER_UNAVAILABLE`. Show the fixed `error_message` as is.
 - **Citations:** resolve `[S1]` markers against `result.sources`; ids are per job; `context_used.retrieval.failed` means the plan ran without the user's sections.
 - **WebSocket** drops at token expiry and on logout; reconnect and `subscribe` again (section 7). Use `GET /planning-jobs/:id` as the fallback.
 - **Notice version:** a new `AI_NOTICE_VERSION` forces everyone to accept again; handle it without a reload.

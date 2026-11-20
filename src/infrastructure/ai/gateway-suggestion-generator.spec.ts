@@ -134,6 +134,22 @@ describe('GatewaySuggestionGenerator', () => {
     expect(quota.reserved).toEqual(['user-1', 'user-1']);
   });
 
+  it('makes no reservation for a quota-exempt (admin) caller', async () => {
+    const quota = new FakeAiQuota(0);
+    const complete = jest.fn((request: LlmCompletionRequest) =>
+      request.beforeAttempt().then(() => completion({ suggested_text: 'x' })),
+    );
+    const generator = new GatewaySuggestionGenerator(
+      makeGateway(complete),
+      quota,
+    );
+
+    await expect(
+      generator.generate({ ...input, quotaExempt: true }),
+    ).resolves.toBeDefined();
+    expect(quota.reserved).toEqual([]);
+  });
+
   it('surfaces a quota error thrown by the hook unchanged', async () => {
     const quota = new FakeAiQuota(0);
     const complete = jest.fn((request: LlmCompletionRequest) =>

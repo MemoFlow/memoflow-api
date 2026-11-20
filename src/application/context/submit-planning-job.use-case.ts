@@ -30,6 +30,8 @@ export const INVALID_CONNECTORS_MESSAGE =
 
 export interface SubmitPlanningJobInput {
   userId: string;
+  /** From the freshly loaded user: admins have no daily AI quota. */
+  isAdmin?: boolean;
   prompt: string;
   connectors?: string[];
   documentId?: string;
@@ -76,8 +78,8 @@ export class SubmitPlanningJobUseCase {
 
     // With a real provider the worker spends quota, so a user who is already
     // over a cap hears it now instead of from a failed job. Nothing is
-    // counted here. The stub planner makes no provider call and costs nothing.
-    if (this.llmGateway.isAvailable()) {
+    // counted here. Admins have no quota. The stub planner makes no provider call and costs nothing.
+    if (this.llmGateway.isAvailable() && !input.isAdmin) {
       try {
         await this.aiQuota.check(input.userId);
       } catch (err) {

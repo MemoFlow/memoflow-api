@@ -10,7 +10,9 @@ export interface AiQuota {
    * Counts one provider attempt against the user's and the global daily cap.
    * If either cap is spent nothing is counted. Throws `AiQuotaExceededError`
    * when a cap is spent and `AiQuotaUnavailableError` when the counters can't
-   * be reached (fail closed).
+   * be reached (fail closed). The error says which cap blocked (`scope`;
+   * the user cap wins when both are spent). Admins have no quota: callers
+   * skip `reserve`/`check` for them instead of passing them here.
    */
   reserve(userId: string): Promise<void>;
 

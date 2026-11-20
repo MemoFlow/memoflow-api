@@ -13,6 +13,8 @@ export interface GenerateSuggestionInput {
   featureType: string;
   /** The user the call is made for; its provider attempts count against them. */
   userId: string;
+  /** True for admins: no daily AI quota, so no reservation is made. */
+  quotaExempt?: boolean;
 }
 
 export interface GenerateSuggestionOutput {

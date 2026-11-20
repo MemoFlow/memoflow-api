@@ -788,7 +788,7 @@ describe('GenerateSuggestionUseCase', () => {
 
     it('maps a spent quota to a 429 carrying the retry hint and a fixed message', async () => {
       const { useCase, generator } = setup();
-      generator.error = new AiQuotaExceededError(1234);
+      generator.error = new AiQuotaExceededError('user', 10, 1234);
 
       const err = await run(useCase).catch((e: unknown) => e);
 
@@ -797,9 +797,39 @@ describe('GenerateSuggestionUseCase', () => {
       expect((err as AiQuotaThrottledException).retryAfterSeconds).toBe(1234);
       expect((err as AiQuotaThrottledException).getResponse()).toEqual({
         statusCode: 429,
-        message: 'Daily AI usage limit reached. Try again later.',
-        error: 'Too Many Requests',
+        message:
+          "You've used all 10 AI requests for today. Your quota resets at 00:00 UTC (in 21 min).",
+        error: 'AI_QUOTA_EXCEEDED',
       });
+    });
+
+    it('maps a spent global cap to AI_GLOBAL_QUOTA_EXCEEDED', async () => {
+      const { useCase, generator } = setup();
+      generator.error = new AiQuotaExceededError('global', 40, 7200);
+
+      const err = await run(useCase).catch((e: unknown) => e);
+
+      expect((err as AiQuotaThrottledException).getResponse()).toEqual({
+        statusCode: 429,
+        message:
+          "MemoFlow's AI capacity for today has been reached. It resets at 00:00 UTC (in 2 h).",
+        error: 'AI_GLOBAL_QUOTA_EXCEEDED',
+      });
+    });
+
+    it('tells the generator an admin is quota-exempt, and a regular user is not', async () => {
+      const admin = setup();
+      await admin.useCase.execute({
+        userId: 'user-1',
+        isAdmin: true,
+        sectionId: 'section-1',
+        featureType: 'suggestion',
+      });
+      const regular = setup();
+      await run(regular.useCase);
+
+      expect(admin.generator.calls[0].quotaExempt).toBe(true);
+      expect(regular.generator.calls[0].quotaExempt).toBe(false);
     });
 
     it('maps an unreachable quota to 503', async () => {
@@ -858,7 +888,7 @@ describe('GenerateSuggestionUseCase', () => {
 
     it('stores nothing when generation fails', async () => {
       const { useCase, generator, cache } = setup();
-      generator.error = new AiQuotaExceededError(5);
+      generator.error = new AiQuotaExceededError('user', 10, 5);
 
       await expect(useCase.execute(input)).rejects.toBeInstanceOf(
         AiQuotaThrottledException,

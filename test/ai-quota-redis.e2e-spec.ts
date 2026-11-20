@@ -129,6 +129,21 @@ describeWithDocker()('AI quota Lua script on real Redis (e2e)', () => {
     expect(await count(globalQuotaKey(DAY))).toBe(8);
   });
 
+  it('reports which cap blocked, the user cap first when both are spent', async () => {
+    const scopeOf = async (call: Promise<void>) =>
+      ((await call.catch((e: unknown) => e)) as AiQuotaExceededError).scope;
+
+    for (let i = 0; i < 5; i += 1) await quota.reserve('a');
+    expect(await scopeOf(quota.reserve('a'))).toBe('user');
+
+    for (let i = 0; i < 3; i += 1) await quota.reserve('b');
+    // Global (8 of 8) is spent and 'c' has room.
+    expect(await scopeOf(quota.reserve('c'))).toBe('global');
+    expect(await scopeOf(quota.check('c'))).toBe('global');
+    // 'a' is over both caps: the user cap wins.
+    expect(await scopeOf(quota.check('a'))).toBe('user');
+  });
+
   it('check counts nothing, and agrees with reserve', async () => {
     expect(await outcome(quota.check('a'))).toBe('ok');
     expect(await count(userQuotaKey('a', DAY))).toBe(0);

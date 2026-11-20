@@ -4,6 +4,8 @@ import {
   PromptTexts,
 } from '../../domain/ai/prompt-definitions';
 import {
+  AI_GLOBAL_QUOTA_EXCEEDED_CODE,
+  AI_QUOTA_EXCEEDED_CODE,
   AiQuotaExceededError,
   AiQuotaUnavailableError,
 } from '../../domain/ai/ai-quota.errors';
@@ -22,6 +24,7 @@ import {
   SuggestionGeneratorRateLimitedError,
   SuggestionGeneratorUnavailableError,
 } from '../../domain/ai/suggestion-generation.errors';
+import type { User } from '../../domain/users/user.entity';
 import type { UserRepository } from '../../domain/users/user.repository';
 import type {
   LlmPlanner,
@@ -113,6 +116,8 @@ function planningResultStrings(result: PlanningResult): string[] {
 export interface GuardedPlanRequest {
   /** The job owner, whose quota the planner's provider attempts use. */
   userId: string;
+  /** Admins have no daily AI quota; read from the freshly loaded user. */
+  quotaExempt?: boolean;
   prompt: string;
   /** Raw connector context, for planners that read it directly (the stub). */
   context: Record<string, unknown>;
@@ -143,6 +148,7 @@ export async function planWithGuards(
   );
   const result = await planner.plan({
     userId: request.userId,
+    quotaExempt: request.quotaExempt,
     prompt: request.prompt,
     context: request.context,
     ...rendered,
@@ -186,7 +192,7 @@ export function safeFailureMessage(err: unknown): string {
 
 /** The `error_code` to record on a job that failed with `err`. */
 export function failureErrorCode(err: unknown): string {
-  if (err instanceof AiQuotaExceededError) return 'AI_QUOTA_EXCEEDED';
+  if (err instanceof AiQuotaExceededError) return err.code;
   if (err instanceof AiQuotaUnavailableError) return 'AI_QUOTA_UNAVAILABLE';
   if (err instanceof JobUserInactiveError) return USER_INACTIVE_ERROR_CODE;
   if (err instanceof JobConsentRequiredError) {
@@ -211,7 +217,8 @@ export function isExpectedFailureCode(
   code: string | null | undefined,
 ): boolean {
   return (
-    code === 'AI_QUOTA_EXCEEDED' ||
+    code === AI_QUOTA_EXCEEDED_CODE ||
+    code === AI_GLOBAL_QUOTA_EXCEEDED_CODE ||
     code === USER_INACTIVE_ERROR_CODE ||
     code === AI_CONSENT_REQUIRED_CODE ||
     // Free-tier provider limits are expected, not incidents. A provider
@@ -224,16 +231,18 @@ export function isExpectedFailureCode(
  * Before a worker gathers, retrieves or calls a provider for a job, its user
  * must still exist, not be disabled and still have current AI consent (it
  * may have been withdrawn while the job was queued). One helper for both
- * planning paths. Throws `JobUserInactiveError` or `JobConsentRequiredError`; a repository failure propagates, so callers
+ * planning paths. Returns the freshly loaded user (its role decides whether
+ * the daily AI quota applies). Throws `JobUserInactiveError` or `JobConsentRequiredError`; a repository failure propagates, so callers
  * catch it and fail the job rather than leave it in flight.
  */
 export async function assertJobUserActive(
   userRepository: UserRepository,
   userId: string,
-): Promise<void> {
+): Promise<User> {
   const user = await userRepository.findById(userId);
   if (!user || user.isDisabled) throw new JobUserInactiveError();
   if (!user.hasCurrentAiConsent) throw new JobConsentRequiredError();
+  return user;
 }
 
 /** Error name only: messages can echo prompts, context or provider text. */

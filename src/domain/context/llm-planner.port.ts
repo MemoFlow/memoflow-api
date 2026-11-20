@@ -14,6 +14,8 @@ export interface PlanningResult {
 export interface PlanInput {
   /** The job owner; provider attempts count against their quota. */
   userId: string;
+  /** True for admins: no daily AI quota, so no reservation is made. */
+  quotaExempt?: boolean;
   /** Raw request and gathered context (used by the stub planner). */
   prompt: string;
   context: Record<string, unknown>;

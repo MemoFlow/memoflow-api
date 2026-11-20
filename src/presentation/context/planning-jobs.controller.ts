@@ -64,7 +64,7 @@ export class PlanningJobsController {
   @ApiResponse({
     status: 429,
     description:
-      'Daily AI usage limit reached (per user or in total); see the Retry-After header (seconds until the next UTC midnight)',
+      "Daily AI quota reached (admins are exempt). `error` is AI_QUOTA_EXCEEDED when the caller used all their own requests for the day, or AI_GLOBAL_QUOTA_EXCEEDED when MemoFlow's total daily AI capacity is spent; `message` is a user-facing text with the time until the 00:00 UTC reset. The Retry-After header gives the seconds until that reset.",
   })
   @ApiResponse({
     status: 503,
@@ -80,6 +80,7 @@ export class PlanningJobsController {
     try {
       job = await this.submitPlanningJobUseCase.execute({
         userId: user.id,
+        isAdmin: user.isAdmin,
         prompt: dto.prompt,
         connectors: dto.connectors,
         documentId: dto.documentId,

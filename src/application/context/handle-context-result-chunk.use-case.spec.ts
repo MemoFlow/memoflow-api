@@ -780,7 +780,8 @@ describe('HandleContextResultChunkUseCase', () => {
     });
 
     it.each([
-      [new AiQuotaExceededError(60), 'AI_QUOTA_EXCEEDED'],
+      [new AiQuotaExceededError('user', 10, 60), 'AI_QUOTA_EXCEEDED'],
+      [new AiQuotaExceededError('global', 40, 60), 'AI_GLOBAL_QUOTA_EXCEEDED'],
       [new AiQuotaUnavailableError(), 'AI_QUOTA_UNAVAILABLE'],
     ])('records %p as %s', async (error, code) => {
       const repository = new InMemoryPlanningJobRepository();

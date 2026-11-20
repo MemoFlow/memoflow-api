@@ -153,9 +153,11 @@ export class PlanningPipeline {
     resolved: PromptTexts,
     job: Pick<PlanningPipelineJob, 'userId' | 'prompt'>,
     prepared: PreparedPlanningContext,
+    quotaExempt = false,
   ): Promise<ValidatedPlanningResult> {
     const result = await planWithGuards(this.planner, resolved, {
       userId: job.userId,
+      quotaExempt,
       prompt: job.prompt,
       context: prepared.connectorContext,
       renderedContext: prepared.renderedContext,

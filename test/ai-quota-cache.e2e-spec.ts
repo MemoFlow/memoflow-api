@@ -30,7 +30,11 @@ import { stopContainer } from './utils/stop-container';
 
 const USER_LIMIT = 10;
 const GLOBAL_LIMIT = 40;
-const QUOTA_MESSAGE = 'Daily AI usage limit reached. Try again later.';
+// The time to reset moves with the clock, so match the template.
+const USER_QUOTA_MESSAGE =
+  /^You've used all 10 AI requests for today\. Your quota resets at 00:00 UTC \(in (\d+ h( \d+ min)?|\d+ min)\)\.$/;
+const GLOBAL_QUOTA_MESSAGE =
+  /^MemoFlow's AI capacity for today has been reached\. It resets at 00:00 UTC \(in (\d+ h( \d+ min)?|\d+ min)\)\.$/;
 
 /**
  * Scripted `LlmGateway`. Like the real one it awaits `beforeAttempt` before
@@ -333,10 +337,10 @@ describeWithDocker()('AI quota and caching (e2e)', () => {
 
       expect(res.body).toMatchObject({
         statusCode: 429,
-        message: QUOTA_MESSAGE,
-        error: 'Too Many Requests',
+        error: 'AI_QUOTA_EXCEEDED',
         path: `/sections/${over}/suggestions`,
       });
+      expect(res.body.message).toMatch(USER_QUOTA_MESSAGE);
       expect(res.body.timestamp).toEqual(expect.any(String));
       const retryAfter = Number(res.headers['retry-after']);
       expect(Number.isInteger(retryAfter)).toBe(true);
@@ -384,9 +388,45 @@ describeWithDocker()('AI quota and caching (e2e)', () => {
         );
         const res = await suggest(account, section).expect(429);
         expect(res.headers['retry-after']).toBeDefined();
+        expect(res.body.error).toBe('AI_GLOBAL_QUOTA_EXCEEDED');
+        expect(res.body.message).toMatch(GLOBAL_QUOTA_MESSAGE);
       }
       expect(gateway.requests).toHaveLength(0);
       expect(await userUsed(a)).toBe(0);
+      expect(await globalUsed()).toBe(GLOBAL_LIMIT);
+    });
+
+    it('prefers the user scope when both caps are spent', async () => {
+      const a = await newAccount('both-caps');
+      await redisClient.set(globalQuotaKey(today()), String(GLOBAL_LIMIT));
+      await redisClient.set(
+        userQuotaKey(a.userId, today()),
+        String(USER_LIMIT),
+      );
+      const section = await newSection(a, await newDocument(a), 'Both caps');
+
+      const res = await suggest(a, section).expect(429);
+
+      expect(res.body.error).toBe('AI_QUOTA_EXCEEDED');
+    });
+
+    it('does not limit an admin: no counter is checked or incremented, even over both caps', async () => {
+      const admin = await newAccount('quota-admin');
+      await promoteToAdmin(pg.env, admin.email);
+      await redisClient.set(globalQuotaKey(today()), String(GLOBAL_LIMIT));
+      await redisClient.set(
+        userQuotaKey(admin.userId, today()),
+        String(USER_LIMIT),
+      );
+      const doc = await newDocument(admin);
+
+      for (let i = 0; i < 3; i += 1) {
+        const section = await newSection(admin, doc, `Admin text ${i}`);
+        await suggest(admin, section).expect(201);
+      }
+
+      expect(gateway.requests).toHaveLength(3);
+      expect(await userUsed(admin)).toBe(USER_LIMIT);
       expect(await globalUsed()).toBe(GLOBAL_LIMIT);
     });
 
@@ -529,11 +569,41 @@ describeWithDocker()('AI quota and caching (e2e)', () => {
 
       expect(res.body).toMatchObject({
         statusCode: 429,
-        message: QUOTA_MESSAGE,
-        error: 'Too Many Requests',
+        error: 'AI_QUOTA_EXCEEDED',
       });
+      expect(res.body.message).toMatch(USER_QUOTA_MESSAGE);
       expect(Number(res.headers['retry-after'])).toBeGreaterThanOrEqual(1);
       expect(await userUsed(a)).toBe(USER_LIMIT);
+    });
+
+    it('lets an admin submit and run a job over both caps without touching the counters', async () => {
+      const admin = await newAccount('plan-admin');
+      await promoteToAdmin(pg.env, admin.email);
+      await redisClient.set(globalQuotaKey(today()), String(GLOBAL_LIMIT));
+      await redisClient.set(
+        userQuotaKey(admin.userId, today()),
+        String(USER_LIMIT),
+      );
+
+      const res = await submitJob(admin).expect(202);
+      const job = await untilTerminal(admin, res.body.job_id as string);
+
+      expect(job.status).toBe('completed');
+      expect(await userUsed(admin)).toBe(USER_LIMIT);
+      expect(await globalUsed()).toBe(GLOBAL_LIMIT);
+    });
+
+    it('marks a job failed with AI_GLOBAL_QUOTA_EXCEEDED when the global cap runs out at the worker', async () => {
+      const a = await newAccount('plan-worker-global');
+      await redisClient.set(globalQuotaKey(today()), String(GLOBAL_LIMIT - 1));
+      gateway.attemptsPerCall = 2;
+
+      const res = await submitJob(a).expect(202);
+      const job = await untilTerminal(a, res.body.job_id as string);
+
+      expect(job.status).toBe('failed');
+      expect(job.error_code).toBe('AI_GLOBAL_QUOTA_EXCEEDED');
+      expect(job.error_message).toMatch(GLOBAL_QUOTA_MESSAGE);
     });
 
     it('does not count the submission itself; the worker reserves per provider attempt', async () => {
@@ -560,7 +630,7 @@ describeWithDocker()('AI quota and caching (e2e)', () => {
 
       expect(job.status).toBe('failed');
       expect(job.error_code).toBe('AI_QUOTA_EXCEEDED');
-      expect(job.error_message).toBe(QUOTA_MESSAGE);
+      expect(job.error_message).toMatch(USER_QUOTA_MESSAGE);
       expect(gateway.requests).toHaveLength(0);
     });
 
