@@ -4,8 +4,10 @@ import { DataSource, Repository } from 'typeorm';
 import { DocumentOrmEntity } from '../documents/document.orm-entity';
 import { SectionOrmEntity } from '../documents/section.orm-entity';
 import { DocumentTemplate } from '../../../domain/templates/document-template.entity';
+import { LimitReachedError } from '../../../domain/limits/storage-limits';
 import {
   ApplyToDocumentData,
+  ApplyToDocumentOptions,
   ApplyToDocumentResult,
   DocumentTemplateRepository,
 } from '../../../domain/templates/document-template.repository';
@@ -21,6 +23,7 @@ export class DocumentTemplateTypeOrmRepository implements DocumentTemplateReposi
 
   async applyToDocument(
     data: ApplyToDocumentData,
+    options: ApplyToDocumentOptions,
   ): Promise<ApplyToDocumentResult> {
     return this.dataSource.transaction(async (manager) => {
       const documentRepo = manager.getRepository(DocumentOrmEntity);
@@ -39,6 +42,16 @@ export class DocumentTemplateTypeOrmRepository implements DocumentTemplateReposi
         .setLock('pessimistic_write')
         .where('document.id = :documentId', { documentId: data.documentId })
         .getOne();
+
+      const existingCount = await sectionRepo.count({
+        where: { documentId: data.documentId },
+      });
+      if (
+        existingCount + data.sections.length >
+        options.maxSectionsPerDocument
+      ) {
+        throw new LimitReachedError('section', options.maxSectionsPerDocument);
+      }
 
       const maxOrderResult = await sectionRepo
         .createQueryBuilder('section')

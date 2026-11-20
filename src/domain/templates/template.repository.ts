@@ -54,15 +54,37 @@ export interface TemplateFilters {
   scope?: string;
 }
 
+export interface TemplatePage {
+  limit: number;
+  offset: number;
+}
+
+export interface CreateTemplateOptions {
+  /**
+   * Max templates the creator may own (`created_by`). Enforced in the same
+   * transaction that locks the creator's user row, then counts, then inserts
+   * — so concurrent creates can't overshoot. `null`/omitted = unlimited
+   * (admins, system templates). Over the cap: `LimitReachedError`.
+   */
+  maxPerUser?: number | null;
+}
+
 export interface TemplateRepository {
-  create(data: CreateTemplateData): Promise<Template>;
+  create(
+    data: CreateTemplateData,
+    options?: CreateTemplateOptions,
+  ): Promise<Template>;
   /** Includes the template's sections, ordered by `order` ASC. */
   findById(id: string): Promise<Template | null>;
   /**
    * Visible = `is_published` OR `created_by = userId`, optionally narrowed
-   * by `docType`/`scope`.
+   * by `docType`/`scope`. Stable order (`created_at` DESC, `id` ASC), paged.
    */
-  findVisible(userId: string, filters: TemplateFilters): Promise<Template[]>;
+  findVisible(
+    userId: string,
+    filters: TemplateFilters,
+    page: TemplatePage,
+  ): Promise<Template[]>;
   update(
     id: string,
     patch: UpdateTemplateData,

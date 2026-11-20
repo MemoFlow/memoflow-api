@@ -8,6 +8,7 @@ import {
   startPgContainer,
   PgTestEnv,
 } from './utils/pg-testcontainer';
+import { Client } from 'pg';
 import { registerUser } from './utils/register-user';
 import { stopContainer } from './utils/stop-container';
 
@@ -62,7 +63,11 @@ describeWithDocker()('Gamification (e2e)', () => {
   async function getMe(token: string): Promise<{
     xp: number;
     level: number;
-    milestones: { milestone_type: string; document_id: string }[];
+    milestones: {
+      milestone_type: string;
+      document_id: string;
+      xp_awarded: number;
+    }[];
     today_missions: {
       mission: { code: string };
       progress: number;
@@ -76,7 +81,11 @@ describeWithDocker()('Gamification (e2e)', () => {
     return res.body as {
       xp: number;
       level: number;
-      milestones: { milestone_type: string; document_id: string }[];
+      milestones: {
+        milestone_type: string;
+        document_id: string;
+        xp_awarded: number;
+      }[];
       today_missions: {
         mission: { code: string };
         progress: number;
@@ -396,5 +405,85 @@ describeWithDocker()('Gamification (e2e)', () => {
       .get('/gamification/leaderboard?limit=not-a-number')
       .set('Authorization', `Bearer ${token}`)
       .expect(400);
+  });
+
+  describe('daily XP cap (300 per user per UTC day)', () => {
+    async function sql(query: string, params: unknown[]): Promise<void> {
+      const client = new Client({
+        host: pg.env.POSTGRES_HOST,
+        port: Number(pg.env.POSTGRES_PORT),
+        user: pg.env.POSTGRES_USER,
+        password: pg.env.POSTGRES_PASSWORD,
+        database: pg.env.POSTGRES_DB,
+      });
+      await client.connect();
+      try {
+        await client.query(query, params);
+      } finally {
+        await client.end();
+      }
+    }
+
+    const documentCreated = (me: Awaited<ReturnType<typeof getMe>>) =>
+      me.milestones.filter((m) => m.milestone_type === 'document_created');
+
+    it('stops granting xp at 300 but still records the awards (xp_awarded = granted)', async () => {
+      const token = await registerAndLogin('xp-cap@example.com');
+
+      // 7 x 50 xp would be 350; the cap grants 6 x 50 and 0 for the 7th.
+      for (let i = 0; i < 7; i += 1) {
+        await createDocument(token, `Doc ${i}`);
+      }
+      const me = await waitForGamification(
+        token,
+        (state) => documentCreated(state).length === 7,
+      );
+
+      expect(me.xp).toBe(300);
+      expect(me.level).toBe(4);
+      const awarded = documentCreated(me).map((m) => m.xp_awarded);
+      expect(awarded.reduce((a, b) => a + b, 0)).toBe(300);
+      expect(awarded.filter((xp) => xp === 0)).toHaveLength(1);
+    });
+
+    it('grants the partial remainder when an award crosses the cap', async () => {
+      const token = await registerAndLogin('xp-cap-partial@example.com');
+      // 5 documents = 250 xp, then a 6th (50) lands exactly on the cap;
+      // use an odd start to force a partial: pre-set xp_today to 280.
+      await createDocument(token, 'Seed');
+      await waitForGamification(token, (state) => state.xp >= 50);
+      await sql(
+        `UPDATE users SET xp_today = 280, xp_today_date = (now() AT TIME ZONE 'utc')::date WHERE email = $1`,
+        ['xp-cap-partial@example.com'],
+      );
+
+      await createDocument(token, 'Crosses the cap');
+      const me = await waitForGamification(
+        token,
+        (state) => documentCreated(state).length === 2,
+      );
+
+      expect(me.xp).toBe(70); // 50 + the 20 that still fit under 300
+      expect(
+        documentCreated(me)
+          .map((m) => m.xp_awarded)
+          .sort((a, b) => a - b),
+      ).toEqual([20, 50]);
+    });
+
+    it('resets the counter on a new UTC day', async () => {
+      const token = await registerAndLogin('xp-cap-reset@example.com');
+      await createDocument(token, 'Today');
+      await waitForGamification(token, (state) => state.xp >= 50);
+      await sql(
+        `UPDATE users SET xp_today = 300, xp_today_date = ((now() AT TIME ZONE 'utc')::date - 1) WHERE email = $1`,
+        ['xp-cap-reset@example.com'],
+      );
+
+      await createDocument(token, 'Next day');
+      const me = await waitForGamification(token, (state) => state.xp >= 100);
+
+      expect(me.xp).toBe(100);
+    });
   });
 });

@@ -488,9 +488,15 @@ work already flagged as deferred in the sections above, not a numbered feature:
     GitHub and Render; review past Sentry events on `development`; confirm the test
     verification and reset emails were delivered; create per-tier broker credentials with
     restricted queue permissions (Phase 6).
-  - ☐ **Phase 4, limits:** non-AI input size limits, capped `GET /templates` pagination,
-    per-user storage caps, controlled `scope`/`doc_type`, leaderboard integrity. **Needs
-    decisions first:** storage cap numbers, and whether registration stays open. The AI quota
+  - ◐ **Phase 4, limits:** implemented on `feature/authz-limits`, not yet merged. Request
+    DTO size limits (`@MaxLength`, `@ArrayMaxSize`, 10 KB `styleConfig` cap) and a 1 MB
+    JSON/urlencoded body limit (413); `GET /templates` pagination (`limit` 1..100, default
+    20; `offset`); `doc_type` allowlist and template `scope` enum (`global` admin-only);
+    per-user caps (200 documents, 50 sections and 50 versions per document, 50 templates,
+    admins exempt; 409 over cap); daily XP cap of 300 per user (UTC day; migration
+    `AddUserDailyXp`). Registration stays open. Decisions are recorded in the
+    [plan](plans/2026-11-06-authz-hardening.md). See
+    [`docs/security.md`](security.md#input-and-storage-limits). The AI quota
     (10 per user, 40 total per day) and AI input limits moved to the
     [AI rework](plans/2026-11-06-ai-rework.md).
   - ✅ **Phase 5, auth hardening:** `POST /auth/logout`, sockets ending at token expiry, per-account login throttle (10 per

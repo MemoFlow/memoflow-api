@@ -1,12 +1,17 @@
 import { Template } from '../../domain/templates/template.entity';
 import {
   TemplateFilters,
+  TemplatePage,
   TemplateRepository,
 } from '../../domain/templates/template.repository';
 import { ListTemplatesUseCase } from './list-templates.use-case';
 
 class InMemoryTemplateRepository implements TemplateRepository {
-  public findVisibleCalls: { userId: string; filters: TemplateFilters }[] = [];
+  public findVisibleCalls: {
+    userId: string;
+    filters: TemplateFilters;
+    page: TemplatePage;
+  }[] = [];
 
   constructor(private readonly templates: Template[] = []) {}
 
@@ -18,8 +23,12 @@ class InMemoryTemplateRepository implements TemplateRepository {
     return Promise.reject(new Error('not implemented'));
   }
 
-  findVisible(userId: string, filters: TemplateFilters): Promise<Template[]> {
-    this.findVisibleCalls.push({ userId, filters });
+  findVisible(
+    userId: string,
+    filters: TemplateFilters,
+    page: TemplatePage,
+  ): Promise<Template[]> {
+    this.findVisibleCalls.push({ userId, filters, page });
     return Promise.resolve(
       this.templates.filter((t) => t.isPublished || t.createdBy === userId),
     );
@@ -68,8 +77,38 @@ describe('ListTemplatesUseCase', () => {
     });
 
     expect(repository.findVisibleCalls).toEqual([
-      { userId: 'user-1', filters: { docType: 'blog', scope: 'personal' } },
+      {
+        userId: 'user-1',
+        filters: { docType: 'blog', scope: 'personal' },
+        page: { limit: 20, offset: 0 },
+      },
     ]);
     expect(result).toEqual([own, published]);
+  });
+
+  it('passes explicit limit/offset through', async () => {
+    const repository = new InMemoryTemplateRepository();
+    const useCase = new ListTemplatesUseCase(repository);
+
+    await useCase.execute({ userId: 'user-1', limit: 5, offset: 10 });
+
+    expect(repository.findVisibleCalls[0].page).toEqual({
+      limit: 5,
+      offset: 10,
+    });
+  });
+
+  it('clamps an out-of-range limit/offset defensively', async () => {
+    const repository = new InMemoryTemplateRepository();
+    const useCase = new ListTemplatesUseCase(repository);
+
+    await useCase.execute({ userId: 'user-1', limit: 100_000, offset: -3 });
+    await useCase.execute({ userId: 'user-1', limit: 0 });
+
+    expect(repository.findVisibleCalls[0].page).toEqual({
+      limit: 100,
+      offset: 0,
+    });
+    expect(repository.findVisibleCalls[1].page.limit).toBe(1);
   });
 });

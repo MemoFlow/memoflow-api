@@ -118,6 +118,10 @@ export class DocumentVersionMongooseRepository implements DocumentVersionReposit
     }));
   }
 
+  async countByDocumentId(documentId: string): Promise<number> {
+    return this.model.countDocuments({ document_id: documentId }).exec();
+  }
+
   async maxVersion(documentId: string): Promise<number | null> {
     const top = await this.model
       .findOne({ document_id: documentId })

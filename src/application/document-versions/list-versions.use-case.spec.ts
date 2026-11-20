@@ -51,6 +51,10 @@ class InMemoryDocumentVersionRepository implements DocumentVersionRepository {
     );
   }
 
+  countByDocumentId(): Promise<number> {
+    return Promise.reject(new Error('not implemented'));
+  }
+
   maxVersion(): Promise<number | null> {
     return Promise.reject(new Error('not implemented'));
   }

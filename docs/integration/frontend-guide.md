@@ -113,6 +113,14 @@ avoid the round trip.
 - They are guidance to show while the user writes. `POST /templates/:id/apply` does **not** copy them into the document's sections; read them from the template.
 - `PATCH` with `sections` replaces all sections wholesale, so section ids change, and any omitted `keyPoints`/`guidance` become `null`.
 
+### Limits and allowed values
+- **`413`** — request body over 1 MB (uniform error envelope). Section `content` is max 100,000 characters; titles max 200; `styleConfig` max 10 KB serialized. Violations of field limits are `400` with a `message` array.
+- **`docType`** (documents and templates) must be one of `blog`, `planning`, `report`, `thesis`, `internship_report`; anything else is `400`.
+- **Template `scope`** must be `personal`, `org` or `global`. Creating or updating with `global` as a non-admin is `403`.
+- **`409` limit errors** — the body is the uniform envelope with `message` such as `"Document limit reached (200)"`, `"Section limit reached (50)"`, `"Version limit reached (50)"` or `"Template limit reached (50)"`. Caps: 200 documents per user, 50 sections and 50 versions per document, 50 templates per user (admins exempt). Applying a template that would push a document past 50 sections is also `409` and adds nothing. Nothing is deleted automatically; show the message and let the user delete something.
+- **`GET /templates` pagination** — query `limit` (1..100, default 20) and `offset` (0..100000), newest first. The response is still a plain array; request the next page with `offset += limit` until fewer than `limit` items return. Out-of-range values are `400`.
+- **XP cap** — a user earns at most 300 XP per UTC day; further milestones still complete but grant 0 XP, so don't assume `xp` rises on every completion.
+
 ### Leaderboard — `GET /gamification/leaderboard` (JWT)
 **Breaking change:** entries no longer include `user_id`. Each entry has `is_me` (boolean) to identify the caller's own row; do not rely on user ids to match rows.
 

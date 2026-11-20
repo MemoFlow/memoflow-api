@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
+  ArrayMaxSize,
   ArrayMinSize,
   ArrayUnique,
   IsArray,
@@ -37,8 +38,13 @@ export class SubmitOnboardingDto {
   @IsEnum(DeliverableType)
   deliverable_type: DeliverableType;
 
-  @ApiProperty({ example: '2027-01-15', description: 'YYYY-MM-DD' })
+  @ApiProperty({
+    example: '2027-01-15',
+    description: 'YYYY-MM-DD',
+    maxLength: 10,
+  })
   @RawValue()
+  @MaxLength(10)
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
   @IsISO8601({ strict: true })
   due_date: string;
@@ -64,17 +70,24 @@ export class SubmitOnboardingDto {
   @MaxLength(120)
   school_name?: string | null;
 
-  @ApiProperty({ enum: WorkTool, isArray: true, description: '[] is valid.' })
+  @ApiProperty({
+    enum: WorkTool,
+    isArray: true,
+    maxItems: 20,
+    description: '[] is valid.',
+  })
   @RawValue()
   @IsArray()
+  @ArrayMaxSize(20)
   @ArrayUnique()
   @IsEnum(WorkTool, { each: true })
   work_tools: WorkTool[];
 
-  @ApiProperty({ enum: Blocker, isArray: true, minItems: 1 })
+  @ApiProperty({ enum: Blocker, isArray: true, minItems: 1, maxItems: 20 })
   @RawValue()
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(20)
   @ArrayUnique()
   @IsEnum(Blocker, { each: true })
   blockers: Blocker[];

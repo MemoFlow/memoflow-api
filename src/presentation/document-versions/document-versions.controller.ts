@@ -45,6 +45,10 @@ export class DocumentVersionsController {
   @ApiResponse({ status: 201, type: VersionResponseDto })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'Document not found' })
+  @ApiResponse({
+    status: 409,
+    description: 'Per-document version limit reached',
+  })
   async save(
     @CurrentUser() user: User,
     @Param('documentId', ParseUUIDPipe) documentId: string,

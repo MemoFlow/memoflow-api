@@ -38,6 +38,8 @@ validate that the referenced PG row exists before writing to Mongo. The
 | role | varchar | `user` (default) or `admin`, enforced by `CHK_users_role`; promote via `npm run admin:promote` |
 | xp | int | **indexed** (leaderboards) |
 | level | int | |
+| xp_today | int | NOT NULL, default 0; XP earned on `xp_today_date` toward the daily XP cap. Only meaningful when `xp_today_date` is today (UTC); otherwise treated as 0 |
+| xp_today_date | date | nullable; the UTC day `xp_today` counts. Reset lazily by the next XP grant, no job needed |
 | last_active_at | timestamptz | |
 | disabled_at | timestamptz | nullable; set while the account is disabled (login, JWT and WebSocket auth reject it); exposed only to admin viewers |
 | created_at | timestamptz | default `now()`; accounts older than this column carry the time it was added |
@@ -71,9 +73,9 @@ previous one).
 | id | uuid | PK |
 | user_id | uuid | FK → users, ON DELETE CASCADE, **indexed** |
 | title | varchar | |
-| doc_type | varchar | |
+| doc_type | varchar | one of `blog`, `planning`, `report`, `thesis`, `internship_report` (`DOC_TYPES`, `src/domain/documents/doc-types.ts`); enforced at the API boundary, not by a DB constraint |
 | status | varchar | |
-| style_config | jsonb | |
+| style_config | jsonb | free-form; request bodies cap it at 10 KB serialized |
 | created_at | timestamptz | |
 | updated_at | timestamptz | |
 
@@ -291,11 +293,36 @@ against it (`ON CONFLICT DO NOTHING`) and then run a single guarded
 `UPDATE ... WHERE ... AND completed = false RETURNING *`, making the progress
 increment and the completion flip race-safe without a read-modify-write.
 
-`users.xp`/`users.level` are updated atomically by `UserRepository.incrementXp` —
-a single `UPDATE ... RETURNING` that computes both columns in one statement
-(`level = FLOOR(xp / 100) + 1`, 100 XP per level, level 1 at 0 XP). No schema
-change: both columns already exist on `users` (see Core above; `xp` is indexed
-for the leaderboard).
+**Daily XP cap (leaderboard integrity).** A user earns at most **300 XP per UTC
+day** (`DAILY_XP_CAP`, `src/infrastructure/persistence/shared/xp-level.constants.ts`)
+across milestones and daily missions combined. Inside the same transaction that
+records the award, the user row is locked (`FOR UPDATE`), the granted amount is
+`min(delta, 300 - xp_today)` (`xp_today` is treated as 0 when `xp_today_date` is
+not today UTC), and `xp`, `level` (recomputed from the granted amount),
+`xp_today` and `xp_today_date` are updated together. The award row is still
+recorded when the cap grants less or nothing, so idempotency is unchanged;
+`milestones.xp_awarded` stores the XP actually granted (0 once capped).
+Migration `AddUserDailyXp` adds the two `users` columns.
+
+`users.xp`/`users.level` are updated inside the milestone-award and
+mission-completion transactions (`xp-grant.ts`): the user row is locked, the
+daily cap applied, and `xp`, `level` (`level = FLOOR(xp / 100) + 1`, 100 XP per
+level, level 1 at 0 XP), `xp_today` and `xp_today_date` written together. `xp` is
+indexed for the leaderboard (see Core above).
+
+### Storage caps
+
+Per-user / per-document row caps live in one place (`DEFAULT_STORAGE_LIMITS`,
+`src/domain/limits/storage-limits.ts`, injected via the `STORAGE_LIMITS` token so
+e2e tests can lower them). Over a cap the API answers **409 Conflict**; nothing is
+ever auto-pruned.
+
+| resource | cap | enforced where |
+| --- | --- | --- |
+| `documents` per user | 200 | `DocumentTypeOrmRepository.create`: one transaction that locks the owner's `users` row (`SELECT ... FOR UPDATE`), counts, then inserts — race-safe |
+| `sections` per document | 50 | `SectionTypeOrmRepository.create` and `DocumentTemplateTypeOrmRepository.applyToDocument`: lock the `documents` row, count, then insert — race-safe. Applying a template that would exceed the cap writes nothing |
+| `templates` per user (`created_by`) | 50, **admins exempt** | `TemplateTypeOrmRepository.create`: locks the creator's `users` row, counts, then inserts — race-safe |
+| `document_versions` per document (Mongo) | 50 | `SaveVersionUseCase`: count-then-insert. A **soft cap**: Mongo has no cross-document lock, so a burst of concurrent saves can overshoot slightly |
 
 ### Templates
 
@@ -304,8 +331,8 @@ for the leaderboard).
 | --- | --- | --- |
 | id | uuid | PK |
 | title | varchar | |
-| doc_type | varchar | **indexed** |
-| scope | varchar | **indexed** |
+| doc_type | varchar | **indexed**; same vocabulary as `documents.doc_type` |
+| scope | varchar | **indexed**; one of `personal`, `org`, `global` (`TEMPLATE_SCOPES`, `src/domain/templates/template-scopes.ts`); `global` is admin-only on create and update; enforced at the API boundary and in the use-cases, not by a DB constraint |
 | created_by | uuid | FK → users, nullable (system templates), **ON DELETE SET NULL** — a deleted user's templates become system templates rather than being deleted |
 | style_config | jsonb | |
 | is_published | boolean | **indexed** |

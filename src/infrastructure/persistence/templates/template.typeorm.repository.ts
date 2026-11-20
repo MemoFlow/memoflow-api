@@ -1,11 +1,14 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
+import { LimitReachedError } from '../../../domain/limits/storage-limits';
 import { Template } from '../../../domain/templates/template.entity';
 import { TemplateSection } from '../../../domain/templates/template-section.entity';
 import {
   CreateTemplateData,
+  CreateTemplateOptions,
   TemplateFilters,
+  TemplatePage,
   TemplateRepository,
   TemplatePublishedError,
   UpdateTemplateData,
@@ -24,10 +27,28 @@ export class TemplateTypeOrmRepository implements TemplateRepository {
     private readonly dataSource: DataSource,
   ) {}
 
-  async create(data: CreateTemplateData): Promise<Template> {
+  async create(
+    data: CreateTemplateData,
+    options: CreateTemplateOptions = {},
+  ): Promise<Template> {
     return this.dataSource.transaction(async (manager) => {
       const templateRepo = manager.getRepository(TemplateOrmEntity);
       const sectionRepo = manager.getRepository(TemplateSectionOrmEntity);
+
+      const cap = options.maxPerUser;
+      if (cap !== null && cap !== undefined && data.createdBy !== null) {
+        // Lock the creator's user row so concurrent creates serialize:
+        // count-then-insert can't both see "one slot left".
+        await manager.query('SELECT id FROM users WHERE id = $1 FOR UPDATE', [
+          data.createdBy,
+        ]);
+        const count = await templateRepo.count({
+          where: { createdBy: data.createdBy },
+        });
+        if (count >= cap) {
+          throw new LimitReachedError('template', cap);
+        }
+      }
 
       const templateEntity = templateRepo.create({
         title: data.title,
@@ -66,6 +87,7 @@ export class TemplateTypeOrmRepository implements TemplateRepository {
   async findVisible(
     userId: string,
     filters: TemplateFilters,
+    page: TemplatePage,
   ): Promise<Template[]> {
     const qb = this.repository
       .createQueryBuilder('template')
@@ -83,7 +105,12 @@ export class TemplateTypeOrmRepository implements TemplateRepository {
       qb.andWhere('template.scope = :scope', { scope: filters.scope });
     }
 
-    const entities = await qb.getMany();
+    const entities = await qb
+      .orderBy('template.createdAt', 'DESC')
+      .addOrderBy('template.id', 'ASC')
+      .limit(page.limit)
+      .offset(page.offset)
+      .getMany();
     if (!entities.length) {
       return [];
     }

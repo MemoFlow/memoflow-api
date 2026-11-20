@@ -147,3 +147,61 @@ describe('section keyPoints / guidance validation', () => {
     }
   });
 });
+
+describe('input size and vocabulary limits', () => {
+  const errorsFor = (cls: typeof CreateTemplateDto, extra: object) =>
+    validate(plainToInstance(cls, { ...validPayload, ...extra }));
+  const section = (i: number) => ({
+    title: `S${i}`,
+    order: i,
+    wordCountMin: 1,
+    wordCountMax: 2,
+  });
+
+  it.each([CreateTemplateDto, UpdateTemplateDto])(
+    '%p accepts boundary values',
+    async (cls) => {
+      expect(
+        await errorsFor(cls, {
+          title: 't'.repeat(200),
+          styleConfig: { blob: 'x'.repeat(10_000) },
+          sections: Array.from({ length: 50 }, (_, i) => section(i)),
+        }),
+      ).toEqual([]);
+    },
+  );
+
+  it.each([
+    ['an over-long title', { title: 't'.repeat(201) }],
+    [
+      'an over-long section title',
+      { sections: [{ ...section(0), title: 't'.repeat(201) }] },
+    ],
+    [
+      '51 sections',
+      { sections: Array.from({ length: 51 }, (_, i) => section(i)) },
+    ],
+    ['an oversized styleConfig', { styleConfig: { blob: 'x'.repeat(10_300) } }],
+    ['an unknown docType', { docType: 'filter-blog' }],
+    ['a wrongly cased docType', { docType: 'Blog' }],
+    ['an unknown scope', { scope: 'everyone' }],
+    [
+      'an absurd wordCountMax',
+      { sections: [{ ...section(0), wordCountMax: 10_000_000 }] },
+    ],
+  ])('rejects %s', async (_name, extra) => {
+    expect(await errorsFor(CreateTemplateDto, extra)).not.toEqual([]);
+    expect(await errorsFor(UpdateTemplateDto, extra)).not.toEqual([]);
+  });
+
+  it.each(['personal', 'org', 'global'])('accepts scope %s', async (scope) => {
+    expect(await errorsFor(CreateTemplateDto, { scope })).toEqual([]);
+  });
+
+  it.each(['blog', 'planning', 'report', 'thesis', 'internship_report'])(
+    'accepts docType %s',
+    async (docType) => {
+      expect(await errorsFor(CreateTemplateDto, { docType })).toEqual([]);
+    },
+  );
+});

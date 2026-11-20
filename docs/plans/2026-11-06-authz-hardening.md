@@ -23,5 +23,8 @@ This repository is public, so this file records the work, not vulnerability deta
 - Published templates: **admin-only**.
 - No sending domain exists yet. Verification is enforced by `EMAIL_VERIFICATION_REQUIRED`: off by default on development, always on for staging and production, which also require mail settings to boot. A verified domain is needed before either tier goes live.
 
-Open, to settle before Phase 4: storage cap numbers (the AI quota moved to [the AI rework](2026-11-06-ai-rework.md)); whether registration stays open once
-verification exists; whether non-admin users can ever share templates.
+- Phase 4 caps (2026-11-20): per user 200 documents, 50 sections per document, 50
+  versions per document, 50 templates (admins exempt); over cap returns 409, nothing is
+  auto-pruned. Daily XP cap 300 per user.
+- Registration: **stays open**; the email-verification gate covers AI, connector and
+  planning routes.

@@ -23,6 +23,11 @@ import { DocumentsController } from './presentation/documents/documents.controll
 import { SectionsController } from './presentation/documents/sections.controller';
 import { UsersModule } from './users.module';
 
+import {
+  DEFAULT_STORAGE_LIMITS,
+  STORAGE_LIMITS,
+} from './domain/limits/storage-limits';
+
 /**
  * Roadmap item 2 — documents + sections (PG). Mirrors `ConnectorsModule`'s
  * shape: JwtAuthGuard/JwtStrategy come from `UsersModule`; repository
@@ -40,6 +45,7 @@ import { UsersModule } from './users.module';
     { provide: DOCUMENT_REPOSITORY, useClass: DocumentTypeOrmRepository },
     { provide: SECTION_REPOSITORY, useClass: SectionTypeOrmRepository },
     { provide: SECTION_RETRIEVER, useClass: SectionRetrieverTypeOrm },
+    { provide: STORAGE_LIMITS, useValue: DEFAULT_STORAGE_LIMITS },
     CreateDocumentUseCase,
     ListDocumentsUseCase,
     GetDocumentUseCase,

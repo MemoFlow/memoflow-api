@@ -9,6 +9,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { applyBodyLimits } from './shared/http/body-limit';
 import { isSwaggerEnabled } from './shared/swagger-exposure';
 import { HttpExceptionFilter } from './shared/filters/http-exception.filter';
 import { LoggingInterceptor } from './shared/interceptors/logging.interceptor';
@@ -23,6 +24,9 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     rawBody: true,
   });
+
+  // Explicit JSON body ceiling (1 MB) instead of Express' implicit 100 kb.
+  applyBodyLimits(app);
 
   // Behind Render's reverse proxy: trust the first hop so `req.ip` reflects the
   // real client IP (from X-Forwarded-For) rather than the proxy's address. The

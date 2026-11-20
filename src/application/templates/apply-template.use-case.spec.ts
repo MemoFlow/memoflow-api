@@ -1,16 +1,23 @@
 import { randomUUID } from 'node:crypto';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Document } from '../../domain/documents/document.entity';
 import { DocumentRepository } from '../../domain/documents/document.repository';
 import { DocumentTemplate } from '../../domain/templates/document-template.entity';
 import {
   ApplyToDocumentData,
+  ApplyToDocumentOptions,
   ApplyToDocumentResult,
   DocumentTemplateRepository,
 } from '../../domain/templates/document-template.repository';
+import { LimitReachedError } from '../../domain/limits/storage-limits';
 import { Template } from '../../domain/templates/template.entity';
 import { TemplateSection } from '../../domain/templates/template-section.entity';
 import { TemplateRepository } from '../../domain/templates/template.repository';
+import { DEFAULT_STORAGE_LIMITS } from '../../domain/limits/storage-limits';
 import { ApplyTemplateUseCase } from './apply-template.use-case';
 
 class InMemoryTemplateRepository implements TemplateRepository {
@@ -44,7 +51,20 @@ class InMemoryTemplateRepository implements TemplateRepository {
 class InMemoryDocumentTemplateRepository implements DocumentTemplateRepository {
   public applyToDocumentCalls: ApplyToDocumentData[] = [];
 
-  applyToDocument(data: ApplyToDocumentData): Promise<ApplyToDocumentResult> {
+  constructor(private readonly existingSections = 0) {}
+
+  applyToDocument(
+    data: ApplyToDocumentData,
+    options: ApplyToDocumentOptions,
+  ): Promise<ApplyToDocumentResult> {
+    if (
+      this.existingSections + data.sections.length >
+      options.maxSectionsPerDocument
+    ) {
+      return Promise.reject(
+        new LimitReachedError('section', options.maxSectionsPerDocument),
+      );
+    }
     this.applyToDocumentCalls.push(data);
     return Promise.resolve({
       documentTemplate: new DocumentTemplate({
@@ -145,6 +165,7 @@ describe('ApplyTemplateUseCase', () => {
       templateRepository,
       documentTemplateRepository,
       documentRepository,
+      DEFAULT_STORAGE_LIMITS,
     );
 
     const result = await useCase.execute({
@@ -193,6 +214,7 @@ describe('ApplyTemplateUseCase', () => {
       templateRepository,
       new InMemoryDocumentTemplateRepository(),
       new InMemoryDocumentRepository([makeDocument()]),
+      DEFAULT_STORAGE_LIMITS,
     );
 
     await expect(
@@ -212,6 +234,7 @@ describe('ApplyTemplateUseCase', () => {
       templateRepository,
       new InMemoryDocumentTemplateRepository(),
       new InMemoryDocumentRepository([makeDocument({ userId: 'user-2' })]),
+      DEFAULT_STORAGE_LIMITS,
     );
 
     await expect(
@@ -229,6 +252,7 @@ describe('ApplyTemplateUseCase', () => {
       new InMemoryTemplateRepository([makeTemplate({ docType: 'blog' })]),
       documentTemplateRepository,
       new InMemoryDocumentRepository([makeDocument({ docType: 'report' })]),
+      DEFAULT_STORAGE_LIMITS,
     );
 
     await expect(
@@ -246,6 +270,7 @@ describe('ApplyTemplateUseCase', () => {
       new InMemoryTemplateRepository([makeTemplate({ docType: 'Blog' })]),
       new InMemoryDocumentTemplateRepository(),
       new InMemoryDocumentRepository([makeDocument({ docType: 'blog' })]),
+      DEFAULT_STORAGE_LIMITS,
     );
 
     await expect(
@@ -264,6 +289,7 @@ describe('ApplyTemplateUseCase', () => {
       new InMemoryDocumentRepository([
         makeDocument({ userId: 'user-2', docType: 'report' }),
       ]),
+      DEFAULT_STORAGE_LIMITS,
     );
 
     await expect(
@@ -273,5 +299,53 @@ describe('ApplyTemplateUseCase', () => {
         documentId: 'doc-1',
       }),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  it('answers 409 and writes nothing when the new sections would exceed the section cap', async () => {
+    // The in-memory repo mimics the real one: existing + new > cap rejects.
+    const documentTemplateRepository = new InMemoryDocumentTemplateRepository(
+      49,
+    );
+    const useCase = new ApplyTemplateUseCase(
+      new InMemoryTemplateRepository([makeTemplate()]),
+      documentTemplateRepository,
+      new InMemoryDocumentRepository([makeDocument()]),
+      DEFAULT_STORAGE_LIMITS,
+    );
+
+    const err: unknown = await useCase
+      .execute({
+        userId: 'user-1',
+        templateId: 'template-1',
+        documentId: 'doc-1',
+      })
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ConflictException);
+    expect((err as ConflictException).message).toBe(
+      'Section limit reached (50)',
+    );
+    expect(documentTemplateRepository.applyToDocumentCalls).toEqual([]);
+  });
+
+  it('passes the configured per-document section cap to the repository', async () => {
+    const documentTemplateRepository = new InMemoryDocumentTemplateRepository(
+      0,
+    );
+    const useCase = new ApplyTemplateUseCase(
+      new InMemoryTemplateRepository([makeTemplate()]),
+      documentTemplateRepository,
+      new InMemoryDocumentRepository([makeDocument()]),
+      { ...DEFAULT_STORAGE_LIMITS, maxSectionsPerDocument: 1 },
+    );
+
+    // The template has 2 sections; a cap of 1 must reject.
+    await expect(
+      useCase.execute({
+        userId: 'user-1',
+        templateId: 'template-1',
+        documentId: 'doc-1',
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
   });
 });

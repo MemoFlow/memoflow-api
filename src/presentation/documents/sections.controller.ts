@@ -50,6 +50,10 @@ export class SectionsController {
   @ApiResponse({ status: 201, type: SectionResponseDto })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'Document not found' })
+  @ApiResponse({
+    status: 409,
+    description: 'Per-document section limit reached',
+  })
   async create(
     @CurrentUser() user: User,
     @Param('documentId', ParseUUIDPipe) documentId: string,

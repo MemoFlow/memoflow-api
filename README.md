@@ -68,24 +68,24 @@ via `@nestjs/jwt` and validated by Passport-JWT.
 | `GET` | `/users/:id` | JWT | fetch a user by id; self or admin only, otherwise **404** |
 | `POST` | `/users/:id/disable` | JWT (admin) | disables an account; returns **204**; **400** for your own account |
 | `POST` | `/users/:id/enable` | JWT (admin) | re-enables an account; returns **204** |
-| `POST` | `/documents` | JWT | creates a document owned by the caller |
+| `POST` | `/documents` | JWT | creates a document owned by the caller; `docType` must be one of `blog`, `planning`, `report`, `thesis`, `internship_report`; **409** over 200 documents per user |
 | `GET` | `/documents` | JWT | lists the caller's documents |
 | `GET` | `/documents/:id` | JWT | fetch a document by id, owner-scoped |
 | `PATCH` | `/documents/:id` | JWT | partial update, owner-scoped |
 | `DELETE` | `/documents/:id` | JWT | owner-scoped; cascades to its sections; returns **204** |
-| `POST` | `/documents/:documentId/sections` | JWT | creates a section, appended to the end (`order` server-assigned) |
+| `POST` | `/documents/:documentId/sections` | JWT | creates a section, appended to the end (`order` server-assigned); **409** over 50 sections per document |
 | `GET` | `/documents/:documentId/sections` | JWT | lists a document's sections, ordered |
 | `PATCH` | `/documents/:documentId/sections/reorder` | JWT | reorders sections; body is the full set of section ids in the new order |
 | `GET` | `/documents/:documentId/sections/:id` | JWT | fetch a section by id, owner-scoped |
 | `PATCH` | `/documents/:documentId/sections/:id` | JWT | partial update (`title`/`content`/`status`); `order` not settable here |
 | `DELETE` | `/documents/:documentId/sections/:id` | JWT | owner-scoped; returns **204** |
-| `POST` | `/templates` | JWT | creates a template (with its sections) owned by the caller; publishing (`is_published: true`) is admin-only (**403** otherwise) |
-| `GET` | `/templates` | JWT | lists templates visible to the caller (published or own); filter by `docType`/`scope` query params |
+| `POST` | `/templates` | JWT | creates a template (with its sections) owned by the caller; publishing (`is_published: true`) and `scope: global` are admin-only (**403** otherwise); **409** over the 50-template cap (admins exempt) |
+| `GET` | `/templates` | JWT | lists templates visible to the caller (published or own), newest first; filter by `docType`/`scope` query params; paginated with `limit` (1..100, default 20) and `offset`; response is a plain array |
 | `GET` | `/templates/:id` | JWT | fetch a template by id; visible if published or owned by the caller. `created_by` is `null` unless the viewer owns the template or is an admin |
 | `PATCH` | `/templates/:id` | JWT | partial update, owner or admin; non-admins cannot edit a published template (**403**) and cannot publish; `sections` replaces the template's sections wholesale when provided |
 | `DELETE` | `/templates/:id` | JWT | owner or admin; returns **204** |
 | `POST` | `/templates/:id/apply` | JWT | applies a template to a document, appending one section per template section; **400** if the template's `docType` differs from the document's |
-| `POST` | `/documents/:documentId/versions` | JWT | snapshots the document's current sections into a new immutable version |
+| `POST` | `/documents/:documentId/versions` | JWT | snapshots the document's current sections into a new immutable version; **409** over 50 versions per document |
 | `GET` | `/documents/:documentId/versions` | JWT | lists the document's version metadata (no sections payload), newest first |
 | `GET` | `/documents/:documentId/versions/:versionId` | JWT | fetch a version's full sections snapshot, owner-scoped |
 | `POST` | `/documents/:documentId/versions/:versionId/restore` | JWT | replaces the document's current sections with the version's snapshot; writes nothing to Mongo |

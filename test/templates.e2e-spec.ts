@@ -435,29 +435,32 @@ describeWithDocker()('Templates (e2e)', () => {
 
   it('GET /templates filters by docType and scope', async () => {
     const token = await registerAndLogin('template-filter@example.com');
-    // docType values unique to this test: published templates created by other
-    // tests are visible to every user, so a shared docType (e.g. the helper's
-    // default 'blog') would leak them into this filtered listing.
+    // docTypes rarely used elsewhere in this suite: published templates
+    // created by other tests are visible to every user, so a shared docType
+    // (e.g. the helper's default 'blog') would leak into this listing.
     await createTemplate(token, {
-      title: 'Blog Template',
-      docType: 'filter-blog',
+      title: 'Thesis Template',
+      docType: 'thesis',
       scope: 'personal',
     });
     await createTemplate(token, {
-      title: 'Report Template',
-      docType: 'filter-report',
+      title: 'Internship Template',
+      docType: 'internship_report',
       scope: 'org',
     });
 
     const res = await request(app.getHttpServer())
       .get('/templates')
-      .query({ docType: 'filter-blog' })
+      .query({ docType: 'thesis' })
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
-    expect(res.body.map((t: { title: string }) => t.title)).toEqual([
-      'Blog Template',
-    ]);
+    const titles = res.body.map((t: { title: string }) => t.title);
+    expect(titles).toContain('Thesis Template');
+    expect(titles).not.toContain('Internship Template');
+    expect(
+      res.body.every((t: { doc_type: string }) => t.doc_type === 'thesis'),
+    ).toBe(true);
   });
 
   it('GET /templates/:id returns an unpublished template to its owner', async () => {
