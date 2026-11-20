@@ -488,7 +488,7 @@ work already flagged as deferred in the sections above, not a numbered feature:
     GitHub and Render; review past Sentry events on `development`; confirm the test
     verification and reset emails were delivered; create per-tier broker credentials with
     restricted queue permissions (Phase 6).
-  - ◐ **Phase 4, limits:** implemented on `feature/authz-limits`, not yet merged. Request
+  - ✅ **Phase 4, limits, merged (PR #81):** deployed to `development` 2026-11-20. Request
     DTO size limits (`@MaxLength`, `@ArrayMaxSize`, 10 KB `styleConfig` cap) and a 1 MB
     JSON/urlencoded body limit (413); `GET /templates` pagination (`limit` 1..100, default
     20; `offset`); `doc_type` allowlist and template `scope` enum (`global` admin-only);
@@ -499,6 +499,10 @@ work already flagged as deferred in the sections above, not a numbered feature:
     [`docs/security.md`](security.md#input-and-storage-limits). The AI quota
     (10 per user, 40 total per day) and AI input limits moved to the
     [AI rework](plans/2026-11-06-ai-rework.md).
+  - ☐ **Follow-up, mongoose advisory:** three mongoose advisories are allowlisted in the CI
+    audit gate until **2026-12-20** (PR #82, [`docs/security.md`](security.md#dependency-audit)).
+    Bump mongoose to 9.12+ once Jest e2e works with MongoDB driver 7.8
+    (mongodb-memory-server#1026), or move e2e to a real Mongo container, then drop the entries.
   - ✅ **Phase 5, auth hardening:** `POST /auth/logout`, sockets ending at token expiry, per-account login throttle (10 per
     15 minutes), uniform login and register timing, 72-byte password
     cap, boot checks for unsafe `CORS_ORIGIN`, `WS_CORS_ORIGIN` and `JWT_SECRET` on
