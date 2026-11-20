@@ -57,6 +57,18 @@ describe('env.validation POSTGRES_SSL', () => {
   });
 });
 
+describe('env.validation JWT_EXPIRES_IN', () => {
+  it('defaults to 2d', () => {
+    expect(validate(baseConfig()).JWT_EXPIRES_IN).toBe('2d');
+  });
+
+  it('honours an explicit value', () => {
+    expect(validate(baseConfig({ JWT_EXPIRES_IN: '15m' })).JWT_EXPIRES_IN).toBe(
+      '15m',
+    );
+  });
+});
+
 describe('env.validation REDIS_*', () => {
   it('accepts a valid REDIS_PORT and defaults WS_CORS_ORIGIN to *', () => {
     const result = validate(baseConfig());

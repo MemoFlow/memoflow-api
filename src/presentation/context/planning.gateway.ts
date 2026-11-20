@@ -144,7 +144,7 @@ export class PlanningGateway
         return;
       }
 
-      // The access token is short-lived; a socket must not outlive it. A
+      // A socket must not outlive its access token (2 days by default). A
       // token with no `exp` is never issued by this API, so it is refused
       // rather than granted an unbounded session.
       if (typeof payload.exp !== 'number' || client.disconnected) {
