@@ -4,21 +4,24 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import {
+  AI_QUOTA_EXCEEDED_CODE,
   AiQuotaExceededError,
   AiQuotaUnavailableError,
 } from '../../domain/ai/ai-quota.errors';
 
-/** A daily AI cap is spent; the caller should wait. Maps to 429. */
+/** A daily AI cap is spent; the caller should wait. Maps to 429 with `error`
+ * `AI_QUOTA_EXCEEDED` (user cap) or `AI_GLOBAL_QUOTA_EXCEEDED` (global cap). */
 export class AiQuotaThrottledException extends HttpException {
   constructor(
     message: string,
     readonly retryAfterSeconds: number,
+    code: string = AI_QUOTA_EXCEEDED_CODE,
   ) {
     super(
       {
         statusCode: HttpStatus.TOO_MANY_REQUESTS,
         message,
-        error: 'Too Many Requests',
+        error: code,
       },
       HttpStatus.TOO_MANY_REQUESTS,
     );
@@ -32,7 +35,11 @@ export class AiQuotaThrottledException extends HttpException {
  */
 export function quotaHttpException(err: unknown): HttpException | null {
   if (err instanceof AiQuotaExceededError) {
-    return new AiQuotaThrottledException(err.message, err.retryAfterSeconds);
+    return new AiQuotaThrottledException(
+      err.message,
+      err.retryAfterSeconds,
+      err.code,
+    );
   }
   if (err instanceof AiQuotaUnavailableError) {
     return new ServiceUnavailableException(err.message);

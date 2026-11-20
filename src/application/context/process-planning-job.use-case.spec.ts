@@ -542,6 +542,39 @@ describe('ProcessPlanningJobUseCase', () => {
       },
     );
 
+    it.each([
+      ['an admin', true],
+      ['a regular user', false],
+    ])(
+      'tells the planner %s quota exemption is %s, from the freshly loaded role',
+      async (_label, isAdmin) => {
+        const repository = new InMemoryPlanningJobRepository();
+        repository.seed(makeJob());
+        const planner = new StubPlanner();
+        const plan = jest.spyOn(planner, 'plan');
+        const users = new FakeUserRepository(
+          new Set(),
+          new Set(),
+          new Set(),
+          new Set(isAdmin ? ['user-1'] : []),
+        );
+        const useCase = new ProcessPlanningJobUseCase(
+          repository,
+          new StubGatherer(),
+          makePipeline(planner),
+          new FakePromptRepository([makePlanningPrompt()]),
+          users,
+        );
+
+        const { job } = await useCase.execute({ jobId: 'job-1' });
+
+        expect(job.status).toBe(JobStatus.Completed);
+        expect(plan).toHaveBeenCalledWith(
+          expect.objectContaining({ quotaExempt: isAdmin }),
+        );
+      },
+    );
+
     it('fails the job with AI_CONSENT_REQUIRED when consent was withdrawn, before gather, retrieval or planning', async () => {
       const repository = new InMemoryPlanningJobRepository();
       repository.seed(makeJob());
@@ -624,9 +657,14 @@ describe('ProcessPlanningJobUseCase', () => {
   describe('quota failures', () => {
     it.each([
       [
-        new AiQuotaExceededError(60),
+        new AiQuotaExceededError('user', 10, 60),
         'AI_QUOTA_EXCEEDED',
-        'Daily AI usage limit reached. Try again later.',
+        "You've used all 10 AI requests for today. Your quota resets at 00:00 UTC (in 1 min).",
+      ],
+      [
+        new AiQuotaExceededError('global', 40, 5400),
+        'AI_GLOBAL_QUOTA_EXCEEDED',
+        "MemoFlow's AI capacity for today has been reached. It resets at 00:00 UTC (in 1 h 30 min).",
       ],
       [
         new AiQuotaUnavailableError(),

@@ -60,7 +60,10 @@ export class GatewayLlmPlanner implements LlmPlanner {
       },
       // One unit per provider attempt, retries included. A quota error
       // propagates out of the gateway unchanged; the job records it.
-      beforeAttempt: () => this.quota.reserve(input.userId),
+      beforeAttempt: () =>
+        input.quotaExempt
+          ? Promise.resolve()
+          : this.quota.reserve(input.userId),
     });
 
     return this.toPlanningResult(completion.json, completion.model);

@@ -65,7 +65,7 @@ export class SuggestionsController {
   @ApiResponse({
     status: 429,
     description:
-      'Daily AI usage limit reached (per user or in total); see the Retry-After header (seconds until the next UTC midnight)',
+      "Daily AI quota reached (admins are exempt). `error` is AI_QUOTA_EXCEEDED when the caller used all their own requests for the day, or AI_GLOBAL_QUOTA_EXCEEDED when MemoFlow's total daily AI capacity is spent; `message` is a user-facing text with the time until the 00:00 UTC reset. The Retry-After header gives the seconds until that reset.",
   })
   @ApiResponse({
     status: 502,
@@ -87,6 +87,7 @@ export class SuggestionsController {
     try {
       suggestion = await this.generateSuggestionUseCase.execute({
         userId: user.id,
+        isAdmin: user.isAdmin,
         sectionId,
         featureType: dto.featureType,
       });

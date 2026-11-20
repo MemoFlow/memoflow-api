@@ -221,8 +221,13 @@ describe('safeFailureMessage', () => {
   });
 
   it('passes the quota and inactive-user messages through', () => {
-    expect(safeFailureMessage(new AiQuotaExceededError(5))).toBe(
-      'Daily AI usage limit reached. Try again later.',
+    expect(safeFailureMessage(new AiQuotaExceededError('user', 10, 5))).toBe(
+      "You've used all 10 AI requests for today. Your quota resets at 00:00 UTC (in 1 min).",
+    );
+    expect(
+      safeFailureMessage(new AiQuotaExceededError('global', 40, 45 * 60)),
+    ).toBe(
+      "MemoFlow's AI capacity for today has been reached. It resets at 00:00 UTC (in 45 min).",
     );
     expect(safeFailureMessage(new AiQuotaUnavailableError())).toBe(
       'AI usage limits are temporarily unavailable',
@@ -242,8 +247,11 @@ describe('safeFailureMessage', () => {
 
 describe('failureErrorCode', () => {
   it('maps quota and inactive-user errors to their own codes', () => {
-    expect(failureErrorCode(new AiQuotaExceededError(5))).toBe(
+    expect(failureErrorCode(new AiQuotaExceededError('user', 10, 5))).toBe(
       'AI_QUOTA_EXCEEDED',
+    );
+    expect(failureErrorCode(new AiQuotaExceededError('global', 40, 5))).toBe(
+      'AI_GLOBAL_QUOTA_EXCEEDED',
     );
     expect(failureErrorCode(new AiQuotaUnavailableError())).toBe(
       'AI_QUOTA_UNAVAILABLE',

@@ -342,7 +342,13 @@ filter it out. The check is best effort and never blocks boot.
 Each provider attempt first reserves one unit from a per-user and a global daily counter in Redis
 (`AI_USER_DAILY_LIMIT`, default 10; `AI_GLOBAL_DAILY_LIMIT`, default 40; UTC day). It is a cost
 control, applied before every attempt, so retries and failed attempts count. Over the limit the routes
-return 429 with `Retry-After`, and a planning job fails with `AI_QUOTA_EXCEEDED`. If Redis is
+return 429 with `Retry-After` and an explicit message: `error: AI_QUOTA_EXCEEDED` when the user's own cap
+is spent (the user cap wins when both are), `error: AI_GLOBAL_QUOTA_EXCEEDED` when only the global cap is.
+A planning job fails with the same code as its `error_code` and the same message. Both are expected
+outcomes and are not sent to Sentry. **Admins have no quota**: for an admin neither cap is checked
+nor incremented. The role is read from the database at call time (the per-request user load on the
+routes, the re-loaded job owner in the worker), never from a token claim; guardrails, consent, email
+verification and the suggestion cache apply to admins as before. If Redis is
 unavailable the quota blocks AI use (503 on the routes, `AI_QUOTA_UNAVAILABLE` on a job). Counter keys
 hold a hash of the user id. Suggestion cache hits use no quota; cache errors fall through to the
 provider. The planning worker re-checks that the user is still active (`USER_INACTIVE`). Planning

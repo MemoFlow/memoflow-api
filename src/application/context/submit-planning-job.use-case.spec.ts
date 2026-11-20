@@ -501,7 +501,7 @@ describe('SubmitPlanningJobUseCase', () => {
       const queue = new StubPromptQueue();
       const enqueue = jest.spyOn(queue, 'enqueue');
       const quota = new FakeAiQuota();
-      quota.failWith = new AiQuotaExceededError(900);
+      quota.failWith = new AiQuotaExceededError('user', 10, 900);
       const { useCase, repository } = buildUseCase({ queue, quota });
 
       const err = await useCase
@@ -512,6 +512,17 @@ describe('SubmitPlanningJobUseCase', () => {
       expect((err as AiQuotaThrottledException).retryAfterSeconds).toBe(900);
       expect(await repository.findById('job-1')).toBeNull();
       expect(enqueue).not.toHaveBeenCalled();
+    });
+
+    it('skips the check for an admin even when over quota', async () => {
+      const quota = new FakeAiQuota();
+      quota.failWith = new AiQuotaExceededError('user', 10, 900);
+      const { useCase } = buildUseCase({ quota });
+
+      await expect(
+        useCase.execute({ userId: 'admin-1', isAdmin: true, prompt: 'Plan' }),
+      ).resolves.toBeDefined();
+      expect(quota.checked).toEqual([]);
     });
 
     it('503s when the counters are unreachable (fail closed)', async () => {
@@ -527,7 +538,7 @@ describe('SubmitPlanningJobUseCase', () => {
 
     it('skips the check with no provider configured (the stub planner costs nothing)', async () => {
       const quota = new FakeAiQuota(0);
-      quota.failWith = new AiQuotaExceededError(1);
+      quota.failWith = new AiQuotaExceededError('user', 10, 1);
       const { useCase } = buildUseCase({ providerConfigured: false, quota });
 
       await expect(

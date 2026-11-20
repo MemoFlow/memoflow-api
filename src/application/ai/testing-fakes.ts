@@ -116,8 +116,11 @@ export class FakeAiQuota implements AiQuota {
   private verdict(userId: string): Error | null {
     if (this.failWith) return this.failWith;
     const mine = this.reserved.filter((id) => id === userId).length;
-    if (mine >= this.userLimit || this.reserved.length >= this.globalLimit) {
-      return new AiQuotaExceededError(60);
+    if (mine >= this.userLimit) {
+      return new AiQuotaExceededError('user', this.userLimit, 60);
+    }
+    if (this.reserved.length >= this.globalLimit) {
+      return new AiQuotaExceededError('global', this.globalLimit, 60);
     }
     return null;
   }

@@ -171,11 +171,16 @@ export class ProcessPlanningJobUseCase {
       context = prepared.contextUsed;
       // The user may have withdrawn consent while gathering or retrieving:
       // check again right before the provider call.
-      await assertJobUserActive(this.userRepository, claimed.userId);
+      // Its role (read fresh here) decides whether the daily quota applies.
+      const user = await assertJobUserActive(
+        this.userRepository,
+        claimed.userId,
+      );
       result = await this.planningPipeline.plan(
         resolvedPrompt,
         claimed,
         prepared,
+        user.isAdmin,
       );
     } catch (err) {
       const outcome = await scheduleRateLimitRetry({

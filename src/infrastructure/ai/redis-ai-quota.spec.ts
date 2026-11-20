@@ -86,15 +86,42 @@ describe('RedisAiQuota', () => {
 
   it('throws AiQuotaExceededError with seconds to the next UTC midnight when the script rejects', async () => {
     at('2026-11-06T23:00:00.000Z');
-    mockClient.eval.mockResolvedValue(0);
+    mockClient.eval.mockResolvedValue(2);
     const quota = new RedisAiQuota(makeConfig());
 
     const err = await quota.reserve('user-1').catch((e: unknown) => e);
 
     expect(err).toBeInstanceOf(AiQuotaExceededError);
     expect((err as AiQuotaExceededError).retryAfterSeconds).toBe(3600);
+    expect((err as AiQuotaExceededError).scope).toBe('user');
+    expect((err as AiQuotaExceededError).resetsAt.toISOString()).toBe(
+      '2026-11-07T00:00:00.000Z',
+    );
     expect((err as Error).message).toBe(
-      'Daily AI usage limit reached. Try again later.',
+      "You've used all 10 AI requests for today. Your quota resets at 00:00 UTC (in 1 h).",
+    );
+  });
+
+  it('reports the global scope and limit when the script says only the global cap is spent', async () => {
+    at('2026-11-06T23:15:00.000Z');
+    mockClient.eval.mockResolvedValue(3);
+    const quota = new RedisAiQuota(makeConfig());
+
+    const err = await quota.check('user-1').catch((e: unknown) => e);
+
+    expect((err as AiQuotaExceededError).scope).toBe('global');
+    expect((err as AiQuotaExceededError).limit).toBe(40);
+    expect((err as Error).message).toBe(
+      "MemoFlow's AI capacity for today has been reached. It resets at 00:00 UTC (in 45 min).",
+    );
+  });
+
+  it('fails closed on an unknown script verdict', async () => {
+    mockClient.eval.mockResolvedValue(0);
+    const quota = new RedisAiQuota(makeConfig());
+
+    await expect(quota.reserve('user-1')).rejects.toBeInstanceOf(
+      AiQuotaUnavailableError,
     );
   });
 

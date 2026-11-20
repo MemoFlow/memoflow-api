@@ -66,6 +66,8 @@ export class FakeUserRepository implements UserRepository {
     readonly missing: Set<string> = new Set(),
     /** Users who withdrew (or never gave) current AI consent. */
     readonly withoutConsent: Set<string> = new Set(),
+    /** Users whose role is admin (no daily AI quota). */
+    readonly admins: Set<string> = new Set(),
   ) {}
 
   findById(id: string): Promise<User | null> {
@@ -77,7 +79,7 @@ export class FakeUserRepository implements UserRepository {
         email: `${id}@example.com`,
         passwordHash: 'hash',
         displayName: 'Test',
-        role: UserRole.User,
+        role: this.admins.has(id) ? UserRole.Admin : UserRole.User,
         xp: 0,
         level: 1,
         lastActiveAt: null,

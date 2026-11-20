@@ -53,7 +53,10 @@ export class GatewaySuggestionGenerator implements SuggestionGenerator {
       },
       // One unit per provider attempt, retries included. A quota error
       // propagates out of the gateway unchanged and stops the retrying.
-      beforeAttempt: () => this.quota.reserve(input.userId),
+      beforeAttempt: () =>
+        input.quotaExempt
+          ? Promise.resolve()
+          : this.quota.reserve(input.userId),
     });
 
     const json = completion.json as { suggested_text?: unknown } | null;

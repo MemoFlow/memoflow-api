@@ -132,6 +132,23 @@ describe('GatewayLlmPlanner', () => {
     expect(quota.reserved).toEqual(['user-1']);
   });
 
+  it('makes no reservation for a quota-exempt (admin) job owner', async () => {
+    const quota = new FakeAiQuota(0);
+    const complete = jest.fn((request: LlmCompletionRequest) =>
+      request
+        .beforeAttempt()
+        .then(() =>
+          completion({ suggestions: [], outline: null, sources: [] }),
+        ),
+    );
+    const planner = new GatewayLlmPlanner(makeGateway(complete), quota);
+
+    await expect(
+      planner.plan({ prompt: 'x', context: {}, ...base, quotaExempt: true }),
+    ).resolves.toBeDefined();
+    expect(quota.reserved).toEqual([]);
+  });
+
   it('lets a quota error from the hook through unchanged', async () => {
     const complete = jest.fn((request: LlmCompletionRequest) =>
       request.beforeAttempt().then(() => completion({})),

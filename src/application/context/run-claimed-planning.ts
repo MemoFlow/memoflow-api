@@ -60,8 +60,14 @@ export async function runClaimedPlanning(
     contextUsed = prepared.contextUsed;
     // The user may have withdrawn consent during retrieval: check again
     // right before the provider call.
-    await assertJobUserActive(deps.userRepository, claimed.userId);
-    result = await planningPipeline.plan(resolvedPrompt, claimed, prepared);
+    // Its role (read fresh here) decides whether the daily quota applies.
+    const user = await assertJobUserActive(deps.userRepository, claimed.userId);
+    result = await planningPipeline.plan(
+      resolvedPrompt,
+      claimed,
+      prepared,
+      user.isAdmin,
+    );
   } catch (err) {
     // Clients read the message: only typed (fixed) messages pass through,
     // and only the error name is logged.
