@@ -444,6 +444,18 @@ delivers only to the Resend account owner's address. Verification therefore stay
 on development, and a verified sending domain (with `EMAIL_FROM` on it) is required
 before staging or production can send to real users.
 
+## Dependency audit
+
+CI runs `npm run audit:check` (`scripts/audit-check.mjs`) in the Lint job. It fails on any
+high or critical `npm audit` advisory unless that advisory's GHSA id is listed in
+`.github/audit-allowlist.json` with a reason and an `expires` date; an expired entry fails
+too, and entries that no longer match are reported as stale.
+
+Current exception (expires 2026-12-20): three mongoose advisories. The fixed mongoose
+(9.12) needs a MongoDB driver that hangs the Jest e2e suites
+([mongodb-memory-server#1026](https://github.com/typegoose/mongodb-memory-server/issues/1026)),
+so mongoose stays pinned `~9.7.0` until that is resolved or e2e moves off the in-memory server.
+
 ## Related docs
 
 - [`docs/database-schema.md`](database-schema.md) — `audit_logs` table shape, indexes.

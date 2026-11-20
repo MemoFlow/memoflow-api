@@ -35,6 +35,7 @@
     "ai:smoke": "ts-node scripts/ai-smoke.ts",
     "smoke": "./scripts/smoke.sh",
     "release": "./scripts/release.sh",
+    "audit:check": "node scripts/audit-check.mjs",
     "release:dry": "./scripts/release.sh --dry-run",
     "release:first": "./scripts/release.sh --first-release",
     "cleanup:dead": "./scripts/cleanup-dead.sh"
