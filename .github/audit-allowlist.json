@@ -1,0 +1,20 @@
+[
+  {
+    "id": "GHSA-gg4r-jv3p-qx3c",
+    "package": "mongoose",
+    "reason": "mongoose 9.12 needs driver ~7.8 which breaks Jest e2e (mongodb-memory-server#1026); code uses no discriminators, sanitizeFilter, virtual() or countDocuments-with-sanitizeFilter; residual exposure is planning_jobs free-form payloads from the internal authenticated broker; remove when mongoose can be bumped.",
+    "expires": "2026-12-20"
+  },
+  {
+    "id": "GHSA-pcrw-h46h-c93h",
+    "package": "mongoose",
+    "reason": "mongoose 9.12 needs driver ~7.8 which breaks Jest e2e (mongodb-memory-server#1026); code uses no discriminators, sanitizeFilter, virtual() or countDocuments-with-sanitizeFilter; residual exposure is planning_jobs free-form payloads from the internal authenticated broker; remove when mongoose can be bumped.",
+    "expires": "2026-12-20"
+  },
+  {
+    "id": "GHSA-8332-j7wj-wjw4",
+    "package": "mongoose",
+    "reason": "mongoose 9.12 needs driver ~7.8 which breaks Jest e2e (mongodb-memory-server#1026); code uses no discriminators, sanitizeFilter, virtual() or countDocuments-with-sanitizeFilter; residual exposure is planning_jobs free-form payloads from the internal authenticated broker; remove when mongoose can be bumped.",
+    "expires": "2026-12-20"
+  }
+]
