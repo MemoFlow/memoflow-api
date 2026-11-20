@@ -637,6 +637,33 @@ describe('env.validation deployed-tier safety checks', () => {
   });
 });
 
+describe('OPENROUTER_REQUIRE_ZDR', () => {
+  it('defaults to true when unset or blank', () => {
+    expect(validate(baseConfig()).OPENROUTER_REQUIRE_ZDR).toBe(true);
+    expect(
+      validate(baseConfig({ OPENROUTER_REQUIRE_ZDR: '' }))
+        .OPENROUTER_REQUIRE_ZDR,
+    ).toBe(true);
+  });
+
+  it('parses true/false case-insensitively', () => {
+    expect(
+      validate(baseConfig({ OPENROUTER_REQUIRE_ZDR: 'FALSE' }))
+        .OPENROUTER_REQUIRE_ZDR,
+    ).toBe(false);
+    expect(
+      validate(baseConfig({ OPENROUTER_REQUIRE_ZDR: 'True' }))
+        .OPENROUTER_REQUIRE_ZDR,
+    ).toBe(true);
+  });
+
+  it('rejects an invalid value', () => {
+    expect(() =>
+      validate(baseConfig({ OPENROUTER_REQUIRE_ZDR: 'fasle' })),
+    ).toThrow('OPENROUTER_REQUIRE_ZDR');
+  });
+});
+
 describe('env.validation AI guardrail settings', () => {
   it('defaults OPENROUTER_MAX_RETRIES to 1 and AI_MAX_INPUT_CHARS to 40000', () => {
     const result = validate(baseConfig());
