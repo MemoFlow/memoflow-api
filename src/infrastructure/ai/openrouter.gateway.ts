@@ -90,7 +90,24 @@ interface RawCompletion {
 export class OpenRouterGateway implements LlmGateway {
   private readonly logger = new Logger(OpenRouterGateway.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(private readonly config: ConfigService) {
+    this.warnIfZdrCannotBeMet();
+  }
+
+  /** One startup warning for the default `openrouter/free` + ZDR collision. */
+  private warnIfZdrCannotBeMet(): void {
+    if (!this.isAvailable()) return;
+    if (this.config.get<boolean>('OPENROUTER_REQUIRE_ZDR') === false) return;
+    const models = [
+      this.config.get<string>('OPENROUTER_MODEL') || DEFAULT_MODEL,
+      ...parseModelList(this.config.get<string>('OPENROUTER_FALLBACK_MODELS')),
+    ];
+    if (models.includes(DEFAULT_MODEL)) {
+      this.logger.warn(
+        'OPENROUTER_REQUIRE_ZDR is on but openrouter/free is configured as the model or a fallback; it has no ZDR endpoints, so AI calls will fail. Set OPENROUTER_MODEL to a ZDR-capable model or set OPENROUTER_REQUIRE_ZDR=false',
+      );
+    }
+  }
 
   isAvailable(): boolean {
     return Boolean(this.config.get<string>('OPENROUTER_API_KEY'));
@@ -164,6 +181,21 @@ export class OpenRouterGateway implements LlmGateway {
     return (
       this.config.get<number>('OPENROUTER_TIMEOUT_MS') ?? DEFAULT_TIMEOUT_MS
     );
+  }
+
+  /**
+   * Always requires endpoints that support every request parameter (strict
+   * structured outputs). Unless `OPENROUTER_REQUIRE_ZDR=false`, also restricts
+   * routing to zero-data-retention endpoints that don't collect data.
+   */
+  private providerPreferences(): Record<string, unknown> {
+    const requireZdr = this.config.get<boolean>('OPENROUTER_REQUIRE_ZDR');
+    return {
+      require_parameters: true,
+      ...(requireZdr === false
+        ? {}
+        : { zdr: true, data_collection: 'deny' as const }),
+    };
   }
 
   private maxRetries(): number {
@@ -258,6 +290,8 @@ export class OpenRouterGateway implements LlmGateway {
         },
       },
     };
+    // Provider routing applies to the primary and every fallback model.
+    body.provider = this.providerPreferences();
     if (fallbacks.length > 0) {
       body.models = [model, ...fallbacks.filter((m) => m !== model)];
     }
@@ -372,6 +406,17 @@ export class OpenRouterGateway implements LlmGateway {
     retryAfter: string | null,
     origin: string,
   ): AttemptFailure {
+    if (status === 404) {
+      // OpenRouter answers 404 when no endpoint satisfies the routing
+      // preferences, but also for an unknown or removed model id.
+      this.logger.warn(
+        `OpenRouter error (origin=${origin}, status=404): likely no endpoint matches the ZDR/data_collection/require_parameters policy, or the model id is invalid; check OPENROUTER_MODEL, OPENROUTER_FALLBACK_MODELS and OPENROUTER_REQUIRE_ZDR`,
+      );
+      return new AttemptFailure(
+        new SuggestionGeneratorUnavailableError(UNAVAILABLE_MESSAGE),
+        'none',
+      );
+    }
     this.logger.error(
       `OpenRouter error (origin=${origin}, status=${status ?? 'unknown'})`,
     );

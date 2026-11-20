@@ -246,8 +246,9 @@ Beyond the database connection vars, auth requires:
 | `RABBITMQ_URL` | no | — | `amqp://`/`amqps://` broker URL; unset keeps the legacy synchronous `ContextEngineHttpClient`/stub gather path (`CONTEXT_ENGINE_URL` above); set to switch planning jobs onto the async RabbitMQ transport (`docs/contracts/context-engine.md`) |
 | `CONTEXT_GATHER_TIMEOUT_MS` | no | `120000` | only meaningful when `RABBITMQ_URL` is set — fails a job stuck in `gathering` past this many ms with `error_code: CONTEXT_ENGINE_TIMEOUT` |
 | `OPENROUTER_API_KEY` | no | — | powers AI suggestion generation and the planning-job LLM planner via OpenRouter; unset keeps both on their null/stub fallbacks (suggestions endpoint returns 503, planning jobs keep using `StubLlmPlanner`). With the default free model, upstream providers may log prompts, which is why AI needs recorded user consent (below) |
-| `OPENROUTER_MODEL` | no | `openrouter/free` | OpenRouter model id used for both suggestions and planning |
+| `OPENROUTER_MODEL` | no | `openrouter/free` | OpenRouter model id used for both suggestions and planning; with `OPENROUTER_REQUIRE_ZDR=true` it must have a ZDR endpoint (`openrouter/free` has none) |
 | `OPENROUTER_FALLBACK_MODELS` | no | — | comma-separated model ids tried after `OPENROUTER_MODEL` |
+| `OPENROUTER_REQUIRE_ZDR` | no | `true` | every request asks OpenRouter for zero-data-retention endpoints only (`provider.zdr`, `data_collection: deny`), plus `require_parameters` (always on); `false` drops the ZDR part, so the provider may log or train on prompts. If no endpoint matches, AI calls fail with 503 |
 | `OPENROUTER_MAX_TOKENS` | no | `4096` | max output tokens per LLM call |
 | `OPENROUTER_TIMEOUT_MS` | no | `60000` | aborts an LLM call after this many ms (repair retry and retries included) |
 | `OPENROUTER_MAX_RETRIES` | no | `1` | extra attempts (0 to 3) after a 429 with `Retry-After` of 10s or less, a 5xx or a network failure; timeouts and other 4xx are never retried; all attempts share the call's `OPENROUTER_TIMEOUT_MS` deadline |

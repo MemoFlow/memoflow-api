@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   createServer,
@@ -151,6 +152,75 @@ describe('OpenRouterGateway (fake HTTP server)', () => {
       },
     });
     expect(req.body.models).toBeUndefined();
+  });
+
+  describe('startup ZDR warning', () => {
+    let warn: jest.SpyInstance;
+    beforeEach(() => {
+      warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    });
+    afterEach(() => warn.mockRestore());
+    const zdrWarnings = (): unknown[] =>
+      (warn.mock.calls as unknown[][]).filter((c) =>
+        String(c[0]).includes('REQUIRE_ZDR'),
+      );
+
+    it('warns once for openrouter/free as the model', () => {
+      gateway({ OPENROUTER_MODEL: 'openrouter/free' });
+      expect(zdrWarnings()).toHaveLength(1);
+    });
+    it('warns when the model is unset (default) or a fallback is free', () => {
+      gateway({ OPENROUTER_MODEL: undefined });
+      gateway({ OPENROUTER_FALLBACK_MODELS: 'a/b, openrouter/free' });
+      expect(zdrWarnings()).toHaveLength(2);
+    });
+    it('is silent for other models, ZDR off, or no key', () => {
+      gateway();
+      gateway({
+        OPENROUTER_MODEL: 'openrouter/free',
+        OPENROUTER_REQUIRE_ZDR: false,
+      });
+      gateway({ OPENROUTER_MODEL: 'openrouter/free', OPENROUTER_API_KEY: '' });
+      expect(zdrWarnings()).toHaveLength(0);
+    });
+  });
+
+  describe('provider routing preferences', () => {
+    beforeEach(() => {
+      handler = (_r, res) => json(res, 200, ok('{}'));
+    });
+
+    it('requires ZDR, data_collection deny and parameters by default', async () => {
+      await gateway().complete(REQUEST);
+      expect(captured[0].body.provider).toEqual({
+        require_parameters: true,
+        zdr: true,
+        data_collection: 'deny',
+      });
+    });
+
+    it('keeps only require_parameters when OPENROUTER_REQUIRE_ZDR=false', async () => {
+      await gateway({ OPENROUTER_REQUIRE_ZDR: false }).complete(REQUEST);
+      expect(captured[0].body.provider).toEqual({ require_parameters: true });
+    });
+
+    it('still sends fallbacks alongside the provider object', async () => {
+      await gateway({ OPENROUTER_FALLBACK_MODELS: 'fb/one' }).complete(REQUEST);
+      expect(captured[0].body.models).toEqual(['primary/model', 'fb/one']);
+      expect(captured[0].body.provider).toMatchObject({ zdr: true });
+    });
+
+    it('maps "no endpoints match" (404) to Unavailable without leaking or retrying', async () => {
+      handler = (_r, res) =>
+        json(res, 404, {
+          error: { message: 'No endpoints found matching your data policy' },
+        });
+      const err = await failure(gateway({ OPENROUTER_MAX_RETRIES: 3 }));
+      expect(err).toBeInstanceOf(SuggestionGeneratorUnavailableError);
+      expect(err.message).toBe('AI provider temporarily unavailable');
+      expect(err.message).not.toContain('data policy');
+      expect(captured).toHaveLength(1);
+    });
   });
 
   it('lets a per-call maxTokens override the configured default', async () => {

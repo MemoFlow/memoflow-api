@@ -117,6 +117,23 @@ export function parseEmailVerificationRequired(value: unknown): boolean {
   return String(value).toLowerCase() === 'true';
 }
 
+/**
+ * Strict parser for OPENROUTER_REQUIRE_ZDR: unset or blank means true;
+ * otherwise only "true"/"false" (case-insensitive) are accepted.
+ */
+export function parseOpenRouterRequireZdr(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase();
+    if (v === '' || v === 'true') return true;
+    if (v === 'false') return false;
+  }
+  throw new Error(
+    "OPENROUTER_REQUIRE_ZDR must be 'true' or 'false' (or unset)",
+  );
+}
+
 /** The `JWT_SECRET` shipped in `.env.example`; must never reach a deployed tier. */
 export const JWT_SECRET_PLACEHOLDER =
   'dev-only-change-me-to-a-32char-min-random-secret';
@@ -330,6 +347,21 @@ export class EnvironmentVariables {
   @Min(0)
   @Max(3)
   OPENROUTER_MAX_RETRIES: number = 1;
+
+  // Require zero-data-retention endpoints (provider.zdr +
+  // data_collection=deny). false only for setups whose models have no ZDR
+  // endpoint; prompts may then be logged or trained on by the provider.
+  @IsBoolean({
+    message: "OPENROUTER_REQUIRE_ZDR must be 'true' or 'false' (or unset)",
+  })
+  @Transform(({ obj }: { obj: Record<string, unknown> }) => {
+    try {
+      return parseOpenRouterRequireZdr(obj.OPENROUTER_REQUIRE_ZDR);
+    } catch {
+      return obj.OPENROUTER_REQUIRE_ZDR;
+    }
+  })
+  OPENROUTER_REQUIRE_ZDR: boolean = true;
 
   // Longest section text (suggestions) and serialised context (planning)
   // sent to the model, in characters. Over the limit, a suggestion request

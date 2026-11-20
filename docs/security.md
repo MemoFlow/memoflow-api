@@ -308,6 +308,18 @@ the flow rather than adversarial inputs. Revisit this section once real runs exi
 - **Bounded retries.** `OPENROUTER_MAX_RETRIES` allows a few conservative retries that
   share a single deadline with the call, so retries can't extend a request indefinitely.
 
+## OpenRouter provider routing
+
+Every OpenRouter request sets `provider.require_parameters: true`, so only endpoints
+that honour strict structured outputs are used. By default (`OPENROUTER_REQUIRE_ZDR`
+true) it also sets `provider.zdr: true` and `provider.data_collection: "deny"`, limiting
+routing to endpoints that OpenRouter lists as zero-data-retention and that don't collect data (a provider declaration, not a guarantee we verify); this applies to the
+primary model and every fallback. Setting `OPENROUTER_REQUIRE_ZDR=false` drops those two
+fields, and prompts (which contain document text) may then be logged or trained on by the
+upstream provider. The default `openrouter/free` model has no ZDR endpoints, so set `OPENROUTER_MODEL` to a ZDR-capable model (the gateway logs a startup warning otherwise). When no endpoint matches the policy, or the model id is invalid, OpenRouter answers 404; the
+gateway logs a warning naming the likely causes, does not retry, and clients get the fixed 503
+"AI provider temporarily unavailable".
+
 ## AI usage quota
 
 Each provider attempt first reserves one unit from a per-user and a global daily counter in Redis
