@@ -127,4 +127,30 @@ export interface PlanningJobRepository {
     id: string,
     patch: { errorCode: string; errorMessage: string },
   ): Promise<PlanningJob | null>;
+  /**
+   * Records a rate-limit retry on a job that is still in flight (`planning`,
+   * or `running` on the legacy path): sets `planningRetryCount` and
+   * `nextRetryAt`, and stores the connector context to re-plan with. CAS on
+   * the status and on `expectedRetryCount` being the current count, so only
+   * one caller wins and a terminal job is never touched. `null` = lost.
+   */
+  scheduleRetry(
+    id: string,
+    patch: {
+      expectedRetryCount: number;
+      nextRetryAt: Date;
+      contextUsed: Record<string, unknown>;
+      promptVersion: string | null;
+    },
+  ): Promise<PlanningJob | null>;
+  /**
+   * Claims a due retry: succeeds only if the job is still in flight with
+   * `planningRetryCount === retryCount` and a pending `nextRetryAt`, and
+   * clears `nextRetryAt`. A duplicate delivery, or a job that went terminal
+   * meanwhile, gets `null` (no-op).
+   */
+  claimPlanningRetry(
+    id: string,
+    retryCount: number,
+  ): Promise<PlanningJob | null>;
 }

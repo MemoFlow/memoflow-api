@@ -21,6 +21,14 @@ import { JobStatus, PlanningJob } from '../../domain/context/planning-job';
 import { PLANNING_JOB_REPOSITORY } from '../../domain/context/planning-job.repository';
 import type { PlanningJobRepository } from '../../domain/context/planning-job.repository';
 import { resolveActiveConnectorReferences } from '../../domain/context/resolve-connector-references';
+import { PLANNING_RETRY_SCHEDULER } from '../../domain/context/planning-retry-scheduler.port';
+import type { PlanningRetryScheduler } from '../../domain/context/planning-retry-scheduler.port';
+import {
+  DEFAULT_PLANNING_RETRY_POLICY,
+  PLANNING_RETRY_POLICY,
+  scheduleRateLimitRetry,
+} from './planning-retry';
+import type { PlanningRetryPolicy } from './planning-retry';
 import { GATHER_TIMEOUT_MS } from './gather-timeout-ms.token';
 import type { ValidatedPlanningResult } from './planning-citations';
 import { PlanningPipeline } from './planning-pipeline';
@@ -94,7 +102,23 @@ export class ProcessPlanningJobUseCase {
     @Optional()
     @Inject(GATHER_TIMEOUT_MS)
     private readonly gatherTimeoutMs?: number,
+    @Optional()
+    @Inject(PLANNING_RETRY_SCHEDULER)
+    private readonly planningRetryScheduler?: PlanningRetryScheduler,
+    @Optional()
+    @Inject(PLANNING_RETRY_POLICY)
+    private readonly planningRetryPolicy: PlanningRetryPolicy = DEFAULT_PLANNING_RETRY_POLICY,
   ) {}
+
+  /** Retry wiring for `runClaimedPlanning` and the legacy path. */
+  private retryDeps() {
+    return this.planningRetryScheduler
+      ? {
+          scheduler: this.planningRetryScheduler,
+          policy: this.planningRetryPolicy,
+        }
+      : undefined;
+  }
 
   execute(input: ProcessPlanningJobInput): Promise<ProcessPlanningJobResult> {
     // `contextRequestPublisher` is only bound by `ContextModule` when
@@ -154,14 +178,34 @@ export class ProcessPlanningJobUseCase {
         prepared,
       );
     } catch (err) {
+      const outcome = await scheduleRateLimitRetry({
+        repository: this.planningJobRepository,
+        retry: this.retryDeps(),
+        job: claimed,
+        err,
+        contextUsed: context ?? claimed.contextUsed ?? {},
+        promptVersion,
+      });
+      if (outcome.kind === 'scheduled') {
+        this.logger.warn(
+          `Planning job ${claimed.id} rate-limited, retry ${outcome.job.planningRetryCount} scheduled`,
+        );
+        return { processed: true, job: outcome.job };
+      }
+      if (outcome.kind === 'lost_race') {
+        return { processed: true, job: outcome.job };
+      }
       // A domain failure (gather/plan) is a terminal state, not a queue
       // retry — write `failed` and return it, do not rethrow. `contextUsed`
       // is recorded when gather succeeded but plan subsequently failed.
       // Clients read the message: only typed (fixed) messages pass through,
       // and only the error name is logged.
-      this.logger.error(
-        `Planning job ${claimed.id} failed (${errorName(err)})`,
-      );
+      const message = `Planning job ${claimed.id} failed (${errorName(err)})`;
+      if (failureErrorCode(err) === 'AI_PROVIDER_RATE_LIMITED') {
+        this.logger.warn(message);
+      } else {
+        this.logger.error(message);
+      }
       const errorMessage = safeFailureMessage(err);
       const errorCode = failureErrorCode(err);
       const contextUsed = context ?? null;
@@ -283,6 +327,7 @@ export class ProcessPlanningJobUseCase {
           promptRepository: this.promptRepository,
           userRepository: this.userRepository,
           logger: this.logger,
+          retry: this.retryDeps(),
         },
         planning,
         {},

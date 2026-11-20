@@ -3,6 +3,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PROMPT_QUEUE } from '../../../domain/context/prompt-queue';
 import { BullMqPromptQueue } from './bullmq-prompt-queue';
+import { PLANNING_RETRY_QUEUE_NAME } from './bullmq-planning-retry.scheduler';
 import { GATHER_TIMEOUT_QUEUE_NAME } from './bullmq-gather-timeout.scheduler';
 
 @Module({
@@ -32,6 +33,8 @@ import { GATHER_TIMEOUT_QUEUE_NAME } from './bullmq-gather-timeout.scheduler';
     // scheduled when `RABBITMQ_URL` is configured (see
     // `BullMqGatherTimeoutScheduler`/`ContextModule`).
     BullModule.registerQueue({ name: GATHER_TIMEOUT_QUEUE_NAME }),
+    // Delayed re-run of the planning phase after a provider rate limit.
+    BullModule.registerQueue({ name: PLANNING_RETRY_QUEUE_NAME }),
   ],
   providers: [{ provide: PROMPT_QUEUE, useClass: BullMqPromptQueue }],
   exports: [PROMPT_QUEUE, BullModule],

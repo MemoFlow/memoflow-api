@@ -320,6 +320,23 @@ upstream provider. The default `openrouter/free` model has no ZDR endpoints, so 
 gateway logs a warning naming the likely causes, does not retry, and clients get the fixed 503
 "AI provider temporarily unavailable".
 
+## AI provider rate limits
+
+The gateway retries a 429 once, only when `Retry-After` is 10 s or less. A synchronous suggestion
+then returns 503 as before. A planning job is not failed at once: the planning phase is retried
+later through a BullMQ delayed job (no worker or consumer waits). Retry 1 runs after
+max(30 s, `Retry-After`) and retry 2 after max(120 s, `Retry-After`), with `Retry-After` capped at
+10 min. Retries reuse the connector context already gathered (no new gather) and re-check the user,
+AI consent and quota. After the second retry the job fails with `AI_PROVIDER_RATE_LIMITED`, which is
+an expected outcome and is not sent to Sentry; `AI_PROVIDER_UNAVAILABLE` (provider outage) is still
+reported. Every provider attempt reserves quota, so a job that is retried twice can use up to 3
+attempts of the daily quota (more if the gateway retries internally).
+
+At startup, when `OPENROUTER_API_KEY` is set and `OPENROUTER_REQUIRE_ZDR` is true, the API reads
+OpenRouter's public ZDR endpoint list (`/endpoints/zdr`, no key sent, 5 s timeout) and logs one
+warning for each configured model (primary and fallbacks) without a ZDR endpoint, since routing will
+filter it out. The check is best effort and never blocks boot.
+
 ## AI usage quota
 
 Each provider attempt first reserves one unit from a per-user and a global daily counter in Redis

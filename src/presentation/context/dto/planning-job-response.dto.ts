@@ -69,6 +69,19 @@ export class PlanningJobResponseDto {
   @ApiProperty({ nullable: true })
   finished_at: Date | null;
 
+  @ApiProperty({
+    description:
+      'Rate-limit retries scheduled so far (0 to 2). The job stays non-terminal while one is pending.',
+  })
+  planning_retry_count: number;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'When the pending retry is due after an AI provider rate limit; null when none is pending.',
+  })
+  next_retry_at: Date | null;
+
   static fromDomain(job: PlanningJob): PlanningJobResponseDto {
     const dto = new PlanningJobResponseDto();
     dto.job_id = job.id;
@@ -86,6 +99,8 @@ export class PlanningJobResponseDto {
     dto.created_at = job.createdAt;
     dto.started_at = job.startedAt;
     dto.finished_at = job.finishedAt;
+    dto.planning_retry_count = job.planningRetryCount;
+    dto.next_retry_at = job.nextRetryAt;
     return dto;
   }
 }

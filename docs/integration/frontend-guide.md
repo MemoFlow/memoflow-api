@@ -296,6 +296,8 @@ immediately and follow progress over the WebSocket (REST polling is the fallback
 
 A job can also fail later with `error_code` `AI_CONSENT_REQUIRED` (the user withdrew consent, or the notice changed, before the job ran: send the user back to the consent screen) or `USER_INACTIVE` (the account was disabled before the job ran), `AI_QUOTA_EXCEEDED` (the daily limit was spent by the time it ran) or `AI_QUOTA_UNAVAILABLE` (limits could not be checked). Show the fixed `error_message`; for `AI_QUOTA_EXCEEDED` offer a retry the next day.
 
+Provider limits: if the AI provider is rate-limited, the job is not failed. It stays `running`/`planning` and is retried automatically (about 30 s, then about 120 s later, longer if the provider asks), with `planning_retry_count` and `next_retry_at` set in `GET /planning-jobs/:id` while a retry is pending. If it is still limited after 2 retries the job fails with `AI_PROVIDER_RATE_LIMITED`; show "AI is busy, try again shortly" and let the user resubmit. `AI_PROVIDER_UNAVAILABLE` means the provider is down; show a generic "AI is temporarily unavailable" message.
+
 #### Poll — `GET /planning-jobs/:id` (JWT) → `200` `PlanningJobResponseDto`
 `model` is `null` until the job has run, and when no model is known.
 
@@ -341,7 +343,7 @@ On `completed`:
 - **Cache:** an identical repeat request can return quickly as a **new** suggestion row; do not assume each `201` took a model call.
 - **`[REDACTED]`** can appear in `suggested_text`; warn the user before applying it.
 - **Model output is untrusted:** show it for review, never apply it automatically, never render it as HTML.
-- **Planning job failures** (`failed` + `error_code`): `AI_CONSENT_REQUIRED` (back to the consent screen), `USER_INACTIVE`, `AI_QUOTA_EXCEEDED` (retry tomorrow), `AI_QUOTA_UNAVAILABLE`. Show the fixed `error_message` as is.
+- **Planning job failures** (`failed` + `error_code`): `AI_CONSENT_REQUIRED` (back to the consent screen), `USER_INACTIVE`, `AI_QUOTA_EXCEEDED` (retry tomorrow), `AI_QUOTA_UNAVAILABLE`, `AI_PROVIDER_RATE_LIMITED` ("AI is busy, try again shortly"), `AI_PROVIDER_UNAVAILABLE`. Show the fixed `error_message` as is.
 - **Citations:** resolve `[S1]` markers against `result.sources`; ids are per job; `context_used.retrieval.failed` means the plan ran without the user's sections.
 - **WebSocket** drops at token expiry and on logout; reconnect and `subscribe` again (section 7). Use `GET /planning-jobs/:id` as the fallback.
 - **Notice version:** a new `AI_NOTICE_VERSION` forces everyone to accept again; handle it without a reload.
@@ -362,7 +364,7 @@ socket.on('ready', () => {
   socket.emit('subscribe', { jobId });
 });
 
-socket.on('planning.status',    (p) => {/* { jobId, status } — pending|running|gathering|planning */});
+socket.on('planning.status',    (p) => {/* { jobId, status } — pending|running|gathering|planning; while a provider rate-limit retry is pending also { message: 'AI provider busy, retrying in N s', retryAt, retryInSeconds, retryCount } */});
 socket.on('planning.chunk',     (p) => {/* { jobId, sequence, type: 'data'|'status', data?, status? } — RabbitMQ transport only, one per non-terminal ctx.gather.results chunk */});
 socket.on('planning.completed', (p) => {/* { jobId, status, result } */});
 socket.on('planning.failed',    (p) => {/* { jobId, status, errorCode, errorMessage } */});
@@ -386,7 +388,7 @@ socket.on('planning.error',     (p) => {/* { jobId, message } — e.g. subscribe
   each gathered context chunk relays as a `planning.chunk` event as it arrives, in
   addition to `planning.status` moving through `gathering` → `planning`. On
   environments without the transport enabled, only `planning.status`
-  (`pending`/`running`) and the two terminal events fire — `planning.chunk` never
+  (`pending`/`running`, plus retry info when rate-limited) and the two terminal events fire — `planning.chunk` never
   arrives there.
 
 ## 8. End-to-end example flow

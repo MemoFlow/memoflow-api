@@ -4,6 +4,10 @@ import { PlanningJobRepository } from '../../domain/context/planning-job.reposit
 import { GetPlanningJobUseCase } from './get-planning-job.use-case';
 
 class InMemoryPlanningJobRepository implements PlanningJobRepository {
+  scheduleRetry = (): Promise<PlanningJob | null> =>
+    Promise.reject(new Error('not implemented'));
+  claimPlanningRetry = (): Promise<PlanningJob | null> =>
+    Promise.reject(new Error('not implemented'));
   constructor(private readonly jobs: PlanningJob[] = []) {}
 
   findById(id: string): Promise<PlanningJob | null> {

@@ -4,6 +4,10 @@ import * as Sentry from '@sentry/nestjs';
 import type { ChannelWrapper } from 'amqp-connection-manager';
 import type { ConsumeMessage } from 'amqplib';
 import { isExpectedFailureCode } from '../../application/context/planning-prompt';
+import {
+  isAwaitingRetry,
+  retryStatusEvent,
+} from '../../application/context/planning-retry';
 import { HandleContextResultChunkUseCase } from '../../application/context/handle-context-result-chunk.use-case';
 import {
   ChunkPhase,
@@ -339,7 +343,10 @@ export class ContextResultsConsumer implements OnModuleInit {
       });
     }
 
-    if (job.status === JobStatus.Completed) {
+    if (isAwaitingRetry(job)) {
+      // Provider rate limit: parked for a delayed retry, not terminal.
+      this.eventEmitter.emit('planning.status', retryStatusEvent(job));
+    } else if (job.status === JobStatus.Completed) {
       this.eventEmitter.emit('planning.completed', {
         jobId: job.id,
         userId: job.userId,

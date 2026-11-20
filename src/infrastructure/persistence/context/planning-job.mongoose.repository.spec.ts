@@ -129,6 +129,7 @@ describe('PlanningJobMongooseRepository', () => {
           status: JobStatus.Completed,
           result: { outline: ['A', 'B'] },
           finished_at: new Date('2026-01-01T00:05:00.000Z'),
+          next_retry_at: null,
         },
         { new: true },
       );
@@ -152,7 +153,11 @@ describe('PlanningJobMongooseRepository', () => {
 
       expect(model.findByIdAndUpdate).toHaveBeenCalledWith(
         '507f1f77bcf86cd799439011',
-        { status: JobStatus.Completed, model: 'some/model' },
+        {
+          status: JobStatus.Completed,
+          model: 'some/model',
+          next_retry_at: null,
+        },
         { new: true },
       );
       expect(result?.model).toBe('some/model');
@@ -470,5 +475,99 @@ describe('PlanningJobMongooseRepository', () => {
 
       expect(result).toBeNull();
     });
+  });
+});
+
+describe('PlanningJobMongooseRepository planning retry', () => {
+  it('claimPlanningRetry is a CAS on in-flight status, count and pending retry', async () => {
+    const doc = fakeDoc({
+      status: JobStatus.Planning,
+      planning_retry_count: 1,
+      next_retry_at: null,
+    });
+    const findOneAndUpdate = jest
+      .fn()
+      .mockReturnValue({ exec: jest.fn().mockResolvedValue(doc) });
+    const repository = new PlanningJobMongooseRepository({
+      findOneAndUpdate,
+    } as any);
+
+    const job = await repository.claimPlanningRetry(
+      '507f1f77bcf86cd799439011',
+      1,
+    );
+
+    expect(findOneAndUpdate).toHaveBeenCalledWith(
+      {
+        _id: '507f1f77bcf86cd799439011',
+        status: { $in: [JobStatus.Planning, JobStatus.Running] },
+        planning_retry_count: 1,
+        next_retry_at: { $ne: null },
+      },
+      { next_retry_at: null },
+      { new: true },
+    );
+    expect(job?.planningRetryCount).toBe(1);
+  });
+
+  it('scheduleRetry bumps the count and returns null when the CAS loses', async () => {
+    const findOneAndUpdate = jest
+      .fn()
+      .mockReturnValue({ exec: jest.fn().mockResolvedValue(null) });
+    const repository = new PlanningJobMongooseRepository({
+      findOneAndUpdate,
+    } as any);
+    const at = new Date();
+
+    const job = await repository.scheduleRetry('507f1f77bcf86cd799439011', {
+      expectedRetryCount: 0,
+      nextRetryAt: at,
+      contextUsed: { chunks: [] },
+      promptVersion: null,
+    });
+
+    expect(job).toBeNull();
+    const [filter, update] = findOneAndUpdate.mock.calls[0];
+    expect(filter.planning_retry_count).toEqual({ $in: [0, null] });
+    expect(update).toMatchObject({
+      planning_retry_count: 1,
+      next_retry_at: at,
+      context_used: { chunks: [] },
+    });
+  });
+});
+
+describe('PlanningJobMongooseRepository terminal writes', () => {
+  it.each([JobStatus.Completed, JobStatus.Failed])(
+    'updateStatus(%s) clears next_retry_at',
+    async (status) => {
+      const findByIdAndUpdate = jest.fn().mockReturnValue({
+        exec: jest.fn().mockResolvedValue(fakeDoc({ status })),
+      });
+      const repository = new PlanningJobMongooseRepository({
+        findByIdAndUpdate,
+      } as any);
+
+      await repository.updateStatus('507f1f77bcf86cd799439011', { status });
+
+      expect(findByIdAndUpdate.mock.calls[0][1]).toMatchObject({
+        next_retry_at: null,
+      });
+    },
+  );
+
+  it('updateStatus(planning) leaves next_retry_at alone', async () => {
+    const findByIdAndUpdate = jest.fn().mockReturnValue({
+      exec: jest.fn().mockResolvedValue(fakeDoc()),
+    });
+    const repository = new PlanningJobMongooseRepository({
+      findByIdAndUpdate,
+    } as any);
+    await repository.updateStatus('507f1f77bcf86cd799439011', {
+      status: JobStatus.Planning,
+    });
+    expect(findByIdAndUpdate.mock.calls[0][1]).not.toHaveProperty(
+      'next_retry_at',
+    );
   });
 });

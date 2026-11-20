@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { PROMPT_REPOSITORY } from '../../domain/ai/prompt.repository';
 import type { PromptRepository } from '../../domain/ai/prompt.repository';
 import {
@@ -13,6 +13,13 @@ import {
 import { PLANNING_JOB_REPOSITORY } from '../../domain/context/planning-job.repository';
 import { USER_REPOSITORY } from '../../domain/users/user.repository';
 import type { UserRepository } from '../../domain/users/user.repository';
+import { PLANNING_RETRY_SCHEDULER } from '../../domain/context/planning-retry-scheduler.port';
+import type { PlanningRetryScheduler } from '../../domain/context/planning-retry-scheduler.port';
+import {
+  DEFAULT_PLANNING_RETRY_POLICY,
+  PLANNING_RETRY_POLICY,
+} from './planning-retry';
+import type { PlanningRetryPolicy } from './planning-retry';
 import { PlanningPipeline } from './planning-pipeline';
 import { runClaimedPlanning } from './run-claimed-planning';
 import type {
@@ -93,6 +100,12 @@ export class HandleContextResultChunkUseCase {
     private readonly promptRepository: PromptRepository,
     @Inject(USER_REPOSITORY)
     private readonly userRepository: UserRepository,
+    @Optional()
+    @Inject(PLANNING_RETRY_SCHEDULER)
+    private readonly planningRetryScheduler?: PlanningRetryScheduler,
+    @Optional()
+    @Inject(PLANNING_RETRY_POLICY)
+    private readonly planningRetryPolicy: PlanningRetryPolicy = DEFAULT_PLANNING_RETRY_POLICY,
   ) {}
 
   async execute(
@@ -195,6 +208,12 @@ export class HandleContextResultChunkUseCase {
         promptRepository: this.promptRepository,
         userRepository: this.userRepository,
         logger: this.logger,
+        retry: this.planningRetryScheduler
+          ? {
+              scheduler: this.planningRetryScheduler,
+              policy: this.planningRetryPolicy,
+            }
+          : undefined,
       },
       claimed,
       assembled,

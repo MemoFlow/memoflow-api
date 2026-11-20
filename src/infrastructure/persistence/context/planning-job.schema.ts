@@ -82,6 +82,14 @@ export class PlanningJobOdmEntity {
     content: string;
     token_estimate: number | null;
   }>;
+
+  // Provider rate-limit retries of the planning phase: how many were
+  // scheduled, and when the pending one is due (null when none).
+  @Prop({ type: Number, default: 0 })
+  planning_retry_count: number;
+
+  @Prop({ type: Date, default: null })
+  next_retry_at: Date | null;
 }
 
 export type PlanningJobDocument = HydratedDocument<PlanningJobOdmEntity>;

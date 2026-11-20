@@ -430,6 +430,13 @@ two chunk-accumulation fields, `chunk_sequences`/`data_chunks`:
   idempotent-by-`(job_id, sequence)` rule (§3). Both fields are `[]` for jobs that
   never went through the queue-transport path.
 
+**Rate-limit retries.** When the AI provider rate-limits the planning call, the job is
+not failed. It keeps its non-terminal status (`planning`, or `running` on the legacy
+path; no extra status), `planning_retry_count` is incremented, `next_retry_at` is set,
+and the connector context already gathered is kept in `context_used` so the retry
+re-plans without a new gather. After 2 retries the job fails with
+`error_code: AI_PROVIDER_RATE_LIMITED`.
+
 | field | type | notes |
 | --- | --- | --- |
 | _id | ObjectId | |
@@ -445,6 +452,8 @@ two chunk-accumulation fields, `chunk_sequences`/`data_chunks`:
 | result | object? | **nullable** — `{ suggestions: string[], outline?, sources: [{ id, type, title }] }`; `sources` lists only cited sources that exist (ids like `S1`, never text), and inline `[S9]` citations of unknown sources are stripped from `suggestions` and a string `outline`. The stub planner echoes the prompt with empty `sources` |
 | error_code / error_message | string? | set when failed |
 | created_at / started_at / finished_at | date | timestamps |
+| planning_retry_count | number | provider rate-limit retries scheduled for the planning phase (0 to 2); default 0 |
+| next_retry_at | date? | **nullable** — when the pending retry is due; null when none is pending (cleared when the retry starts) |
 | chunk_sequences | number[] | RabbitMQ transport only — `[]` otherwise; guards idempotent chunk append, see above |
 | data_chunks | object[] | RabbitMQ transport only — `[]` otherwise; each `{ sequence, provider, content, token_estimate }`, assembled into `context_used` once the terminal `completed` chunk arrives |
 

@@ -24,6 +24,10 @@ import { ProcessPlanningJobUseCase } from './process-planning-job.use-case';
 import { FakeUserRepository, makePipeline } from './testing-fakes';
 
 class InMemoryPlanningJobRepository implements PlanningJobRepository {
+  scheduleRetry = (): Promise<PlanningJob | null> =>
+    Promise.reject(new Error('not implemented'));
+  claimPlanningRetry = (): Promise<PlanningJob | null> =>
+    Promise.reject(new Error('not implemented'));
   private readonly jobs = new Map<string, PlanningJob>();
 
   seed(job: PlanningJob): void {
