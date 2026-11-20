@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule, JwtModuleOptions } from '@nestjs/jwt';
+import { DEFAULT_JWT_EXPIRES_IN } from './config/env.validation';
 import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ChangePasswordUseCase } from './application/auth/change-password.use-case';
@@ -52,7 +53,7 @@ import { UsersController } from './presentation/users/users.controller';
           JwtModuleOptions['signOptions']
         >['expiresIn'];
         const expiresIn = (config.get<string>('JWT_EXPIRES_IN') ??
-          '15m') as ExpiresIn;
+          DEFAULT_JWT_EXPIRES_IN) as ExpiresIn;
         return {
           secret: config.getOrThrow<string>('JWT_SECRET'),
           signOptions: { expiresIn },

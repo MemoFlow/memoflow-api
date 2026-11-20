@@ -15,8 +15,8 @@ the real-time WebSocket. The live, always-current reference is **Swagger at `/do
 
 ## 2. Auth (JWT)
 
-All non-auth endpoints require a **Bearer JWT**. Tokens are short-lived
-(default **15 min** — `JWT_EXPIRES_IN`); plan for re-login/refresh on `401`.
+All non-auth endpoints require a **Bearer JWT**. Tokens last
+**2 days** by default (`JWT_EXPIRES_IN`); on `401`, log in again.
 
 ### Register — `POST /auth/register` → `202`
 ```json
@@ -372,7 +372,7 @@ socket.on('planning.error',     (p) => {/* { jobId, message } — e.g. subscribe
 - **Auth failure** (missing/invalid/expired token) → the server disconnects the socket
   immediately (no event). Reconnect with a fresh token.
 - **Sockets end when the token does.** The server disconnects a socket at its JWT's expiry
-  (default 15 min), also with no event. On `disconnect`, get a fresh token (log in again if
+  (default 2 days), also with no event. On `disconnect`, get a fresh token (log in again if
   yours expired) and call `io(...)` again; then `subscribe` to any job you're following.
   Logout and password changes also drop the socket.
 - **Rooms are server-derived** from the verified token — you only ever receive your own

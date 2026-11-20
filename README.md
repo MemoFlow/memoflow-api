@@ -226,7 +226,7 @@ Beyond the database connection vars, auth requires:
 | var | required | default | notes |
 | --- | --- | --- | --- |
 | `JWT_SECRET` | yes | — | signing key for access tokens; enforced at boot to be at least 32 characters (`@MinLength(32)`), and must be a unique random value per environment outside dev; boot fails on staging/production if it equals the `.env.example` placeholder |
-| `JWT_EXPIRES_IN` | no | `15m` | access token lifetime |
+| `JWT_EXPIRES_IN` | no | `2d` | access token lifetime |
 | `REDIS_HOST` | yes | — | Redis host: BullMQ planning queue, AI quota counters, suggestion cache and login attempt counter |
 | `REDIS_PORT` | yes | — | Redis port (`0`–`65535`) |
 | `REDIS_PASSWORD` | no | — | Redis auth password, if required |

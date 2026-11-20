@@ -420,6 +420,11 @@ Verification and password-reset emails are sent through Resend.
 - **Logout:** `POST /auth/logout` (JWT) bumps the account's token version, so every
   access token issued so far stops working, not just the caller's. Open WebSocket
   connections are closed. Audited as `auth.logout`.
+- **Token lifetime:** access tokens live 2 days by default (`JWT_EXPIRES_IN`; 15 minutes
+  before 2026-11-20) and are revoked early via the per-user `token_version` on logout and
+  password change/reset. There is no refresh token, so a stolen token stays usable for up to
+  2 days unless the user logs out or changes their password; lower `JWT_EXPIRES_IN` per
+  environment to shrink that window.
 - **Socket lifetime:** a WebSocket is disconnected when its JWT expires; the client
   reconnects with a fresh token. A token without an `exp` claim is refused.
 - **Login throttle:** besides the per-IP limit, `POST /auth/login` allows 10 attempts per

@@ -24,6 +24,9 @@ import {
 } from './postgres-ssl';
 import { Logger } from '@nestjs/common';
 
+/** Default access-token lifetime (vercel/ms format) when JWT_EXPIRES_IN is unset. */
+export const DEFAULT_JWT_EXPIRES_IN = '2d';
+
 export const NODE_ENVS = [
   'development',
   'staging',
@@ -190,7 +193,7 @@ export class EnvironmentVariables {
 
   @IsOptional()
   @IsString()
-  JWT_EXPIRES_IN: string = '15m';
+  JWT_EXPIRES_IN: string = DEFAULT_JWT_EXPIRES_IN;
 
   @IsString()
   @IsNotEmpty()

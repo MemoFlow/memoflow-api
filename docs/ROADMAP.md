@@ -88,7 +88,7 @@ Legend: ✅ done · ◐ in progress · ☐ not started
 - Auth: `POST /auth/register`, `POST /auth/login` (returns `{ accessToken }`),
   bcrypt password hashing, JWT via `@nestjs/jwt` + Passport-JWT, `JwtAuthGuard` on
   protected routes. `JWT_SECRET` (required) and `JWT_EXPIRES_IN` (optional, default
-  `15m`) are in `env.validation.ts` + `.env.example`.
+  `2d`; `15m` before 2026-11-20) are in `env.validation.ts` + `.env.example`.
 - Idempotent dev-users seed block in `scripts/seed.ts` (admin + writer accounts).
 - Endpoints: `POST /auth/register`, `POST /auth/login`, `GET /users/me` (JWT-guarded),
   `GET /users/:id` (JWT-guarded). `last_active_at` updates on login.
