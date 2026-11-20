@@ -434,10 +434,14 @@ describeWithDocker()('Gamification (e2e)', () => {
       for (let i = 0; i < 7; i += 1) {
         await createDocument(token, `Doc ${i}`);
       }
-      const me = await waitForGamification(
+      await waitForGamification(
         token,
         (state) => documentCreated(state).length === 7,
       );
+      // Re-read: /me reads xp and milestones in separate queries, so the polled
+      // response can pair a new milestone with stale xp. Once the milestone is
+      // visible its award tx has committed, so a fresh read is consistent.
+      const me = await getMe(token);
 
       expect(me.xp).toBe(300);
       expect(me.level).toBe(4);
@@ -458,10 +462,14 @@ describeWithDocker()('Gamification (e2e)', () => {
       );
 
       await createDocument(token, 'Crosses the cap');
-      const me = await waitForGamification(
+      await waitForGamification(
         token,
         (state) => documentCreated(state).length === 2,
       );
+      // Re-read: /me reads xp and milestones in separate queries, so the polled
+      // response can pair a new milestone with stale xp. Once the milestone is
+      // visible its award tx has committed, so a fresh read is consistent.
+      const me = await getMe(token);
 
       expect(me.xp).toBe(70); // 50 + the 20 that still fit under 300
       expect(
