@@ -333,6 +333,29 @@ with `AI_CONSENT_REQUIRED` if it is gone. Accept and withdraw are audited as
 `ai.consent_accepted` (with the version) and `ai.consent_withdrawn`. The consent gate is
 separate from the quota and does not replace the email-verification gate.
 
+## Input and storage limits
+
+- **Body size.** JSON and urlencoded bodies are capped at 1 MB (`src/shared/http/body-limit.ts`);
+  larger requests get 413 in the uniform error shape.
+- **Field limits.** DTOs bound string lengths and array sizes (titles 200, section content
+  100,000 characters, `doc_type` 32, template `key_points` 50 items of 2000 characters,
+  `guidance` 5000). `style_config` is capped at 10 KB serialized (`@MaxJsonSize`).
+- **Storage caps.** Per user: 200 documents and 50 templates (admins exempt from the
+  template cap only). Per document:
+  50 sections and 50 saved versions. Over a cap the API returns 409; nothing is auto-pruned.
+  Postgres caps are checked under a row lock in the inserting transaction; the Mongo version
+  cap is soft and can overshoot slightly under concurrent saves. Numbers live in
+  `src/domain/limits/storage-limits.ts`; see [`database-schema.md`](database-schema.md#storage-caps).
+- **Controlled vocabularies.** `doc_type` is one of `blog`, `planning`, `report`, `thesis`,
+  `internship_report`; template `scope` is `personal`, `org` or `global`. Creating or updating a
+  `global` template is admin-only (403).
+- **Listing.** `GET /templates` is paginated (`limit` 1..100, default 20; `offset` 0..100000).
+- **XP cap.** A user earns at most 300 XP per UTC day across milestones and missions, enforced
+  in the award transaction (`users.xp_today`, `users.xp_today_date`), so the leaderboard can't
+  be inflated by scripted activity. Milestones are still recorded when the cap grants 0.
+- **Registration** stays open by decision; abuse is bounded by throttling, email verification
+  and the caps above.
+
 ## Rate-limiting note
 
 `src/shared/throttler/throttler.module.ts` registers a global default throttle
