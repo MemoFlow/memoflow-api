@@ -7,8 +7,7 @@ import {
   AwardMilestoneResult,
   MilestoneRepository,
 } from '../../../domain/gamification/milestone.repository';
-import { UserOrmEntity } from '../users/user.orm-entity';
-import { XP_PER_LEVEL } from '../shared/xp-level.constants';
+import { commitXpGrant, planXpGrant } from '../shared/xp-grant';
 import { MilestoneOrmEntity } from './milestone.orm-entity';
 
 @Injectable()
@@ -30,6 +29,17 @@ export class MilestoneTypeOrmRepository implements MilestoneRepository {
     return this.dataSource.transaction(async (manager) => {
       const milestoneRepo = manager.getRepository(MilestoneOrmEntity);
 
+      // Lock the user row and work out the daily-capped XP first, so the
+      // milestone row can record the XP actually granted. The row is
+      // inserted either way (idempotency is unchanged); only the granted XP
+      // is capped. Nothing is written to `users` unless the insert wins.
+      const grant = await planXpGrant(manager, data.userId, data.xpAwarded);
+      if (!grant) {
+        throw new Error(
+          `awardOnce: xp update affected no rows for user ${data.userId}`,
+        );
+      }
+
       // `ON CONFLICT DO NOTHING` against `IDX_milestones_user_document_type`
       // (the entity's unique composite index) is the atomicity boundary —
       // two concurrent awards for the same (user, document, milestone_type)
@@ -42,7 +52,7 @@ export class MilestoneTypeOrmRepository implements MilestoneRepository {
           userId: data.userId,
           documentId: data.documentId,
           milestoneType: data.milestoneType,
-          xpAwarded: data.xpAwarded,
+          xpAwarded: grant.granted,
         })
         .orIgnore()
         .returning('*')
@@ -57,37 +67,9 @@ export class MilestoneTypeOrmRepository implements MilestoneRepository {
       }
       const milestone = this.toDomainFromRaw(milestoneRows[0]);
 
-      const userRepo = manager.getRepository(UserOrmEntity);
-      const userUpdateResult = await userRepo
-        .createQueryBuilder()
-        .update(UserOrmEntity)
-        .set({
-          xp: () => 'xp + :delta',
-          level: () => `FLOOR((xp + :delta) / ${XP_PER_LEVEL}) + 1`,
-        })
-        .where('id = :userId', { userId: data.userId })
-        .setParameter('delta', data.xpAwarded)
-        .returning(['xp', 'level'])
-        .execute();
+      await commitXpGrant(manager, data.userId, grant);
 
-      const userRow = (
-        userUpdateResult.raw as { xp: number; level: number }[] | undefined
-      )?.[0];
-      if (!userRow) {
-        // Unreachable in practice: `milestones.user_id` has an `ON DELETE
-        // CASCADE` FK to `users`, so the insert above would already have
-        // failed (aborting this transaction) had `data.userId` not existed.
-        // Kept as a defensive guard rather than returning a bogus xp/level.
-        throw new Error(
-          `awardOnce: xp update affected no rows for user ${data.userId}`,
-        );
-      }
-
-      return {
-        milestone,
-        xp: Number(userRow.xp),
-        level: Number(userRow.level),
-      };
+      return { milestone, xp: grant.xp, level: grant.level };
     });
   }
 

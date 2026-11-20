@@ -26,6 +26,14 @@ export class UserOrmEntity {
   @Column({ type: 'int', default: 1 })
   level: number;
 
+  // Daily XP cap bookkeeping (see `planXpGrant`/`commitXpGrant` in `../shared/xp-grant.ts`): XP earned on
+  // `xp_today_date` (UTC); stale once the date is not today.
+  @Column({ type: 'int', name: 'xp_today', default: 0 })
+  xpToday: number;
+
+  @Column({ type: 'date', name: 'xp_today_date', nullable: true })
+  xpTodayDate: string | null;
+
   // Mutable "last seen" timestamp, updated on login — not an immutable
   // creation time, so a plain column (not @CreateDateColumn) is correct.
   @Column({

@@ -6,8 +6,7 @@ import {
   IncrementMissionProgressResult,
   MissionProgressRepository,
 } from '../../../domain/gamification/mission-progress.repository';
-import { UserOrmEntity } from '../users/user.orm-entity';
-import { XP_PER_LEVEL } from '../shared/xp-level.constants';
+import { commitXpGrant, planXpGrant } from '../shared/xp-grant';
 import { MissionProgressOrmEntity } from './mission-progress.orm-entity';
 
 @Injectable()
@@ -85,37 +84,24 @@ export class MissionProgressTypeOrmRepository implements MissionProgressReposito
 
       // This increment is the one that flipped `completed` — award the
       // mission's xp in the SAME transaction.
-      const userRepo = manager.getRepository(UserOrmEntity);
-      const userUpdateResult = await userRepo
-        .createQueryBuilder()
-        .update(UserOrmEntity)
-        .set({
-          xp: () => 'xp + :delta',
-          level: () => `FLOOR((xp + :delta) / ${XP_PER_LEVEL}) + 1`,
-        })
-        .where('id = :userId', { userId })
-        .setParameter('delta', xpReward)
-        .returning(['xp', 'level'])
-        .execute();
-
-      const userRow = (
-        userUpdateResult.raw as { xp: number; level: number }[] | undefined
-      )?.[0];
-      if (!userRow) {
+      // The daily XP cap (shared with milestones) may grant less than
+      // `xpReward`, or nothing; the mission still counts as completed.
+      const grant = await planXpGrant(manager, userId, xpReward);
+      if (!grant) {
         // Unreachable in practice: `mission_progress.user_id` has an `ON
         // DELETE CASCADE` FK to `users`, so the upsert above would already
         // have failed (aborting this transaction) had `userId` not existed.
-        // Kept as a defensive guard rather than returning a bogus xp/level.
         throw new Error(
           `incrementAtomic: xp update affected no rows for user ${userId}`,
         );
       }
+      await commitXpGrant(manager, userId, grant);
 
       return {
         progress,
         justCompleted: true,
-        xp: Number(userRow.xp),
-        level: Number(userRow.level),
+        xp: grant.xp,
+        level: grant.level,
       };
     });
   }
