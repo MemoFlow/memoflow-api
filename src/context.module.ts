@@ -7,6 +7,17 @@ import { MongooseModule } from '@nestjs/mongoose';
 import type { Queue } from 'bullmq';
 import { GetPlanningJobUseCase } from './application/context/get-planning-job.use-case';
 import { AI_MAX_INPUT_CHARS } from './application/ai/max-input-chars.token';
+import {
+  DEFAULT_PLANNING_RETRY_POLICY,
+  PLANNING_RETRY_POLICY,
+} from './application/context/planning-retry';
+import { RetryPlanningJobUseCase } from './application/context/retry-planning-job.use-case';
+import { PLANNING_RETRY_SCHEDULER } from './domain/context/planning-retry-scheduler.port';
+import {
+  BullMqPlanningRetryScheduler,
+  PLANNING_RETRY_QUEUE_NAME,
+} from './infrastructure/queue/context/bullmq-planning-retry.scheduler';
+import { PlanningRetryProcessor } from './infrastructure/queue/context/planning-retry.processor';
 import { GATHER_TIMEOUT_MS } from './application/context/gather-timeout-ms.token';
 import { HandleContextResultChunkUseCase } from './application/context/handle-context-result-chunk.use-case';
 import { HandleGatherTimeoutUseCase } from './application/context/handle-gather-timeout.use-case';
@@ -215,6 +226,16 @@ export function contextResultsConsumerFactory(
       inject: [ConfigService],
       useFactory: gatherTimeoutMsFactory,
     },
+    // Rate-limit retry of the planning phase (both transports). Bound
+    // unconditionally: the queue only needs Redis, which planning requires.
+    { provide: PLANNING_RETRY_POLICY, useValue: DEFAULT_PLANNING_RETRY_POLICY },
+    {
+      provide: PLANNING_RETRY_SCHEDULER,
+      inject: [getQueueToken(PLANNING_RETRY_QUEUE_NAME)],
+      useFactory: (queue: Queue) => new BullMqPlanningRetryScheduler(queue),
+    },
+    RetryPlanningJobUseCase,
+    PlanningRetryProcessor,
     // Safe to construct unconditionally: its constructor only stores
     // `ConfigService` — `RABBITMQ_URL` is read lazily, inside
     // `getConnection()`, only once something actually needs a connection.

@@ -192,6 +192,12 @@ export function failureErrorCode(err: unknown): string {
   if (err instanceof JobConsentRequiredError) {
     return AI_CONSENT_REQUIRED_CODE;
   }
+  if (err instanceof SuggestionGeneratorRateLimitedError) {
+    return 'AI_PROVIDER_RATE_LIMITED';
+  }
+  if (err instanceof SuggestionGeneratorUnavailableError) {
+    return 'AI_PROVIDER_UNAVAILABLE';
+  }
   return 'PROCESSING_FAILED';
 }
 
@@ -207,7 +213,10 @@ export function isExpectedFailureCode(
   return (
     code === 'AI_QUOTA_EXCEEDED' ||
     code === USER_INACTIVE_ERROR_CODE ||
-    code === AI_CONSENT_REQUIRED_CODE
+    code === AI_CONSENT_REQUIRED_CODE ||
+    // Free-tier provider limits are expected, not incidents. A provider
+    // outage (`AI_PROVIDER_UNAVAILABLE`) is deliberately absent.
+    code === 'AI_PROVIDER_RATE_LIMITED'
   );
 }
 

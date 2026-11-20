@@ -20,7 +20,7 @@ describe('runClaimedPlanning', () => {
           Promise.reject(new Error('database unavailable')),
       },
       userRepository: { findById: jest.fn() },
-      logger: { error: jest.fn() },
+      logger: { error: jest.fn(), warn: jest.fn() },
     } as unknown as RunClaimedPlanningDeps;
 
     const job = await runClaimedPlanning(deps, claimed, {});

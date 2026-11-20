@@ -4,6 +4,8 @@ import type { PlanningJobRepository } from '../../domain/context/planning-job.re
 import type { UserRepository } from '../../domain/users/user.repository';
 import type { ValidatedPlanningResult } from './planning-citations';
 import type { PlanningPipeline } from './planning-pipeline';
+import { scheduleRateLimitRetry } from './planning-retry';
+import type { PlanningRetryDeps } from './planning-retry';
 import {
   assertJobUserActive,
   errorName,
@@ -17,7 +19,10 @@ export interface RunClaimedPlanningDeps {
   planningPipeline: PlanningPipeline;
   promptRepository: PromptRepository;
   userRepository: UserRepository;
-  logger: { error(message: string): void };
+  logger: { error(message: string): void; warn(message: string): void };
+  /** When set, a provider rate limit schedules a delayed retry (up to the
+   * policy's count) instead of failing the job. */
+  retry?: PlanningRetryDeps;
 }
 
 /**
@@ -27,7 +32,9 @@ export interface RunClaimedPlanningDeps {
  * the terminal `completed`/`failed` state. Shared by the RabbitMQ result
  * handler (connector context from the engine) and by the transport path of
  * `ProcessPlanningJobUseCase` for jobs with nothing to gather. Never throws
- * for a domain failure: it is recorded as `failed`.
+ * for a domain failure: it is recorded as `failed`, except a provider rate
+ * limit with retries left: the job then stays non-terminal with
+ * `nextRetryAt` set and the returned job is not terminal.
  */
 export async function runClaimedPlanning(
   deps: RunClaimedPlanningDeps,
@@ -58,7 +65,29 @@ export async function runClaimedPlanning(
   } catch (err) {
     // Clients read the message: only typed (fixed) messages pass through,
     // and only the error name is logged.
-    logger.error(`Planning job ${claimed.id} failed (${errorName(err)})`);
+    const outcome = await scheduleRateLimitRetry({
+      repository: planningJobRepository,
+      retry: deps.retry,
+      job: claimed,
+      err,
+      contextUsed,
+      promptVersion,
+    });
+    if (outcome.kind === 'scheduled') {
+      logger.warn(
+        `Planning job ${claimed.id} rate-limited, retry ${outcome.job.planningRetryCount} scheduled`,
+      );
+      return outcome.job;
+    }
+    // Lost the CAS: the job moved on (e.g. went terminal). Do not overwrite.
+    if (outcome.kind === 'lost_race') return outcome.job;
+    // An exhausted provider rate limit is an expected outcome: warn only.
+    const message = `Planning job ${claimed.id} failed (${errorName(err)})`;
+    if (failureErrorCode(err) === 'AI_PROVIDER_RATE_LIMITED') {
+      logger.warn(message);
+    } else {
+      logger.error(message);
+    }
     const errorMessage = safeFailureMessage(err);
     const errorCode = failureErrorCode(err);
     const failed = await planningJobRepository.updateStatus(claimed.id, {

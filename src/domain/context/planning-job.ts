@@ -55,6 +55,12 @@ export class PlanningJob {
    * `ctx.gather.results` consumer — always `[]` for jobs that never went
    * through that path (e.g. the legacy HTTP/stub path). */
   dataChunks: AccumulatedDataChunk[];
+  /** Provider rate-limit retries already scheduled for the planning phase
+   * (0 until the first one). A job waiting on a retry stays in its current
+   * non-terminal status (`planning`, or `running` on the legacy path). */
+  planningRetryCount: number;
+  /** When the scheduled retry is due; null when none is pending. */
+  nextRetryAt: Date | null;
 
   constructor(props: {
     id: string;
@@ -74,6 +80,8 @@ export class PlanningJob {
     startedAt: Date | null;
     finishedAt: Date | null;
     dataChunks?: AccumulatedDataChunk[];
+    planningRetryCount?: number;
+    nextRetryAt?: Date | null;
   }) {
     this.id = props.id;
     this.userId = props.userId;
@@ -92,5 +100,7 @@ export class PlanningJob {
     this.startedAt = props.startedAt;
     this.finishedAt = props.finishedAt;
     this.dataChunks = props.dataChunks ?? [];
+    this.planningRetryCount = props.planningRetryCount ?? 0;
+    this.nextRetryAt = props.nextRetryAt ?? null;
   }
 }

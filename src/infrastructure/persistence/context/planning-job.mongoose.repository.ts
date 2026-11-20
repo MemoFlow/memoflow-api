@@ -14,6 +14,9 @@ import {
   PlanningJobOdmEntity,
 } from './planning-job.schema';
 
+/** Statuses in which the planning phase runs (`running` = legacy path). */
+const IN_FLIGHT_PLANNING_STATUSES = [JobStatus.Planning, JobStatus.Running];
+
 @Injectable()
 export class PlanningJobMongooseRepository implements PlanningJobRepository {
   constructor(
@@ -161,6 +164,62 @@ export class PlanningJobMongooseRepository implements PlanningJobRepository {
     return failed ? this.toDomain(failed) : null;
   }
 
+  async scheduleRetry(
+    id: string,
+    patch: {
+      expectedRetryCount: number;
+      nextRetryAt: Date;
+      contextUsed: Record<string, unknown>;
+      promptVersion: string | null;
+    },
+  ): Promise<PlanningJob | null> {
+    const filter: Record<string, unknown> = {
+      _id: id,
+      status: { $in: IN_FLIGHT_PLANNING_STATUSES },
+    };
+    // Documents created before the field existed have no count: they are 0.
+    filter.planning_retry_count =
+      patch.expectedRetryCount === 0
+        ? { $in: [0, null] }
+        : patch.expectedRetryCount;
+    const updated = await this.runIdQuery(() =>
+      this.model
+        .findOneAndUpdate(
+          filter,
+          {
+            planning_retry_count: patch.expectedRetryCount + 1,
+            next_retry_at: patch.nextRetryAt,
+            context_used: patch.contextUsed,
+            prompt_version: patch.promptVersion,
+          },
+          { new: true },
+        )
+        .exec(),
+    );
+    return updated ? this.toDomain(updated) : null;
+  }
+
+  async claimPlanningRetry(
+    id: string,
+    retryCount: number,
+  ): Promise<PlanningJob | null> {
+    const claimed = await this.runIdQuery(() =>
+      this.model
+        .findOneAndUpdate(
+          {
+            _id: id,
+            status: { $in: IN_FLIGHT_PLANNING_STATUSES },
+            planning_retry_count: retryCount,
+            next_retry_at: { $ne: null },
+          },
+          { next_retry_at: null },
+          { new: true },
+        )
+        .exec(),
+    );
+    return claimed ? this.toDomain(claimed) : null;
+  }
+
   /**
    * Runs a query keyed on `_id` and translates a Mongoose `CastError` (a
    * non-ObjectId id string, e.g. from `GET /planning-jobs/abc`) into "not
@@ -184,6 +243,13 @@ export class PlanningJobMongooseRepository implements PlanningJobRepository {
     patch: UpdatePlanningJobStatusData,
   ): Record<string, unknown> {
     const update: Record<string, unknown> = { status: patch.status };
+    // A terminal job never shows a pending retry.
+    if (
+      patch.status === JobStatus.Completed ||
+      patch.status === JobStatus.Failed
+    ) {
+      update.next_retry_at = null;
+    }
     if (patch.result !== undefined) update.result = patch.result;
     if (patch.errorCode !== undefined) update.error_code = patch.errorCode;
     if (patch.errorMessage !== undefined)
@@ -216,6 +282,8 @@ export class PlanningJobMongooseRepository implements PlanningJobRepository {
       createdAt: doc.created_at,
       startedAt: doc.started_at,
       finishedAt: doc.finished_at,
+      planningRetryCount: doc.planning_retry_count ?? 0,
+      nextRetryAt: doc.next_retry_at ?? null,
       dataChunks: (doc.data_chunks ?? []).map((c) => ({
         sequence: c.sequence,
         provider: c.provider,

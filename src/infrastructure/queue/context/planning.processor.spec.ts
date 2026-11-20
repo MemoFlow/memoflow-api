@@ -43,6 +43,10 @@ jest.mock('@sentry/nestjs', () => ({
  * loud test failure instead of a silent `processed: false` no-op.
  */
 class InMemoryPlanningJobRepository implements PlanningJobRepository {
+  scheduleRetry = (): Promise<PlanningJob | null> =>
+    Promise.reject(new Error('not implemented'));
+  claimPlanningRetry = (): Promise<PlanningJob | null> =>
+    Promise.reject(new Error('not implemented'));
   private readonly jobs = new Map<string, PlanningJob>();
 
   seed(job: PlanningJob): void {

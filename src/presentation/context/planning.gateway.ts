@@ -1,6 +1,10 @@
 import { Logger, NotFoundException, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import {
+  isAwaitingRetry,
+  retryStatusFields,
+} from '../../application/context/planning-retry';
 import { OnEvent } from '@nestjs/event-emitter';
 import {
   ConnectedSocket,
@@ -37,6 +41,12 @@ interface PlanningStatusEvent {
   // publishes, `Planning` once the terminal `completed` chunk arrives and
   // the LLM planner starts.
   status: JobStatus.Running | JobStatus.Gathering | JobStatus.Planning;
+  // Set only while a provider rate-limit retry is pending (the job stays
+  // `running`/`planning`): a human-readable note and when the retry is due.
+  message?: string;
+  retryAt?: string;
+  retryInSeconds?: number;
+  retryCount?: number;
 }
 
 interface PlanningCompletedEvent {
@@ -357,7 +367,13 @@ export class PlanningGateway
       };
     }
     // pending / running / gathering / planning all catch up as
-    // `planning.status`.
+    // `planning.status`, with the retry fields while one is pending.
+    if (isAwaitingRetry(job)) {
+      return {
+        event: 'planning.status',
+        payload: { jobId: job.id, ...retryStatusFields(job) },
+      };
+    }
     return {
       event: 'planning.status',
       payload: { jobId: job.id, status: job.status },

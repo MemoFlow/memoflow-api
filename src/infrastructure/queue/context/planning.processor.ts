@@ -5,6 +5,10 @@ import * as Sentry from '@sentry/nestjs';
 import { Job } from 'bullmq';
 import { ProcessPlanningJobUseCase } from '../../../application/context/process-planning-job.use-case';
 import { isExpectedFailureCode } from '../../../application/context/planning-prompt';
+import {
+  isAwaitingRetry,
+  retryStatusEvent,
+} from '../../../application/context/planning-retry';
 import { JobStatus } from '../../../domain/context/planning-job';
 
 /**
@@ -57,7 +61,10 @@ export class PlanningProcessor extends WorkerHost {
             : JobStatus.Running,
       });
 
-      if (finalJob.status === JobStatus.Completed) {
+      if (isAwaitingRetry(finalJob)) {
+        // Provider rate limit: parked for a delayed retry, not terminal.
+        this.eventEmitter.emit('planning.status', retryStatusEvent(finalJob));
+      } else if (finalJob.status === JobStatus.Completed) {
         this.eventEmitter.emit('planning.completed', {
           jobId,
           userId,

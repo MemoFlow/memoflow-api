@@ -23,6 +23,7 @@ import {
 import { DocumentsModule } from './documents.module';
 import { GatewaySuggestionGenerator } from './infrastructure/ai/gateway-suggestion-generator';
 import { NullSuggestionGenerator } from './infrastructure/ai/null-suggestion-generator';
+import { OpenRouterZdrCheck } from './infrastructure/ai/openrouter-zdr-check';
 import { OpenRouterGateway } from './infrastructure/ai/openrouter.gateway';
 import { RedisAiQuota } from './infrastructure/ai/redis-ai-quota';
 import { RedisAiResponseCache } from './infrastructure/ai/redis-ai-response-cache';
@@ -83,6 +84,11 @@ export function aiMaxInputCharsFactory(config: ConfigService): number {
       inject: [ConfigService],
       useFactory: (config: ConfigService): LlmGateway =>
         new OpenRouterGateway(config),
+    },
+    {
+      provide: OpenRouterZdrCheck,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => new OpenRouterZdrCheck(config),
     },
     { provide: PROMPT_REPOSITORY, useClass: PromptTypeOrmRepository },
     {

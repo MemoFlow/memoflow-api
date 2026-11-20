@@ -26,6 +26,10 @@ import {
 } from './testing-fakes';
 
 class InMemoryPlanningJobRepository implements PlanningJobRepository {
+  scheduleRetry = (): Promise<PlanningJob | null> =>
+    Promise.reject(new Error('not implemented'));
+  claimPlanningRetry = (): Promise<PlanningJob | null> =>
+    Promise.reject(new Error('not implemented'));
   private readonly jobs = new Map<string, PlanningJob>();
   private readonly sequencesSeen = new Map<string, Set<number>>();
 

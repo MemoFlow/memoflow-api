@@ -209,7 +209,8 @@ The frontend gets the result pushed in real time over WebSocket (`@nestjs/websoc
   path, or `gathering`/`planning` on the RabbitMQ transport path), `planning.chunk`
   (RabbitMQ transport only — one per `ctx.gather.results` chunk, live), and one
   terminal event per outcome: `planning.completed` (with `result`), `planning.failed`
-  (with `errorCode`/`errorMessage`).
+  (with `errorCode`/`errorMessage`). While an AI provider rate-limit retry is pending,
+  `planning.status` also carries `message`, `retryAt`, `retryInSeconds` and `retryCount`.
 - After connecting (or reconnecting), emit `subscribe { jobId }` to get that job's
   *current* state immediately — covers a client that connects after the job already
   finished, or reconnects mid-job.

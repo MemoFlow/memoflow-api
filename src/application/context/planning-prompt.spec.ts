@@ -7,6 +7,7 @@ import { InMemoryPromptRepository } from '../ai/testing-fakes';
 import {
   SuggestionGenerationProviderError,
   SuggestionGeneratorRateLimitedError,
+  SuggestionGeneratorUnavailableError,
 } from '../../domain/ai/suggestion-generation.errors';
 import type {
   LlmPlanner,
@@ -271,5 +272,21 @@ describe('consent failures', () => {
   it('treats AI_CONSENT_REQUIRED as an expected failure, not an incident', () => {
     expect(isExpectedFailureCode('AI_CONSENT_REQUIRED')).toBe(true);
     expect(isExpectedFailureCode('PROCESSING_FAILED')).toBe(false);
+  });
+});
+
+describe('provider error codes', () => {
+  it('maps rate limit and outage to dedicated codes', () => {
+    expect(failureErrorCode(new SuggestionGeneratorRateLimitedError())).toBe(
+      'AI_PROVIDER_RATE_LIMITED',
+    );
+    expect(
+      failureErrorCode(new SuggestionGeneratorUnavailableError('down')),
+    ).toBe('AI_PROVIDER_UNAVAILABLE');
+  });
+
+  it('treats only the rate limit as expected (no Sentry)', () => {
+    expect(isExpectedFailureCode('AI_PROVIDER_RATE_LIMITED')).toBe(true);
+    expect(isExpectedFailureCode('AI_PROVIDER_UNAVAILABLE')).toBe(false);
   });
 });
